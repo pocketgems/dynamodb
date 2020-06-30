@@ -1,6 +1,7 @@
 const uuidv4 = require('uuid').v4
 
 const { BaseTest } = require('./base-unit-test')
+const baseUnitTest = require('./base-unit-test')
 const db = require('../src/dynamodb')()
 
 async function txGet (key, id, func) {
@@ -43,6 +44,48 @@ class QuickTransactionTest extends BaseTest {
   async tearDown () {
     super.tearDown()
     this.mockTransactionDefaultOptions(this.oldTransactionOptions)
+  }
+}
+
+class ParameterTest extends BaseTest {
+  testGoodOptions () {
+    const badOptions = [
+      { retries: 0 },
+      { initialBackoff: 1 },
+      { maxBackoff: 200 }
+    ]
+    for (const opt of badOptions) {
+      expect(() => {
+        new db.Transaction(opt) // eslint-disable-line no-new
+      }).not.toThrow()
+    }
+  }
+
+  testBadOptions () {
+    const badOptions = [
+      { retries: -1 },
+      { initialBackoff: 0 },
+      { maxBackoff: 199 }
+    ]
+    for (const opt of badOptions) {
+      expect(() => {
+        new db.Transaction(opt) // eslint-disable-line no-new
+      }).toThrow(db.InvalidOptionsError)
+    }
+  }
+
+  async testBadRunParam () {
+    await expect(db.Transaction.run(1, 2)).rejects
+      .toThrow(db.InvalidParameterError)
+
+    await expect(db.Transaction.run({}, 2)).rejects
+      .toThrow(db.InvalidParameterError)
+
+    await expect(db.Transaction.run(1, () => {})).rejects
+      .toThrow(db.InvalidParameterError)
+
+    await expect(db.Transaction.run(1, 2, 3)).rejects
+      .toThrow(db.InvalidParameterError)
   }
 }
 
@@ -170,6 +213,16 @@ class TransactionWriteTest extends QuickTransactionTest {
     const model = await txGet(key.Cls, key.compositeID)
     expect(model.isNew).toBe(false)
     expect(model.field1).toBe(val)
+  }
+
+  async testCreateWithData () {
+    const name = uuidv4()
+    await db.Transaction.run(tx => {
+      const model = tx.create(TransactionModel, { id: name, field1: 987 })
+      model.field2 = 1
+    })
+    const model = await txGet(TransactionModel, name)
+    expect(model.field1).toBe(987)
   }
 
   async testWriteExistingAsNew () {
@@ -420,6 +473,7 @@ class TransactionConditionCheckTest extends QuickTransactionTest {
 }
 
 const tests = [
+  ParameterTest,
   TransactionGetTest,
   TransactionWriteTest,
   TransactionRetryTest,

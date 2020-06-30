@@ -2,6 +2,14 @@ const { BaseTest } = require('./base-unit-test')
 const db = require('../src/dynamodb')()
 
 class CommonFieldTest extends BaseTest {
+  testFieldSubclassValueType () {
+    // Subclasses of __Field must supply a valueType
+    const field = new db.__private__.__Field()
+    expect(() => {
+      field.valueType // eslint-disable-line no-unused-expressions
+    }).toThrow()
+  }
+
   makeSureMutableFieldWorks (field) {
     expect(field.validate()).toBe(true)
     field.set(1)
@@ -354,6 +362,14 @@ class RepeatedFieldTest extends BaseTest {
       }
     })
   }
+
+  testNonExistAttributeConditionValue () {
+    // Make sure attribute_not_exist() is generated
+    const field = this.fieldFactory()
+    field.name = 'myField'
+    expect(field.__conditionExpression('')).toStrictEqual(
+      ['attribute_not_exists(myField)', {}])
+  }
 }
 
 class NumberFieldTest extends RepeatedFieldTest {
@@ -381,6 +397,14 @@ class NumberFieldTest extends RepeatedFieldTest {
     const field = db.NumberField()
     field.incrementBy(123321)
     expect(field.get()).toBe(123321)
+  }
+
+  testIncrementByMultipleTimes () {
+    const field = db.NumberField()
+    field.incrementBy(1)
+    field.incrementBy(123)
+    field.incrementBy(321)
+    expect(field.get()).toBe(445)
   }
 
   testMixingSetAndIncrementBy () {

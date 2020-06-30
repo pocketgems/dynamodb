@@ -89,6 +89,9 @@ async function sleep (millis) {
 }
 
 function checkUnexpectedOptions (options, defaults) {
+  if (typeof options !== 'object') {
+    throw new InvalidParameterError('options', 'must be an object')
+  }
   Object.keys(options).forEach(opt => {
     if (!Object.prototype.hasOwnProperty.call(defaults, opt)) {
       throw new InvalidOptionsError(opt, 'Unexpected option. ' +
@@ -528,13 +531,14 @@ class Key {
     if (!id) {
       throw new InvalidParameterError('id', 'Expecting an id')
     }
-    if (typeof id === 'string') {
-      id = { id }
-    } else if (!(Cls.prototype instanceof Model)) {
+    if (!(Cls.prototype instanceof Model)) {
       throw new InvalidParameterError('Cls',
         'Model class must be a subclass of db.Model')
     }
 
+    if (typeof id === 'string') {
+      id = { id }
+    }
     checkValidId(id.id)
     this.Cls = Cls
     this.compositeID = deepcopy(id)
@@ -644,7 +648,7 @@ class Model {
       }
     })
     const nonIDs = Object.keys(compositeID).filter(key => {
-      return this[key] instanceof __Field && this[key].keyType === undefined
+      return !(this[key] instanceof __Field) || this[key].keyType === undefined
     })
     if (nonIDs.length !== 0) {
       throw new InvalidParameterError('compositeID', 'non key fields detected')
@@ -933,23 +937,26 @@ class Model {
   }
 }
 
-function getWithArgs (args, callback) {
+async function getWithArgs (args, callback) {
+  if (!args || !(args instanceof Array) || args.length === 0) {
+    throw new InvalidParameterError('args', 'must be a non-empty array')
+  }
   const [first, ...args1] = args
-  if (first.prototype instanceof Model) {
-    if (args1.length >= 1) {
+  if (first && first.prototype instanceof Model) {
+    if (args1.length === 1 || args1.length === 2) {
       const key = new Key(first, args1[0])
       return getWithArgs([key, ...args1.slice(1)], callback)
     } else {
       throw new InvalidParameterError('args',
         'Expecting args to have a tuple of (Model, id, optionalOpt).')
     }
-  } else if (first instanceof Key) {
+  } else if (first && first instanceof Key) {
     if (args1.length > 1) {
       throw new InvalidParameterError('args',
         'Expecting args to have a tuple of (key, optionalOpt).')
     }
     return callback(first, args1.length === 1 ? args1[0] : undefined)
-  } else if (first instanceof Array) {
+  } else if (first && first instanceof Array && first.length !== 0) {
     const nonKeys = first.filter(obj => !(obj instanceof Key))
     if (nonKeys.length !== 0) {
       throw new InvalidParameterError('args',
@@ -964,7 +971,7 @@ function getWithArgs (args, callback) {
     return Promise.all(first.map(key => callback(key, params)))
   } else {
     throw new InvalidParameterError('args',
-      'Expecting String or Key or [Key] as the first argument')
+      'Expecting Model or Key or [Key] as the first argument')
   }
 }
 
@@ -1078,26 +1085,31 @@ class __WriteBatcher {
       TransactItems: items
     }
     const request = this.documentClient.transactWrite(params)
+    /* istanbul ignore next */
     request.on('extractError', (response) => {
-      const responseBody = response.httpResponse.body.toString()
-      const reasons = JSON.parse(responseBody).CancellationReasons
-      for (const reason of reasons) {
-        if (reason.Code === 'ConditionalCheckFailed' &&
-            reason.Item &&
-            Object.keys(reason.Item).length) {
-          // We only ask for the object to be returned when it's `created`.
-          // If we see ConditionalCheckFailed and an Item we know it's due
-          // to creating an existing item.
-          const itemId = Object.values(reason.Item.id)[0]
-          const error = new ModelAlreadyExistsError(itemId)
-          error.name = reason.Code
-          error.retryable = false
-          throw error
-        }
-      }
+      this.__extractError(response)
     })
     await request.promise()
     return true
+  }
+
+  __extractError (response) {
+    const responseBody = response.httpResponse.body.toString()
+    const reasons = JSON.parse(responseBody).CancellationReasons
+    for (const reason of reasons) {
+      if (reason.Code === 'ConditionalCheckFailed' &&
+          reason.Item &&
+          Object.keys(reason.Item).length) {
+        // We only ask for the object to be returned when it's `created`.
+        // If we see ConditionalCheckFailed and an Item we know it's due
+        // to creating an existing item.
+        const itemId = Object.values(reason.Item.id)[0]
+        const error = new ModelAlreadyExistsError(itemId)
+        error.name = reason.Code
+        error.retryable = false
+        throw error
+      }
+    }
   }
 }
 
@@ -1190,15 +1202,21 @@ class Transaction {
   create (Cls, data, params) {
     const model = new Cls(params)
     const compositeID = {}
+    const modelData = {}
     Object.keys(data).forEach(key => {
       const value = model[key]
       if (value instanceof __Field &&
           value.keyType !== undefined) {
         compositeID[key] = data[key]
+      } else {
+        modelData[key] = data[key]
       }
     })
     model.__checkCompositeID(compositeID)
-    model.__setupModel(data, true, 'CREATE')
+    model.__setupModel(compositeID, true, 'CREATE')
+    for (const [key, val] of Object.entries(modelData)) {
+      model[key] = val
+    }
     this.__writeBatcher.track(model)
     return model
   }
@@ -1229,7 +1247,9 @@ class Transaction {
    * @access private
    */
   async __run (func) {
-    assert.ok(func instanceof Function)
+    if (!(func instanceof Function)) {
+      throw new InvalidParameterError('func', 'must be a function / closure')
+    }
 
     let millisBackOff = this.options.initialBackoff
     const maxBackoff = this.options.maxBackoff
@@ -1278,7 +1298,8 @@ class Transaction {
       case 2:
         return new Transaction(args[0]).__run(args[1])
       default:
-        throw new Error('invalid transaction invocation')
+        throw new InvalidParameterError('args',
+          'should be (options, func) or (func)')
     }
   }
 }
@@ -1320,6 +1341,7 @@ function makeCreateUnittestResourceFunc (dynamoDB) {
       }
     }
     await dynamoDB.createTable(params).promise().catch(err => {
+      /* istanbul ignore if */
       if (err.code !== 'ResourceInUseException') {
         throw err
       }
@@ -1327,6 +1349,7 @@ function makeCreateUnittestResourceFunc (dynamoDB) {
   }
 }
 
+/* istanbul ignore next */
 const DefaultConfig = {
   awsConfig: {
     region: 'us-west-2',
@@ -1344,8 +1367,10 @@ function setup (config) {
   const dynamoDB = new AWS.DynamoDB(awsConfig)
   let documentClient
 
+  const inDebugger = !!Number(process.env.INDEBUGGER)
+  /* istanbul ignore if */
   if (config.enableDAX &&
-      !process.env.INDEBUGGER &&
+      !inDebugger &&
       process.env.DAX_ENDPOINT) {
     const AwsDaxClient = require('amazon-dax-client')
     awsConfig.endpoints = [process.env.DAX_ENDPOINT]
@@ -1366,7 +1391,7 @@ function setup (config) {
     Cls.prototype.documentClient = documentClient
   })
 
-  if (process.env.INDEBUGGER) {
+  if (inDebugger) {
     // For creating tables in debug environments
     Model.createUnittestResource = makeCreateUnittestResourceFunc(dynamoDB)
   }
@@ -1395,6 +1420,14 @@ function setup (config) {
   exportAsFactory.forEach(Cls => {
     toExport[Cls.name] = (...options) => new Cls(...options)
   })
+
+  if (inDebugger) {
+    toExport.__private__ = {
+      __Field,
+      __WriteBatcher,
+      getWithArgs
+    }
+  }
   return toExport
 }
 

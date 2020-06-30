@@ -52,9 +52,39 @@ class SimpleModelTest extends BaseTest {
     await SimpleModel.createUnittestResource()
   }
 
+  testInvalidIDs () {
+    const model = new SimpleModel()
+    expect(() => {
+      model.__checkCompositeID({})
+    }).toThrow(db.InvalidParameterError)
+
+    expect(() => {
+      model.__checkCompositeID({ id: 'abc', notAField: 123 })
+    }).toThrow(db.InvalidParameterError)
+  }
+
+  testInvalidSetup () {
+    const model = new SimpleModel()
+    expect(() => {
+      model.__setupModel({}, true, 'abc')
+    }).toThrow(db.InvalidParameterError)
+  }
+
   async testRecreatingTable () {
     // Re-creating the same table shouldn't error out
     await SimpleModel.createUnittestResource()
+  }
+
+  async testDebugFunctionExport () {
+    // Only export in debugging
+    jest.resetModules()
+    const oldVal = process.env.INDEBUGGER
+    process.env.INDEBUGGER = 0
+    const tempDB = require('../src/dynamodb')()
+    expect(tempDB.Model.createUnittestResource).toBe(undefined)
+    expect(tempDB.Model.__private__).toBe(undefined)
+    process.env.INDEBUGGER = oldVal
+    jest.resetModules()
   }
 
   async testWriteModel () {
@@ -249,6 +279,28 @@ class WriteTest extends BaseTest {
     model.getField('noRequiredNoDefault').incrementBy(1)
     expect(model.__updateParams()).not.toHaveProperty(CONDITION_EXPRESSION_STR)
   }
+
+  async testPutNoLock () {
+    const model = await txGet(BasicModel, this.modelName)
+    model.getField('noRequiredNoDefault').incrementBy(1)
+    expect(model.__putParams()).not.toHaveProperty(CONDITION_EXPRESSION_STR)
+  }
+
+  async testRetry () {
+    const model = await txGet(BasicModel, this.modelName)
+    const msg = uuidv4()
+    const originalFunc = model.documentClient.update
+    const mock = jest.fn().mockImplementation((ignore, params) => {
+      const err = new Error(msg)
+      err.retryable = true
+      throw err
+    })
+    model.documentClient.update = mock
+    await expect(model.__write()).rejects.toThrow('Max retries reached')
+    expect(mock).toHaveBeenCalledTimes(4)
+
+    model.documentClient.update = originalFunc
+  }
 }
 
 class ConditionCheckTest extends BaseTest {
@@ -282,6 +334,13 @@ class ConditionCheckTest extends BaseTest {
   async testConditionCheckUnchangedModel () {
     const m1 = await txGet(BasicModel, this.modelName)
     expect(m1.__conditionCheckParams()).toStrictEqual(undefined)
+  }
+
+  async testReadonlyModel () {
+    const m1 = await txGet(BasicModel, this.modelName)
+    m1.noRequiredNoDefault // eslint-disable-line no-unused-expressions
+    expect(m1.__conditionCheckParams()).toHaveProperty('ConditionExpression',
+      'attribute_not_exists(noRequiredNoDefault)')
   }
 }
 
@@ -347,6 +406,18 @@ class KeyTest extends BaseTest {
         model.__checkCompositeID(key.compositeID)
       }).toThrow(db.InvalidParameterError)
     }
+  }
+
+  testDeprecatingLegacySyntax () {
+    expect(() => {
+      db.Key(SimpleModel, 'id', 123)
+    }).toThrow()
+  }
+
+  testInvalidModelCls () {
+    expect(() => {
+      db.Key(Object, 'id')
+    }).toThrow()
   }
 }
 
@@ -424,6 +495,184 @@ class JSONModelTest extends BaseTest {
   }
 }
 
+class GetArgsParserTest extends BaseTest {
+  async testJustAModel () {
+    await expect(db.__private__.getWithArgs([SimpleModel], () => {})).rejects
+      .toThrow(db.InvalidParameterError)
+  }
+
+  async testNoArg () {
+    const invalidArgs = [undefined, {}, [], 1, '']
+    for (const args of invalidArgs) {
+      await expect(db.__private__.getWithArgs(args, () => {})).rejects
+        .toThrow(db.InvalidParameterError)
+    }
+  }
+
+  async testId () {
+    const params = [SimpleModel]
+    await expect(db.__private__.getWithArgs(params, () => {})).rejects
+      .toThrow(db.InvalidParameterError)
+
+    params.push('id')
+    expect(async () => {
+      const result = await db.__private__.getWithArgs(params, () => 123)
+      expect(result).toBe(123)
+    }).not.toThrow()
+
+    params.push({})
+    expect(async () => {
+      const result = await db.__private__.getWithArgs(params, () => 234)
+      expect(result).toBe(234)
+    }).not.toThrow()
+
+    params[1] = { id: 'id' }
+    expect(async () => {
+      const result = await db.__private__.getWithArgs(params, () => 23)
+      expect(result).toBe(23)
+    }).not.toThrow()
+
+    params.push(1)
+    await expect(db.__private__.getWithArgs(params, () => {})).rejects
+      .toThrow(db.InvalidParameterError)
+  }
+
+  async testKey () {
+    const params = [SimpleModel.key('id')]
+    expect(async () => {
+      const result = await db.__private__.getWithArgs(params, () => 123)
+      expect(result).toBe(123)
+    }).not.toThrow()
+
+    params.push({})
+    expect(async () => {
+      const result = await db.__private__.getWithArgs(params, () => 234)
+      expect(result).toBe(234)
+    }).not.toThrow()
+
+    params.push(1)
+    await expect(db.__private__.getWithArgs(params, () => {})).rejects
+      .toThrow(db.InvalidParameterError)
+  }
+
+  async testKeys () {
+    const keys = []
+    const params = [keys]
+    await expect(db.__private__.getWithArgs(params)).rejects
+      .toThrow(db.InvalidParameterError)
+
+    keys.push(SimpleModel.key('id'), SimpleModel.key('id1'))
+    expect(async () => {
+      const result = await db.__private__.getWithArgs(params,
+        (key) => key.compositeID)
+      expect(result).toStrictEqual([{ id: 'id' }, { id: 'id1' }])
+    }).not.toThrow()
+
+    keys.push(1)
+    await expect(db.__private__.getWithArgs(params)).rejects
+      .toThrow(db.InvalidParameterError)
+
+    keys.splice(2, 1)
+    params.push({})
+    expect(async () => {
+      const result = await db.__private__.getWithArgs(params,
+        (key) => key.compositeID)
+      expect(result).toStrictEqual([{ id: 'id' }, { id: 'id1' }])
+    }).not.toThrow()
+
+    params.push(1)
+    await expect(db.__private__.getWithArgs(params)).rejects
+      .toThrow(db.InvalidParameterError)
+  }
+}
+
+class WriteBatcherTest extends BaseTest {
+  async setUp () {
+    await BasicModel.createUnittestResource()
+    this.modelNames = [uuidv4(), uuidv4()]
+    const futs = this.modelNames.map(name => {
+      return txGet(BasicModel, name, (m) => {
+        m.noRequiredNoDefault = 0
+      })
+    })
+    await Promise.all(futs)
+  }
+
+  async testUntrackedWrite () {
+    const batcher = new db.__private__.__WriteBatcher()
+    const model = await txGet(BasicModel, 'id')
+    await expect(batcher.__write(model)).rejects.toThrow()
+  }
+
+  async testDupWrite () {
+    const batcher = new db.__private__.__WriteBatcher()
+    const model = await txGet(BasicModel, 'id')
+    batcher.track(model)
+    model.noRequiredNoDefault += 1
+    expect(async () => {
+      await batcher.__write(model)
+    }).not.toThrow()
+    await expect(batcher.__write(model)).rejects.toThrow()
+  }
+
+  async testReadonly () {
+    const batcher = new db.__private__.__WriteBatcher()
+    const model1 = await txGet(BasicModel, this.modelNames[0])
+    const model2 = await txGet(BasicModel, this.modelNames[1])
+    batcher.track(model1)
+    batcher.track(model2)
+    model1.noRequiredNoDefault = model2.noRequiredNoDefault + 1
+    const originalFunc = batcher.documentClient.transactWrite
+    const msg = uuidv4()
+    const mock = jest.fn().mockImplementation(data => {
+      const update = data.TransactItems[0].Update
+      expect(update.ConditionExpression).toBe('noRequiredNoDefault=:_1')
+      expect(update.UpdateExpression).toBe('SET noRequiredNoDefault=:_0')
+      const condition = data.TransactItems[1].ConditionCheck
+      expect(condition.ConditionExpression).toBe('noRequiredNoDefault=:_1')
+      throw new Error(msg)
+    })
+    batcher.documentClient.transactWrite = mock
+    await expect(batcher.commit()).rejects.toThrow(msg)
+    expect(mock).toHaveBeenCalledTimes(1)
+
+    batcher.documentClient.transactWrite = originalFunc
+  }
+
+  testExceptionParser () {
+    const reasons = []
+    const response = {
+      httpResponse: {
+        body: {
+          toString: function () {
+            return JSON.stringify({
+              CancellationReasons: reasons
+            })
+          }
+        }
+      }
+    }
+
+    const batcher = new db.__private__.__WriteBatcher()
+    expect(() => {
+      batcher.__extractError(response)
+    }).not.toThrow()
+
+    reasons.push({
+      Code: 'ConditionalCheckFailed',
+      Item: { id: '123' }
+    })
+    expect(() => {
+      batcher.__extractError(response)
+    }).toThrow(db.ModelAlreadyExistsError)
+
+    reasons[0].Code = 'anything else'
+    expect(() => {
+      batcher.__extractError(response)
+    }).not.toThrow()
+  }
+}
+
 const tests = [
   ErrorTest,
   KeyTest,
@@ -431,6 +680,8 @@ const tests = [
   JSONModelTest,
   NewModelTest,
   WriteTest,
-  ConditionCheckTest
+  ConditionCheckTest,
+  GetArgsParserTest,
+  WriteBatcherTest
 ]
 tests.forEach(test => test.runTests())
