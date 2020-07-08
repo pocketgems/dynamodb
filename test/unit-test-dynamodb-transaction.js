@@ -1,7 +1,6 @@
 const uuidv4 = require('uuid').v4
 
 const { BaseTest } = require('./base-unit-test')
-const baseUnitTest = require('./base-unit-test')
 const db = require('../src/dynamodb')()
 
 async function txGet (key, id, func) {
