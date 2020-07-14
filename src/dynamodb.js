@@ -151,7 +151,7 @@ class __Field {
    *   supplied values that conflicts with those values, InvalidOptionsError
    *   will be thrown.
    * @property {Boolean} [optional=false] If field can be left undefined.
-   * @property {Boolean} [mutable=true] If field can be changed again after
+   * @property {Boolean} [immutable=false] If field can be changed again after
    *   value is set to anything except undefined.
    * @property {*} [default=undefined] Default value to use. IMPORTANT: Value
    *   is deeply copied, so additional modifications to the parameter will
@@ -245,7 +245,7 @@ class __Field {
    * @param {String} exprKey A key to use to link values in ConditionExpression
    *   and ExpressionAttributeValues
    * @returns {Array} [ConditionExpression, ExpressionAttributeValues,
-   *   NameToRemove]
+   *   ShouldRemove]
    */
   __updateExpression (exprKey) {
     if (this.mutated) {
