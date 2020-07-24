@@ -1262,6 +1262,9 @@ class Transaction {
       } catch (err) {
         if (!this.constructor.__isRetryable(err)) {
           throw new TransactionFailedError(err)
+        } else {
+          console.log(`Transaction commit attempt ${tryCnt} failed with ` +
+            `error ${err}.`)
         }
       }
       if (tryCnt >= this.options.retries) {

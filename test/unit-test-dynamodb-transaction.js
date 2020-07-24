@@ -36,7 +36,7 @@ class QuickTransactionTest extends BaseTest {
     super.setUp()
     this.oldTransactionOptions = db.Transaction.prototype.defaultOptions
     const newOptions = Object.assign({}, this.oldTransactionOptions)
-    Object.assign(newOptions, { retries: 0, initialBackoff: 1 })
+    Object.assign(newOptions, { retries: 1, initialBackoff: 20 })
     this.mockTransactionDefaultOptions(newOptions)
   }
 
@@ -239,7 +239,7 @@ class TransactionWriteTest extends QuickTransactionTest {
   async testReadContention () {
     // When updating, if properties read in a transaction was updated outside,
     // contention!
-    const key = TransactionModel.key(this.modelName)
+    const key = TransactionModel.key(uuidv4())
     const fut = db.Transaction.run({ retries: 0 }, async (tx) => {
       const txModel = await tx.get(key, { createIfMissing: true })
       await txGet(key.Cls, key.compositeID, model => {
@@ -252,7 +252,7 @@ class TransactionWriteTest extends QuickTransactionTest {
       txModel.field1 = 123
     })
     await expect(fut).rejects.toThrow(db.TransactionFailedError)
-    const result = await await txGet(key.Cls, key.compositeID)
+    const result = await txGet(key.Cls, key.compositeID)
     expect(result.field2).toBe(321)
   }
 
