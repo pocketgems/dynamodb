@@ -238,6 +238,26 @@ db.StringField({ keyType: 'RANGE' })
 
 For more detailed documentation on these options, please read **API Documnetation**.
 
+### Schema
+In addition to supporting model level schema via typed Field properties, this library also supports Field level schema via the schema option.
+
+```javascript
+db.StringField({ schema: { type: 'string', maxLength: 2 } })
+```
+
+There exists a npm package *fluent-schema* that makes constructing schemas much easier.
+
+```javascript
+const S = require('fluent-schema')
+db.StringField({ schema: S.string().maxLength(2).valueOf() })
+```
+
+This library supports fluent-schema object as the schema option, so devs don't need to remember calling **valueOf()**.
+
+```javascript
+db.StringField({ schema: S.string().maxLength(2) })
+```
+
 ### Create An Item
 `create()` instantiates a new item in local memory; it is entirely a local, synchronous method (no network traffic is generated). AOL makes sure when the request to write the item is sent to DB, if an item with the same key already exists, a TransactionFailedError is thrown.
 
@@ -359,7 +379,7 @@ This library supports inconsistent reads for improved performance.
 With DAX enabled, inconsistent reads can resolve within 10ms as opposed to the consistent conterpart which will likely take 40~50ms. AOL will prevent errorneous updates to the DB.
 
 ```javascript
-await tx.get(Player, 'A new ID', { consistentRead: false })
+await tx.get(Player, 'A new ID', { inconsistentRead: true })
 ```
 
 ### Constructor Parameters
@@ -377,7 +397,7 @@ Then construct a model with:
 
 ```javascript
 tx.create(Player, { id: 'id', rangeKey: 123, guild: 'guild' })
-await tx.get(Player, 'A new ID', { consistentRead: false, someOtherParams: 123 })
+await tx.get(Player, 'A new ID', { inconsistentRead: true, someOtherParams: 123 })
 ```
 
 ### Nested Transactions

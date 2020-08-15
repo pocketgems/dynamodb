@@ -111,7 +111,7 @@ class SimpleModelTest extends BaseTest {
     const model = new SimpleModel()
     const getParams = model.__getParams(
       { id: '123' },
-      { consistentRead: true })
+      { inconsistentRead: false })
     expect(getParams.ConsistentRead).toBe(true)
   }
 
@@ -119,14 +119,14 @@ class SimpleModelTest extends BaseTest {
     const msg = uuidv4()
     const originalFunc = SimpleModel.prototype.__getParams
     const mock = jest.fn().mockImplementation((ignore, params) => {
-      expect(params.consistentRead).toBe(true)
+      expect(params.inconsistentRead).toBe(false)
       // Hard to mock this properly,
       // so just throw with unique msg
       // and make sure it's caught outside
       throw new Error(msg)
     })
     SimpleModel.prototype.__getParams = mock
-    const getParams = { consistentRead: true, createIfMissing: true }
+    const getParams = { inconsistentRead: false, createIfMissing: true }
     const fut = db.Transaction.run(async tx => {
       await tx.get(SimpleModel, uuidv4(), getParams)
     })

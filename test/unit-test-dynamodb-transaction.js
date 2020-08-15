@@ -156,10 +156,10 @@ class TransactionGetTest extends QuickTransactionTest {
 
   async testEventualConsistentGet () {
     const msg = uuidv4()
-    const params = { consistentRead: true, createIfMissing: true }
+    const params = { inconsistentRead: false, createIfMissing: true }
     const originalFunc = TransactionModel.prototype.__getParams
     const mock = jest.fn().mockImplementation((ignore, params) => {
-      expect(params.consistentRead).toBe(true)
+      expect(params.inconsistentRead).toBe(false)
       // Hard to mock this properly,
       // so just throw with unique msg
       // and make sure it's caught outside

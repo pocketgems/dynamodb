@@ -1,3 +1,7 @@
+const ajv = new (require('ajv'))({
+  allErrors: true,
+  removeAdditional: 'failing'
+})
 const assert = require('assert')
 const deepeq = require('deep-equal')
 const deepcopy = require('rfdc')()
@@ -40,7 +44,7 @@ class InvalidParameterError extends Error {
  */
 class InvalidFieldError extends Error {
   constructor (field, reason) {
-    super(`${field} ${reason}`)
+    super(`${field || ''} ${reason}`)
     this.name = this.constructor.name
   }
 }
@@ -138,7 +142,8 @@ class __Field {
       keyType: undefined,
       optional: false,
       immutable: false,
-      default: undefined
+      default: undefined,
+      schema: undefined
     }
   }
 
@@ -156,6 +161,15 @@ class __Field {
    * @property {*} [default=undefined] Default value to use. IMPORTANT: Value
    *   is deeply copied, so additional modifications to the parameter will
    *   not reflect in the field.
+   * @property {JsonSchema} [schema=undefined] An optional JSON schema object
+   *   to validate Field's value. Field class obviously already constraints the
+   *   root object's type, but schema option can be used to add additional
+   *   constraints. For example, limiting StringField's values min and max
+   *   length. Or for ArrayField, shape of the underlying data can be better
+   *   defined with schema.
+   *   Noteworthily, Field's optional option superceeds schema's required
+   *   property, meaning if an optional StringField's schema requires a string,
+   *   overall the Feild is not required, and vice versa.
    */
 
   /**
@@ -163,7 +177,7 @@ class __Field {
    */
   constructor (options) {
     // Validate options
-    options = options || {}
+    options = Object.assign({}, options) // Copy so we own options now
     const defaults = this.defaultOptions
     checkUnexpectedOptions(options, defaults)
 
@@ -190,6 +204,31 @@ class __Field {
       }
       options.immutable = true
       options.optional = false
+    }
+
+    if (options.schema) {
+      if (options.schema.isFluentSchema) {
+        // Convert fluent schema to JSON schema
+        options.schema = options.schema.valueOf()
+      }
+
+      const schemaTypeToJSTypeMap = {
+        array: Array,
+        boolean: Boolean,
+        integer: Number,
+        number: Number,
+        float: Number,
+        object: Object,
+        string: String
+      }
+      if (schemaTypeToJSTypeMap[options.schema.type] !== this.valueType) {
+        throw new InvalidOptionsError('schema',
+          `Incompatible schema type ${options.schema.type} and field type ` +
+          `${this.valueType}.`
+        )
+      }
+
+      options.schemaValidator = ajv.compile(options.schema)
     }
 
     options = Object.assign(defaults, options)
@@ -370,6 +409,15 @@ class __Field {
       throw new InvalidFieldError(
         this.name,
         `value ${val} is not type ${this.valueType.name}`)
+    }
+
+    if (this.schemaValidator && !this.schemaValidator(val)) {
+      throw new InvalidFieldError(
+        this.name,
+        `value ${JSON.stringify(val)} does not conform to schema ` +
+        `${JSON.stringify(this.schema)} with error ` +
+        JSON.stringify(this.schemaValidator.errors, null, 2)
+      )
     }
     return true
   }
@@ -598,7 +646,7 @@ class Model {
   __getParams (compositeID, options) {
     return {
       TableName: this.tableName,
-      ConsistentRead: options && options.consistentRead,
+      ConsistentRead: options && !options.inconsistentRead,
       Key: compositeID
     }
   }
@@ -606,7 +654,7 @@ class Model {
    * Parameters for fetching a model and options to control how a model is
    * fetched from database.
    * @typedef {Object} GetParams
-   * @property {Boolean} [consistentRead=true] If true, model is read with
+   * @property {Boolean} [inconsistentRead=false] If true, model is read with
    *   strong consistency, else the read is eventually consistent.
    * @property {Boolean} [createIfMissing=false] If true, a model is returned
    *   regardless of whether the model exists on server. This behavior is the

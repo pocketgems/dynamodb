@@ -1,4 +1,5 @@
 const { BaseTest } = require('./base-unit-test')
+const S = require('fluent-schema')
 const db = require('../src/dynamodb')()
 
 class CommonFieldTest extends BaseTest {
@@ -318,6 +319,77 @@ class CommonFieldTest extends BaseTest {
   }
 }
 
+class FieldSchemaTest extends BaseTest {
+  testInvalidSchemaType () {
+    // Make sure mixed schema and field types yields an error at creation time
+    expect(() => {
+      db.NumberField({ schema: S.object() })
+    }).toThrow(db.InvalidOptionsError)
+    expect(() => {
+      db.ObjectField({ schema: S.array() })
+    }).toThrow(db.InvalidOptionsError)
+    expect(() => {
+      db.ArrayField({ schema: S.object() })
+    }).toThrow(db.InvalidOptionsError)
+  }
+
+  testValidSchemaType () {
+    db.NumberField({ schema: S.number() })
+    db.StringField({ schema: S.string() })
+    db.ArrayField({ schema: S.array() })
+    db.ObjectField({ schema: S.object() })
+  }
+
+  testInvalidSchema () {
+    // Make sure schema compilation is checked at field initilization time
+    expect(() => {
+      db.NumberField({ schema: { oaisjdf: 'aosijdf' } })
+    }).toThrow()
+  }
+
+  testInvalidDefault () {
+    // Make sure default values are checked against schema
+    expect(() => {
+      db.StringField({ schema: S.string().minLength(8), default: '123' })
+    }).toThrow(db.InvalidFieldError)
+  }
+
+  testStringValidation () {
+    // Make sure string schema is checked
+    const field = db.StringField({
+      schema: S.string().minLength(8).maxLength(9)
+    })
+    expect(() => {
+      field.set('123')
+    }).toThrow(db.InvalidFieldError)
+
+    field.set('12345678') // 8 char ok.
+
+    expect(() => {
+      field.set('1234567890') // 10 char not ok.
+    }).toThrow(db.InvalidFieldError)
+  }
+
+  testInvalidObject () {
+    // Make sure object schema is checked
+    const field = db.ObjectField({
+      schema: S.object().prop('abc', S.string().required())
+    })
+
+    const invalidValues = [
+      {},
+      { aaa: 123 },
+      { abc: 123 }
+    ]
+    invalidValues.forEach(val => {
+      expect(() => {
+        field.set(val)
+      }).toThrow(db.InvalidFieldError)
+    })
+    field.set({ abc: '123' })
+  }
+}
+
 class RepeatedFieldTest extends BaseTest {
   get fieldFactory () {
     throw new Error('Must be overridden')
@@ -543,6 +615,9 @@ const tests = [
   BooleanFieldTest,
   NumberFieldTest,
   ObjectFieldTest,
-  StringFieldTest
+  StringFieldTest,
+
+  // Other
+  FieldSchemaTest
 ]
 tests.forEach(test => test.runTests())

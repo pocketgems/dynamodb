@@ -64,6 +64,15 @@ class DynamodbLibTest extends BaseServiceTest {
       .expect(415)
     expect(result.body.error.name).toBe('Content-Type Not Permitted')
   }
+
+  async testValidJsonSchema () {
+    await this.app.post(getURI('/jsonschema'))
+      .set('Content-Type', 'application/json')
+      .send({
+        modelCount: 1
+      })
+      .expect(200)
+  }
 }
 
 const tests = [
