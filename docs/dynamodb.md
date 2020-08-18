@@ -238,26 +238,6 @@ db.StringField({ keyType: 'RANGE' })
 
 For more detailed documentation on these options, please read **API Documnetation**.
 
-### Schema
-In addition to supporting model level schema via typed Field properties, this library also supports Field level schema via the schema option.
-
-```javascript
-db.StringField({ schema: { type: 'string', maxLength: 2 } })
-```
-
-There exists a npm package *fluent-schema* that makes constructing schemas much easier.
-
-```javascript
-const S = require('fluent-schema')
-db.StringField({ schema: S.string().maxLength(2).valueOf() })
-```
-
-This library supports fluent-schema object as the schema option, so devs don't need to remember calling **valueOf()**.
-
-```javascript
-db.StringField({ schema: S.string().maxLength(2) })
-```
-
 ### Create An Item
 `create()` instantiates a new item in local memory; it is entirely a local, synchronous method (no network traffic is generated). AOL makes sure when the request to write the item is sent to DB, if an item with the same key already exists, a TransactionFailedError is thrown.
 
@@ -348,6 +328,44 @@ await db.Transaction.run(
 
 
 ## Advanced Examples
+
+### Field Schema
+In addition to supporting model level schema via typed Field properties, this library also supports Field level schema via the schema option. The option value may be a ***fluent-schema*** object or a raw json schema object. Read docs for fluent-schema and json schema for a complete list of json structures the validation logic supports.
+
+```javascript
+const S = require('fluent-schema')
+
+class SchemaModel extends db.Model {
+  constructor () {
+    super()
+    this.str = db.StringField({ schema: S.string().maxLength(2) })
+    this.obj = db.ObjectField({
+      schema: S.object()
+        .prop('str', S.string())
+        .prop('arr', S.array().items(S.string()))
+    })
+  }
+}
+```
+
+Importantly, validity of fields are enforced in 2 cases:
+
+  1. When `model.field = ...` is called.
+  2. When model is written.
+
+```javascript
+const fut = db.Transaction.run(async tx => {
+  const model = await tx.get(SchemaModel, 'mymodel')
+  // model.str = '123' // would have thrown 'string too long' on this line
+
+  // nested json mutations are not checked synchronously,
+  // validation happens on model write instead.
+  model.obj.str = []
+})
+await fut  // invalid model.obj is caught now.
+```
+
+This behavior means that non-backward compatible changes (adding schema or changing existing schema) are not caught until the field is changed or the model is written.
 
 ### Updating Item Without AOL
 For a higher write throughput and less contention, avoiding AOL might be desirable sometimes. This can be done with access directly to model's fields:
