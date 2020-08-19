@@ -1309,7 +1309,7 @@ class Transaction {
         return ret
       } catch (err) {
         if (!this.constructor.__isRetryable(err)) {
-          throw new TransactionFailedError(err)
+          throw err
         } else {
           console.log(`Transaction commit attempt ${tryCnt} failed with ` +
             `error ${err}.`)

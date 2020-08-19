@@ -232,7 +232,7 @@ class TransactionWriteTest extends QuickTransactionTest {
       const txModel = tx.create(TransactionModel, { id: this.modelName })
       txModel.field1 = val
     })
-    await expect(fut).rejects.toThrow(db.TransactionFailedError)
+    await expect(fut).rejects.toThrow(db.ModelAlreadyExistsError)
     expect(tryCnt).toBe(1)
   }
 
@@ -343,7 +343,7 @@ class TransactionRetryTest extends QuickTransactionTest {
       cnt++
       throw err
     })
-    await expect(fut).rejects.toThrow(db.TransactionFailedError)
+    await expect(fut).rejects.toThrow(Error)
     expect(cnt).toBe(expectedRuns)
   }
 

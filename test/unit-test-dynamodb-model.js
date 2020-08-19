@@ -130,7 +130,7 @@ class SimpleModelTest extends BaseTest {
     const fut = db.Transaction.run(async tx => {
       await tx.get(SimpleModel, uuidv4(), getParams)
     })
-    await expect(fut).rejects.toThrow(db.TransactionFailedError)
+    await expect(fut).rejects.toThrow(Error)
     SimpleModel.prototype.__getParams = originalFunc
   }
 }
@@ -163,7 +163,7 @@ class NewModelTest extends BaseTest {
     const id = uuidv4()
     await txCreate(SimpleModel, { id })
     await expect(txCreate(SimpleModel, { id }))
-      .rejects.toThrow(db.TransactionFailedError)
+      .rejects.toThrow(db.ModelAlreadyExistsError)
   }
 
   async testNewModelParams () {
@@ -455,11 +455,11 @@ class JSONModelTest extends BaseTest {
     const arr = [2, 1]
     const name = uuidv4()
     await expect(txGet(JSONModel, name))
-      .rejects.toThrow(db.TransactionFailedError)
+      .rejects.toThrow(db.InvalidFieldError)
 
     await expect(txGet(JSONModel, name, model => {
       model.objNoDefaultRequired = obj
-    })).rejects.toThrow(db.TransactionFailedError)
+    })).rejects.toThrow(db.InvalidFieldError)
 
     await txGet(JSONModel, name, model => {
       model.objNoDefaultRequired = obj
