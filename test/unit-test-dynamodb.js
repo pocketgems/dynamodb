@@ -10,7 +10,8 @@ class DynamodbLibTest extends BaseServiceTest {
     const app = this.app
     // invalid body format
     await app.post(getURI('/proptest'))
-      .query({
+      .set('Content-Type', 'application/json')
+      .send({
         modelNamePrefix: 'unittest',
         propCount: 3,
         readPropCount: 3,
@@ -36,17 +37,6 @@ class DynamodbLibTest extends BaseServiceTest {
     const result = await this.app.post(getURI('/clienterrors'))
       .query('{d}').expect(400)
     expect(result.body.error.name).toBe('Body Validation Failure')
-  }
-
-  async testQueryJsonInvalid () {
-    const result = await this.app.post(getURI('/clienterrors'))
-      .query({
-        json: 123
-      })
-      .send('{}')
-      .set('Content-Type', 'application/json')
-      .expect(400)
-    expect(result.body.error.name).toBe('Querystring Validation Failure')
   }
 
   async testBodyJsonFail () {
