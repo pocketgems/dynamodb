@@ -633,9 +633,16 @@ class Model {
    *
    * @type {String}
    */
-  get tableName () {
-    return this.constructor.name
+  static get tableName () {
+    return this.name
   }
+
+  /**
+   * The table name this model is associated with.
+   * Just a convenience wrapper around the static version of this method.
+   * @private
+   */
+  get tableName () { return Object.getPrototypeOf(this).constructor.tableName }
 
   /**
    * @access package

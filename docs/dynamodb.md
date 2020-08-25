@@ -493,7 +493,7 @@ class Inventory extends db.Model {
     this.items = db.ObjectField({ default: {} })
   }
 
-  get tableName () {
+  static get tableName () {
     return 'Inventory'
   }
 
