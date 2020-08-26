@@ -1,5 +1,7 @@
 const app = require('../src/app')
 const { BaseServiceTest } = require('./base-unit-test')
+const db = require('../src/dynamodb')()
+const { SharedLibPropModel } = require('../src/sharedlib-apis-dynamodb').models
 
 function getURI (postfix) {
   return '/internal/sharedlib' + postfix
@@ -18,6 +20,27 @@ class DynamodbLibTest extends BaseServiceTest {
         writePropCount: 3
       })
       .expect(200)
+  }
+
+  async testWriteItem () {
+    async function getItem () {
+      return db.Transaction.run(tx => {
+        return tx.get(SharedLibPropModel, 'a:1',
+          { createIfMissing: true, propCount: 1 })
+      })
+    }
+    const oldModel = await getItem()
+    await this.app.post(getURI('/proptest'))
+      .set('Content-Type', 'application/json')
+      .send({
+        modelNamePrefix: 'a',
+        propCount: 1,
+        readPropCount: 1,
+        writePropCount: 1
+      })
+      .expect(200)
+    const newModel = await getItem()
+    expect(newModel.prop0).toBe(oldModel.prop0 + 1)
   }
 
   async testThrow500 () {
