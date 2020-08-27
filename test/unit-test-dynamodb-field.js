@@ -1,6 +1,6 @@
 const S = require('fluent-schema')
 
-const { BaseTest } = require('./base-unit-test')
+const { BaseTest, runTests } = require('./base-unit-test')
 const db = require('../src/dynamodb')()
 
 class CommonFieldTest extends BaseTest {
@@ -607,7 +607,7 @@ class ArrayFieldTest extends RepeatedFieldTest {
   }
 }
 
-const tests = [
+runTests(
   // Common
   CommonFieldTest,
 
@@ -620,5 +620,4 @@ const tests = [
 
   // Other
   FieldSchemaTest
-]
-tests.forEach(test => test.runTests())
+)

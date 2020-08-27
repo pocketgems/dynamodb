@@ -1,6 +1,6 @@
 const uuidv4 = require('uuid').v4
 
-const { BaseTest } = require('./base-unit-test')
+const { BaseTest, runTests } = require('./base-unit-test')
 const db = require('../src/dynamodb')()
 
 const CONDITION_EXPRESSION_STR = 'ConditionExpression'
@@ -673,7 +673,7 @@ class WriteBatcherTest extends BaseTest {
   }
 }
 
-const tests = [
+runTests(
   ErrorTest,
   KeyTest,
   SimpleModelTest,
@@ -683,5 +683,4 @@ const tests = [
   ConditionCheckTest,
   GetArgsParserTest,
   WriteBatcherTest
-]
-tests.forEach(test => test.runTests())
+)

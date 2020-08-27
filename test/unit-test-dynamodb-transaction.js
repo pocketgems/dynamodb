@@ -1,6 +1,6 @@
 const uuidv4 = require('uuid').v4
 
-const { BaseTest } = require('./base-unit-test')
+const { BaseTest, runTests } = require('./base-unit-test')
 const db = require('../src/dynamodb')()
 
 async function txGet (key, id, func) {
@@ -471,12 +471,11 @@ class TransactionConditionCheckTest extends QuickTransactionTest {
   }
 }
 
-const tests = [
+runTests(
   ParameterTest,
   TransactionGetTest,
   TransactionWriteTest,
   TransactionRetryTest,
   TransactionBackoffTest,
   TransactionConditionCheckTest
-]
-tests.forEach(test => test.runTests())
+)
