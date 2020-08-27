@@ -1,7 +1,7 @@
 const S = require('fluent-schema')
 
 const { BaseTest, runTests } = require('./base-unit-test')
-const db = require('../src/dynamodb')()
+const db = require('../src/db')
 
 class CommonFieldTest extends BaseTest {
   testFieldSubclassValueType () {

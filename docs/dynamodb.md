@@ -200,7 +200,7 @@ Additional examples are availble in each individual services. You can find the m
 
 ### Import
 ```javascript
-const db = require('dynamodb')()
+const db = require('db')
 ```
 
 ### Start A Transaction

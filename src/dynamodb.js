@@ -1598,6 +1598,19 @@ const DefaultConfig = {
   enableDAX: true
 }
 
+/**
+ * @module dynamodb
+ */
+
+/**
+ * Setup the DynamoDB library before returning symbols clients can use.
+ *
+ * @param {Object} [config] Configurations for the library
+ * @param {Object} [config.awsConfig] Config supported by AWS client.
+ * @param {Boolean} [config.enableDAX=true] Whether to use DAX or plain
+ *   DynamoDB.
+ * @returns {Object} Symbols that clients of this library can use.
+ */
 function setup (config) {
   config = loadOptionDefaults(config, DefaultConfig)
   const awsConfig = loadOptionDefaults(config.awsConfig,
@@ -1671,19 +1684,4 @@ function setup (config) {
   return toExport
 }
 
-/**
- * @module dynamodb
- */
-
-/**
- * Setup the DynamoDB library before returning symbols clients can use.
- *
- * @param {Object} [config] Configurations for the library
- * @param {Object} [config.awsConfig] Config supported by AWS client.
- * @param {Boolean} [config.enableDAX=true] Whether to use DAX or plain
- *   DynamoDB.
- * @returns {Object} Symbols that clients of this library can use.
- */
-module.exports = function (args) {
-  return setup(args)
-}
+module.exports = setup
