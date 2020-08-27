@@ -627,9 +627,10 @@ class Model {
   }
 
   /**
-   * The table name this model is associated with. This is the model's class
-   * name. However, suclasses may choose to override this method and provide
-   * duplicated table name for co-existed models.
+   * The table name this model is associated with, excluding the service ID
+   * prefix. This is the model's class name. However, suclasses may choose to
+   * override this method and provide duplicated table name for co-existed
+   * models.
    *
    * @type {String}
    */
@@ -638,11 +639,21 @@ class Model {
   }
 
   /**
+   * Returns the fully-qualified table name (Service ID + tableName).
+   * @private
+   */
+  static get fullTableName () {
+    return process.env.SERVICE + this.tableName
+  }
+
+  /**
    * The table name this model is associated with.
    * Just a convenience wrapper around the static version of this method.
    * @private
    */
-  get tableName () { return Object.getPrototypeOf(this).constructor.tableName }
+  get fullTableName () {
+    return Object.getPrototypeOf(this).constructor.fullTableName
+  }
 
   /**
    * @access package
@@ -652,7 +663,7 @@ class Model {
    */
   __getParams (compositeID, options) {
     return {
-      TableName: this.tableName,
+      TableName: this.fullTableName,
       ConsistentRead: options && !options.inconsistentRead,
       Key: compositeID
     }
@@ -763,7 +774,7 @@ class Model {
     }
 
     const ret = {
-      TableName: this.tableName,
+      TableName: this.fullTableName,
       Item: item
     }
     if (conditions.length) {
@@ -841,7 +852,7 @@ class Model {
     }
 
     const ret = {
-      TableName: this.tableName,
+      TableName: this.fullTableName,
       Key: itemKey
     }
     const actions = []
@@ -1390,7 +1401,7 @@ function makeCreateUnittestResourceFunc (dynamoDB) {
       }
     }
     const params = {
-      TableName: temp.tableName,
+      TableName: temp.fullTableName,
       AttributeDefinitions: attrs,
       KeySchema: keys,
       ProvisionedThroughput: {
