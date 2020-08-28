@@ -447,7 +447,7 @@ class NumberField extends __Field {
 
   /**
    * Updates the field's value by an offset. Doesn't perform optimisitic
-   * locking on wirte. May not mix usages of set and incrementBy.
+   * locking on write. May not mix usages of set and incrementBy.
    * @param {Number} diff The diff amount.
    */
   incrementBy (diff) {
@@ -656,6 +656,28 @@ class Model {
   }
 
   /**
+   * Given a mapping, split compositeKeys from other model fields. Return a
+   * 2-tuple, [compositeID, modelData].
+   *
+   * @param {Object} data data to be split
+   */
+  __splitIDFromOtherFields (data) {
+    const compositeID = {}
+    const modelData = {}
+    Object.keys(data).forEach(key => {
+      const value = this.__fields[key] || this[key]
+      if (value instanceof __Field &&
+          value.keyType !== undefined) {
+        compositeID[key] = data[key]
+      } else {
+        modelData[key] = data[key]
+      }
+    })
+    this.__checkCompositeID(compositeID)
+    return [compositeID, modelData]
+  }
+
+  /**
    * @access package
    * @param {CompositeID} compositeID
    * @param {GetParams} [options]
@@ -736,6 +758,18 @@ class Model {
    * @returns parameters for a put request to DynamoDB
    */
   __putParams () {
+    // istanbul ignore next
+    if (this.__initMethod === Model.__INIT_METHOD.UPDATE) {
+      // This is really unreachable code.
+      // The only way to get here is when the model is mutated (to complete a
+      // write) and has no field mutated (so PUT is used instead of UPDATE).
+      // It can happen only when the model isNew.
+      // However, when items are setup from updateItem method, we pretend the
+      // items to be not new. Hence, the condition will never be satisfied.
+      // conditions.push('attribute_exists(id)')
+      assert.fail('This should be unreachable unless something is broken.')
+    }
+
     const item = {}
     const accessedFields = []
     let exprCount = 0
@@ -758,11 +792,32 @@ class Model {
       }
     })
 
-    const conditions = []
+    let conditionExpr
+    const isCreateOrPut =
+      this.__initMethod === Model.__INIT_METHOD.CREATE_OR_PUT
     const exprValues = {}
     if (this.isNew) {
-      conditions.push('attribute_not_exists(id)')
+      if (isCreateOrPut) {
+        const conditions = []
+        for (const field of accessedFields) {
+          const exprKey = `:_${exprCount++}`
+          const [condition, vals] = field.__conditionExpression(exprKey)
+          if (condition &&
+            (!isCreateOrPut || !condition.startsWith('attribute_not_exists'))) {
+            conditions.push(condition)
+            Object.assign(exprValues, vals)
+          }
+        }
+        conditionExpr = conditions.join(' AND ')
+
+        if (conditionExpr.length !== 0) {
+          conditionExpr = `attribute_not_exists(id) OR (${conditionExpr})`
+        }
+      } else {
+        conditionExpr = 'attribute_not_exists(id)'
+      }
     } else {
+      const conditions = []
       for (const field of accessedFields) {
         const exprKey = `:_${exprCount++}`
         const [condition, vals] = field.__conditionExpression(exprKey)
@@ -771,14 +826,15 @@ class Model {
           Object.assign(exprValues, vals)
         }
       }
+      conditionExpr = conditions.join(' AND ')
     }
 
     const ret = {
       TableName: this.fullTableName,
       Item: item
     }
-    if (conditions.length) {
-      ret.ConditionExpression = conditions.join(' AND ')
+    if (conditionExpr.length !== 0) {
+      ret.ConditionExpression = conditionExpr
     }
     if (Object.keys(exprValues).length) {
       ret.ExpressionAttributeValues = exprValues
@@ -805,21 +861,35 @@ class Model {
    * @returns parameters for a update request to DynamoDB
    */
   __updateParams (shouldValidate) {
-    const exprValues = {}
     const conditions = []
+    const exprValues = {}
     const itemKey = {}
     const sets = []
     const removes = []
     const accessedFields = []
     let exprCount = 0
+
+    const isUpdate =
+      this.__initMethod === Model.__INIT_METHOD.UPDATE
+
     Object.keys(this.__fields).forEach(key => {
       const field = this.__fields[key]
-      if (shouldValidate === undefined || shouldValidate) {
+      const omitInUpdate = isUpdate && field.get() === undefined
+      const doValidate = (shouldValidate === undefined || shouldValidate) &&
+        !omitInUpdate
+      if (doValidate) {
         field.validate()
       }
 
       if (field.keyType !== undefined) {
         itemKey[field.name] = field.__value
+        return
+      }
+
+      if (omitInUpdate) {
+        // When init method is UPDATE, not all required fields are present in the
+        // model: we only write parts of the model.
+        // Hence we exclude any fields that are not part of the update.
         return
       }
 
@@ -841,10 +911,21 @@ class Model {
     if (this.isNew) {
       conditions.push('attribute_not_exists(id)')
     } else {
+      if (isUpdate) {
+        conditions.push('attribute_exists(id)')
+      }
+
       for (const field of accessedFields) {
         const exprKey = `:_${exprCount++}`
         const [condition, vals] = field.__conditionExpression(exprKey)
-        if (condition) {
+        if (
+          condition &&
+          (!isUpdate || !condition.startsWith('attribute_not_exists'))
+        ) {
+          // From update, initial values for fields aren't setup.
+          // We only care about the fields that got setup. Here if the
+          // condition is attribute_not_exists, we know the field wasn't setup,
+          // so ignore it.
           conditions.push(condition)
           Object.assign(exprValues, vals)
         }
@@ -910,6 +991,15 @@ class Model {
     return undefined
   }
 
+  static get __INIT_METHOD () {
+    return {
+      CREATE: 1,
+      GET: 2,
+      UPDATE: 3,
+      CREATE_OR_PUT: 4
+    }
+  }
+
   /**
    * Sets up a model, restricts access to the model afterwards, e.g. can no
    * longer add properties.
@@ -917,15 +1007,16 @@ class Model {
    *
    * @param {Object} vals values to use for populating fields.
    * @param {Boolean} isNew whether the data exists on server.
-   * @param {'CREATE'|'GET'} method How the model was instantiated.
+   * @param {Model.__INIT_METHOD} method How the model was instantiated.
    */
   __setupModel (vals, isNew, method) {
     this.isNew = !!isNew
-    if (!['CREATE', 'GET'].includes(method)) {
+    const methods = Model.__INIT_METHOD
+    if (!Object.values(methods).includes(method)) {
       throw new InvalidParameterError('method',
         'must be one of CREATE or GET.')
     }
-    this.__method = method
+    this.__initMethod = method
     Object.keys(this).forEach(key => {
       const field = this[key]
       if (field instanceof __Field) {
@@ -966,17 +1057,21 @@ class Model {
    */
   async __write () {
     assert.ok(!this.__written, 'May write once')
-    const updateParams = this.__updateParams()
     this.__written = true
+
+    const usePut =
+      this.__initMethod === Model.__INIT_METHOD.CREATE_OR_PUT
+    const method = usePut ? 'put' : 'update'
+    const params = this[`__${method}Params`]()
     const retries = 3
     let millisBackOff = 40
     for (let tryCnt = 0; tryCnt <= retries; tryCnt++) {
       try {
-        await this.documentClient.update(updateParams).promise()
+        await this.documentClient[method](params).promise()
         return
       } catch (error) {
         if (!error.retryable) {
-          if (this.__method === 'CREATE' &&
+          if (this.__initMethod === Model.__INIT_METHOD.CREATE &&
               error.code === 'ConditionalCheckFailedException') {
             throw new ModelAlreadyExistsError(this.id)
           } else {
@@ -1095,7 +1190,7 @@ class __WriteBatcher {
       action = 'Put'
       params = model.__putParams()
     }
-    if (model.__method === 'CREATE') {
+    if (model.__initMethod === model.constructor.__INIT_METHOD.CREATE) {
       params.ReturnValuesOnConditionCheckFailure = 'ALL_OLD'
     }
     this.__toWrite.push({ [action]: params })
@@ -1107,6 +1202,8 @@ class __WriteBatcher {
    * @param {Model} model A model to track.
    */
   track (model) {
+    assert.ok(this.__toCheck[model] === undefined,
+      `Model ${model.toString()} already tracked`)
     this.__allModels.push(model)
     this.__toCheck[model] = model
   }
@@ -1249,10 +1346,94 @@ class Transaction {
       if ((!params || !params.createIfMissing) && !data.Item) {
         return undefined
       }
-      model.__setupModel(data.Item || key.compositeID, !data.Item, 'GET')
+      model.__setupModel(data.Item || key.compositeID, !data.Item,
+        model.constructor.__INIT_METHOD.GET)
       this.__writeBatcher.track(model)
       return model
     })
+  }
+
+  /**
+   * Updates an item without reading from DB. If the item doesn't exist in DB,
+   * ConditionCheckFailure will be thrown.
+   *
+   * @param {Class} Cls The model's class.
+   * @param {CompositeID|Object} original A superset of CompositeID,
+   *   field's values. Used as conditions for the update
+   * @param {Object} updated Updated fields for the item, without CompositeID
+   *   fields.
+   * @param {Object} [params] Parameters to be passed to model's constructor
+   */
+  update (Cls, original, updated, params) {
+    if (Object.values(original).filter(d => d === undefined).length !== 0) {
+      // We don't check for attribute_not_exists anyway.
+      throw new InvalidParameterError(
+        'original',
+        'original values must not be undefined')
+    }
+    if (!updated || Object.keys(updated).length === 0) {
+      throw new InvalidParameterError(
+        'updated',
+        'must have values to be updated')
+    }
+
+    const model = new Cls(params)
+    const data = model.__splitIDFromOtherFields(original)[1] // also check ids
+    model.__setupModel(original, false, model.constructor.__INIT_METHOD.UPDATE)
+    Object.keys(data).forEach(k => {
+      model.getField(k).get() // Read to show in ConditionExpression
+    })
+
+    Object.keys(updated).forEach(key => {
+      if (model.__fields[key].keyType !== undefined) {
+        throw new InvalidParameterError(
+          'updated', 'must not contain key fields')
+      }
+      model[key] = updated[key]
+    })
+
+    this.__writeBatcher.track(model)
+
+    // Don't return model, since it should be closed to futhur modifications.
+    // return model
+  }
+
+  /**
+   * Creates or puts an item without reading from DB.
+   * It differs from {@link update} in that:
+   *   a) If item doesn't exists, a new item is created in DB
+   *   b) If item does exists, fields present locally will overwrite values in
+   *      DB, fields absent locally will be removed from DB.
+   *
+   * @param {Class} Cls The model's class.
+   * @param {CompositeID|Object} original A superset of CompositeID,
+   *   field's values. Non-key values are used for conditional locking
+   * @param {Object} updated Final values for the model.
+   *   Values for every field in the model must be provided. Fields with
+   *   `undefined` value will be removed from DB.
+   * @param {Object} [params] Parameters to be passed to model's constructor
+   */
+  createOrPut (Cls, original, updated, params) {
+    const model = new Cls(params)
+    model.__splitIDFromOtherFields(original)
+    model.__setupModel(original, true,
+      model.constructor.__INIT_METHOD.CREATE_OR_PUT)
+    Object.keys(updated).forEach(key => {
+      model[key] = updated[key]
+    })
+    const missingFields = Object.keys(model.__fields).filter(key => {
+      return !Object.prototype.hasOwnProperty.call(original, key) &&
+        !Object.prototype.hasOwnProperty.call(updated, key)
+    })
+    if (missingFields.length) {
+      throw new InvalidParameterError(
+        'updated',
+        `is missing keys ${missingFields}`)
+    }
+    this.__writeBatcher.track(model)
+
+    // Don't return model, since it should be closed to futhur modifications.
+    // return model
   }
 
   /**
@@ -1267,19 +1448,9 @@ class Transaction {
    */
   create (Cls, data, params) {
     const model = new Cls(params)
-    const compositeID = {}
-    const modelData = {}
-    Object.keys(data).forEach(key => {
-      const value = model[key]
-      if (value instanceof __Field &&
-          value.keyType !== undefined) {
-        compositeID[key] = data[key]
-      } else {
-        modelData[key] = data[key]
-      }
-    })
-    model.__checkCompositeID(compositeID)
-    model.__setupModel(compositeID, true, 'CREATE')
+    const [compositeID, modelData] = model.__splitIDFromOtherFields(data)
+    model.__setupModel(compositeID, true,
+      model.constructor.__INIT_METHOD.CREATE)
     for (const [key, val] of Object.entries(modelData)) {
       model[key] = val
     }

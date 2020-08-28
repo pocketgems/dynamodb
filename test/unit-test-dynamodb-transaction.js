@@ -3,9 +3,10 @@ const uuidv4 = require('uuid').v4
 const { BaseTest, runTests } = require('./base-unit-test')
 const db = require('../src/dynamodb')()
 
-async function txGet (key, id, func) {
+async function txGet (key, id, func, addRequiredField) {
   return db.Transaction.run(async tx => {
-    const model = await tx.get(key, id, { createIfMissing: true })
+    const model = await tx.get(key, id,
+      { createIfMissing: true, addRequiredField })
     if (func) {
       func(model)
     }
@@ -16,11 +17,15 @@ async function txGet (key, id, func) {
 class TransactionModel extends db.Model {
   constructor (params) {
     super()
-    this.params = params
+    this.params = params || {}
     this.field1 = db.NumberField({ optional: true })
     this.field2 = db.NumberField({ optional: true })
     this.arrField = db.ArrayField({ optional: true })
     this.objField = db.ObjectField({ optional: true })
+
+    if (this.params.addRequiredField) {
+      this.required = db.NumberField()
+    }
   }
 }
 
@@ -92,6 +97,16 @@ class TransactionGetTest extends QuickTransactionTest {
   async setUp () {
     await super.setUp()
     await TransactionModel.createUnittestResource()
+  }
+
+  async testGetItemTwice () {
+    await db.Transaction.run(async (tx) => {
+      await tx.get(TransactionModel, 'a',
+        { createIfMissing: true })
+      const fut = tx.get(TransactionModel, 'a',
+        { createIfMissing: true })
+      await expect(fut).rejects.toThrow()
+    })
   }
 
   async testGetModelByID () {
@@ -333,6 +348,279 @@ class TransactionWriteTest extends QuickTransactionTest {
     const updated = await txGet(key.Cls, key.compositeID)
     expect(updated.field1).toBe(finalVal[0])
     expect(updated.field2).toBe(finalVal[1])
+  }
+
+  async testUpdateItemNonExisting () {
+    const id = 'nonexist' + uuidv4()
+    let fut = db.Transaction.run(async tx => {
+      tx.update(TransactionModel,
+        { id }, { field1: 2 })
+    })
+    await expect(fut).rejects.toThrow(Error)
+
+    fut = db.Transaction.run(async tx => {
+      tx.createOrPut(TransactionModel,
+        { id },
+        { field1: 3, field2: 1 })
+    })
+    await expect(fut).rejects.toThrow(db.InvalidParameterError)
+
+    await db.Transaction.run(async tx => {
+      tx.createOrPut(TransactionModel,
+        { id },
+        { field1: 3, field2: 1, arrField: undefined, objField: undefined })
+    })
+    let model = await txGet(TransactionModel, id)
+    expect(model.field1).toBe(3)
+
+    await db.Transaction.run(async tx => {
+      tx.createOrPut(TransactionModel,
+        { id },
+        {
+          field1: 3,
+          field2: 567,
+          arrField: undefined,
+          objField: undefined
+        })
+    })
+    model = await txGet(TransactionModel, id)
+    expect(model.field2).toBe(567)
+  }
+
+  async testUpdateNoReturn () {
+    // UpdateItem should not return the model for futher modifications
+    const fut = db.Transaction.run(async tx => {
+      const ret = tx.update(TransactionModel,
+        { id: this.modelName, field1: 1 }, { field1: 2 })
+      expect(ret).toBe(undefined)
+    })
+    await expect(fut).rejects.toThrow()
+  }
+
+  async testUpdateConflict () {
+    // Update fails when original data doesn't match db
+    const fut = db.Transaction.run(async tx => {
+      tx.update(TransactionModel,
+        { id: this.modelName, field1: Math.floor(Math.random() * 9999999) },
+        { field1: 2 }
+      )
+    })
+    await expect(fut).rejects.toThrow()
+  }
+
+  async testUpdateInitialUndefined () {
+    const fut = db.Transaction.run(async tx => {
+      tx.update(
+        TransactionModel,
+        { id: uuidv4(), field1: undefined },
+        { field1: 123 }
+      )
+    })
+    await expect(fut).rejects.toThrow(db.InvalidParameterError)
+  }
+
+  async testUpdateItem () {
+    const key = TransactionModel.key(this.modelName)
+    const origModel = await txGet(key.Cls, key.compositeID)
+    const newVal = Math.floor(Math.random() * 9999999)
+    await db.Transaction.run(async tx => {
+      const original = {}
+      Object.keys(origModel.__fields).forEach(fieldName => {
+        const val = origModel[fieldName]
+        if (val !== undefined) {
+          original[fieldName] = val
+        }
+      })
+      tx.update(key.Cls, original, { field1: newVal })
+    })
+    const updated = await txGet(key.Cls, key.compositeID)
+    expect(updated.field1).toBe(newVal)
+  }
+
+  async testUpdateWithID () {
+    const fut = db.Transaction.run(async tx => {
+      tx.update(
+        TransactionModel,
+        { id: this.modelName },
+        { id: this.modelName })
+    })
+    await expect(fut).rejects.toThrow()
+  }
+
+  async testUpdateOtherFields () {
+    await txGet(TransactionModel, this.modelName, (m) => { m.field2 = 2 })
+    await db.Transaction.run(async tx => {
+      tx.update(
+        TransactionModel,
+        { id: this.modelName, field2: 2 },
+        { field1: 1 })
+    })
+    const model = await txGet(TransactionModel, this.modelName)
+    expect(model.field1).toBe(1)
+  }
+
+  async testCreatePartialModel () {
+    let fut = db.Transaction.run(async tx => {
+      tx.createOrPut(
+        TransactionModel,
+        { id: this.modelName },
+        {
+          field1: 1,
+          field2: 2,
+          arrField: undefined,
+          objField: undefined
+        },
+        { addRequiredField: true }
+      )
+    })
+    await expect(fut).rejects.toThrow(db.InvalidParameterError)
+
+    fut = db.Transaction.run(async tx => {
+      tx.createOrPut(
+        TransactionModel,
+        { id: this.modelName },
+        {
+          field1: 1,
+          field2: 2,
+          arrField: undefined,
+          objField: undefined,
+          required: undefined
+        },
+        { addRequiredField: true }
+      )
+    })
+    await expect(fut).rejects.toThrow(db.InvalidFieldError)
+
+    await db.Transaction.run(async tx => {
+      tx.createOrPut(
+        TransactionModel,
+        { id: this.modelName },
+        {
+          field1: 111222,
+          field2: undefined,
+          arrField: undefined,
+          objField: undefined,
+          required: 333444
+        },
+        { addRequiredField: true }
+      )
+    })
+    const model = await txGet(TransactionModel, this.modelName,
+      undefined, true)
+    expect(model.field1).toBe(111222)
+    expect(model.required).toBe(333444)
+  }
+
+  async testCreateNewModel () {
+    // New model should work without conditions
+    let name = uuidv4()
+    await db.Transaction.run(async tx => {
+      tx.createOrPut(
+        TransactionModel,
+        { id: name },
+        {
+          field1: 333222,
+          field2: undefined,
+          arrField: undefined,
+          objField: undefined
+        }
+      )
+    })
+    let model = await txGet(TransactionModel, name)
+    expect(model.field1).toBe(333222)
+
+    // New model should work with conditions too
+    name = uuidv4()
+    await db.Transaction.run(async tx => {
+      tx.createOrPut(
+        TransactionModel,
+        { id: name, field1: 123123 },
+        {
+          field2: undefined,
+          arrField: undefined,
+          objField: undefined
+        }
+      )
+    })
+    model = await txGet(TransactionModel, name)
+    expect(model.field1).toBe(123123)
+  }
+
+  async testConditionalPut () {
+    const name = uuidv4()
+    await db.Transaction.run(async tx => {
+      tx.createOrPut(
+        TransactionModel,
+        { id: name },
+        {
+          field1: 9988234,
+          field2: undefined,
+          arrField: undefined,
+          objField: undefined
+        }
+      )
+    })
+    let model = await txGet(TransactionModel, name)
+    expect(model.field1).toBe(9988234)
+
+    const fut = db.Transaction.run(async tx => {
+      tx.createOrPut(
+        TransactionModel,
+        { id: name, field1: 123123 },
+        {
+          field2: 111,
+          arrField: undefined,
+          objField: undefined
+        }
+      )
+    })
+    await expect(fut).rejects.toThrow(db.TransactionFailedError)
+
+    await db.Transaction.run(async tx => {
+      tx.createOrPut(
+        TransactionModel,
+        { id: name, field1: 9988234 },
+        {
+          field2: 111,
+          arrField: undefined,
+          objField: undefined
+        }
+      )
+    })
+    model = await txGet(TransactionModel, name)
+    expect(model.field1).toBe(9988234)
+    expect(model.field2).toBe(111)
+  }
+
+  async testUpdatePartialModel () {
+    // Make sure only fields to be updated are validated.
+    const modelName = uuidv4()
+    const fut = txGet(TransactionModel, { id: modelName }, undefined, true)
+    await expect(fut).rejects.toThrow() // Missing required field, should fail
+
+    const model = await txGet(TransactionModel, { id: modelName }, (m) => {
+      m.required = 1 // With required field, should work.
+      m.field1 = 1
+    }, true)
+    const newVal = Math.floor(Math.random() * 99999999)
+    await db.Transaction.run(async tx => {
+      tx.update(
+        TransactionModel,
+        { id: modelName, field1: model.field1 },
+        { field1: newVal })
+    })
+    const updated = await txGet(TransactionModel, { id: modelName })
+    expect(updated.field1).toBe(newVal)
+  }
+
+  async testEmptyUpdate () {
+    const fut = db.Transaction.run(async tx => {
+      tx.update(
+        TransactionModel,
+        { id: '123', field1: 1 },
+        { })
+    })
+    await expect(fut).rejects.toThrow()
   }
 }
 

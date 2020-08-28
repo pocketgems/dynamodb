@@ -281,6 +281,28 @@ p.guildName = 'myGuildName'
 p.level += 1
 ```
 
+This library also supports "blindly" writing an item to the DB without reading first. It is useful when we already know model's fields' values and wish to update them.
+
+```javascript
+tx.update(Player, { id: 'id', guild: 'guild' }, { guild: 'newGuild' })
+```
+
+To maintain consistency, when updating a model, old values must be provided for each field to be updated. In addition, any values used to derive the new value should be included in the old values.
+
+Likewise, items can be "blindly" created or overwritten with `createOrPut` method.
+
+```javascript
+tx.createOrPut(Player,
+  {
+    id: 'id',
+    guild: 'oldGuild' // Condition for Put. Ignored for creating.
+  },
+  {
+    guild: 'newGuild',
+    fieldToRemove: undefined // To be removed.
+  })
+```
+
 ### Write An Item
 It would be confusing if this doc didn't have a section on `Write An Item`, but really there is no need for it.
 
