@@ -193,10 +193,11 @@ IDWithSchemaModel.setSchemaForID(
     'any string that starts with the prefix "xyz"'))
 
 class CompoundIDModel extends db.Model {}
-CompoundIDModel.setSchemaForID(db.CompoundValueSchema
-  .component('year', S.integer().minimum(1900))
-  .component('make', S.string().minLength(3))
-  .component('upc', S.string()))
+CompoundIDModel.setSchemaForID({
+  year: S.integer().minimum(1900),
+  make: S.string().minLength(3),
+  upc: S.string()
+})
 
 class IDSchemaTest extends BaseTest {
   async setUp () {

@@ -598,18 +598,14 @@ class Key {
  * Describes a field that may be composed of one or more components.
  *
  * Can be serialized to and from a compact string format.
+ * @private
  */
 class CompoundValueSchema {
   /**
-   * Create a new CompoundValueSchema (use this, not the constructor).
-   * @param {String} name the name of the component
-   * @param {fluent-schema|JsonSchema} schema the component's schema
+   * Create an empty CompoundValueSchema.
    */
-  static component (name, schema) {
-    const cvSchema = new CompoundValueSchema()
-    cvSchema.components = []
-    cvSchema.component(name, schema)
-    return cvSchema
+  constructor () {
+    this.components = []
   }
 
   /**
@@ -617,7 +613,7 @@ class CompoundValueSchema {
    * component to the schema (so that schema will have >1 components, and thus
    * describe a compound value).
    */
-  component (name, schema) {
+  addComponent (name, schema) {
     if (this.components.length) {
       assert.ok(name !== 'id' && this.components[0].name !== 'id',
         'id cannot be the name of a component in a compound schema')
@@ -754,9 +750,9 @@ class Model {
 
   /**
    * Sets the schema for the partition key.
-   * @param {CompoundValueSchema|fluent-schema} idSchema describes the
+   * @param {Map<String,fluent-schemna>|fluent-schema} idSchema describes the
    *   structure of the partition key for this model. May be a fluent-schema
-   *   S.string(), or an CompoundValueSchema.
+   *   S.string(), or a map of component names to schemas.
    */
   static setSchemaForID (idSchema) {
     // though the underlying ID is always stored as a string in the database
@@ -765,15 +761,18 @@ class Model {
     // each with their own schema
     assert.ok(!Object.hasOwnProperty.call(this, '__ID_SCHEMA'),
       'can only call setSchemaForID() once per model class')
-    if (idSchema instanceof CompoundValueSchema) {
-      // the ID is composed of one or more components
-      assert.ok(idSchema.components.length,
-        'a compound ID must have one or more components')
-      this.__ID_SCHEMA = idSchema
-    } else {
+    if (idSchema.isFluentSchema) {
       // the ID has just one component with the usual name "id"; the supplied
       // schema describes it; create the equivalent compound schema
-      this.__ID_SCHEMA = CompoundValueSchema.component('id', idSchema)
+      this.__ID_SCHEMA = new CompoundValueSchema().addComponent('id', idSchema)
+    } else {
+      const keys = Object.keys(idSchema)
+      assert.ok(keys.length, 'the id field must have one or more components')
+      this.__ID_SCHEMA = new CompoundValueSchema()
+      for (let i = 0; i < keys.length; i++) {
+        const key = keys[i]
+        this.__ID_SCHEMA.addComponent(key, idSchema[key])
+      }
     }
   }
 
@@ -1853,7 +1852,6 @@ function setup (config) {
     Key
   ]
   const exportAsClass = {
-    CompoundValueSchema,
     Model,
     Transaction,
 

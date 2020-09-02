@@ -158,9 +158,10 @@ Partition keys can also be composed of multiple components:
 ```javascript
 // the partition key is composed of a "team" and "player" components; this is
 // called a "Compound ID"
-MyModel.setSchemaForID(db.CompoundValueSchema
-  .component('team', S.string())
-  .component('player', S.string()))
+MyModel.setSchemaForID({
+  team: S.string(),
+  player: S.string()
+})
 
 // you can access those components via getters:
 const model = await tx.get(MyModel, { team: 'Dread', player: 'Ann' })
@@ -174,11 +175,10 @@ it.
 
 Compound IDs may have component(s) with non-string schemas:
 ```javascript
-MyModel.setSchemaForID(db.CompoundValueSchema
-  .component('someNumber', S.integer().minimum(1)
-    .description('some useful description here...'))
-  .component('someBool', S.boolean()
-    .description('...')))
+MyModel.setSchemaForID({
+  someNumber: S.integer().minimum(1).description('something useful...'),
+  someBool: S.boolean().description('...')
+})
 ```
 
 You can create keys for models with compound IDs like this:
