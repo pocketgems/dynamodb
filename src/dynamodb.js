@@ -217,7 +217,7 @@ class __Field {
 
     for (const [key, value] of Object.entries(options)) {
       Object.defineProperty(this, key, {
-        value: deepcopy(value),
+        value: (key === 'default') ? deepcopy(value) : value,
         writable: false
       })
     }
