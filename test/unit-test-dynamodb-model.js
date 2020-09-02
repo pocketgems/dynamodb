@@ -194,7 +194,8 @@ IDWithSchemaModel.setSchemaForID(
 
 class CompoundIDModel extends db.Model {}
 CompoundIDModel.setSchemaForID({
-  year: S.integer().minimum(1900),
+  // required() does nothing because every component is required
+  year: S.integer().minimum(1900).required(),
   make: S.string().minLength(3),
   upc: S.string()
 })

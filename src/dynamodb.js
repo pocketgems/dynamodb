@@ -154,7 +154,7 @@ class __Field {
    * @property {*} [default=undefined] Default value to use. IMPORTANT: Value
    *   is deeply copied, so additional modifications to the parameter will
    *   not reflect in the field.
-   * @property {JsonSchema} [schema=undefined] An optional JSON schema object
+   * @property {fluent-schema} [schema=undefined] An optional fluent schema
    *   to validate Field's value. Field class obviously already constraints the
    *   root object's type, but schema option can be used to add additional
    *   constraints. For example, limiting StringField's values min and max
@@ -200,10 +200,8 @@ class __Field {
     }
 
     if (options.schema) {
-      if (options.schema.isFluentSchema) {
-        // Convert fluent schema to JSON schema
-        options.schema = options.schema.valueOf()
-      }
+      assert.ok(options.schema.isFluentSchema)
+      options.schema = options.schema.valueOf()
 
       if (schemaTypeToJSTypeMap[options.schema.type] !== this.valueType) {
         throw new InvalidOptionsError('schema',
@@ -212,7 +210,7 @@ class __Field {
         )
       }
 
-      options.schemaValidator = ajv.compile(options.schema)
+      options.schemaValidator = compileSchema(options.schema)
     }
 
     options = Object.assign(defaults, options)
@@ -420,6 +418,18 @@ function validateValue (field, val) {
 }
 
 /**
+ * Return the compiled schema.
+ * @param {JsonSChema} schema the JSON schema to compile; if it contains the
+ *   key "required" it will be removed unless the schema is of type "object"
+ */
+function compileSchema (schema) {
+  if (schema.type !== 'object' && schema.required) {
+    delete schema.required
+  }
+  return ajv.compile(schema)
+}
+
+/**
  * @public
  * @extends Internal.__Field
  * @memberof Fields
@@ -618,13 +628,12 @@ class CompoundValueSchema {
       assert.ok(name !== 'id' && this.components[0].name !== 'id',
         'id cannot be the name of a component in a compound schema')
     }
-    assert.ok(schema.isFluentSchema,
-      'if provided, schema must be a fluent-schema or JsonSchema')
+    assert.ok(schema.isFluentSchema)
     schema = schema.valueOf()
     assert.ok(name !== 'id' || schema.type === 'string',
       'a schema for an ID field named "id" must be a string type')
     const valueType = schemaTypeToJSTypeMap[schema.type]
-    const schemaValidator = ajv.compile(schema)
+    const schemaValidator = compileSchema(schema)
     // these keys mirror the names used by Field so they can share the
     // validateSchema() function
     this.components.push({ name, schema, schemaValidator, valueType })
