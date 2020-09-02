@@ -79,13 +79,6 @@ class ModelAlreadyExistsError extends Error {
   }
 }
 
-function checkValidId (id) {
-  const valid = (typeof id === 'string' || id instanceof String) && id.length
-  if (!valid) {
-    throw new InvalidParameterError('id', 'Must be a non-empty string')
-  }
-}
-
 async function sleep (millis) {
   return new Promise((resolve, reject) => {
     setTimeout(resolve, millis)
@@ -212,15 +205,6 @@ class __Field {
         options.schema = options.schema.valueOf()
       }
 
-      const schemaTypeToJSTypeMap = {
-        array: Array,
-        boolean: Boolean,
-        integer: Number,
-        number: Number,
-        float: Number,
-        object: Object,
-        string: String
-      }
       if (schemaTypeToJSTypeMap[options.schema.type] !== this.valueType) {
         throw new InvalidOptionsError('schema',
           `Incompatible schema type ${options.schema.type} and field type ` +
@@ -404,22 +388,34 @@ class __Field {
         this.name,
         'is not optional and is unset')
     }
-
-    if (val !== undefined && val.constructor.name !== this.valueType.name) {
-      throw new InvalidFieldError(
-        this.name,
-        `value ${val} is not type ${this.valueType.name}`)
-    }
-
-    if (this.schemaValidator && !this.schemaValidator(val)) {
-      throw new InvalidFieldError(
-        this.name,
-        `value ${JSON.stringify(val)} does not conform to schema ` +
-        `${JSON.stringify(this.schema)} with error ` +
-        JSON.stringify(this.schemaValidator.errors, null, 2)
-      )
-    }
+    validateValue(this, val)
     return true
+  }
+}
+
+const schemaTypeToJSTypeMap = {
+  array: Array,
+  boolean: Boolean,
+  integer: Number,
+  number: Number,
+  float: Number,
+  object: Object,
+  string: String
+}
+function validateValue (field, val) {
+  if (val !== undefined && val.constructor.name !== field.valueType.name) {
+    throw new InvalidFieldError(
+      this.name,
+      `value ${val} is not type ${field.valueType.name}`)
+  }
+
+  if (field.schemaValidator && !field.schemaValidator(val)) {
+    throw new InvalidFieldError(
+      field.name,
+      `value ${JSON.stringify(val)} does not conform to schema ` +
+      `${JSON.stringify(field.schema)} with error ` +
+      JSON.stringify(field.schemaValidator.errors, null, 2)
+    )
   }
 }
 
@@ -584,12 +580,124 @@ class Key {
         'Model class must be a subclass of db.Model')
     }
 
-    if (typeof id === 'string') {
-      id = { id }
+    if (id instanceof Object && Cls.__ID_SCHEMA) {
+      // this validates the ID too
+      id = { id: Cls.__ID_SCHEMA.compoundValueToString(id) }
+    } else {
+      if (typeof id === 'string') {
+        id = { id }
+      }
+      Cls.__checkValidId(id.id)
     }
-    checkValidId(id.id)
     this.Cls = Cls
     this.compositeID = deepcopy(id)
+  }
+}
+
+/**
+ * Describes a field that may be composed of one or more components.
+ *
+ * Can be serialized to and from a compact string format.
+ */
+class CompoundValueSchema {
+  /**
+   * Create a new CompoundValueSchema (use this, not the constructor).
+   * @param {String} name the name of the component
+   * @param {fluent-schema|JsonSchema} schema the component's schema
+   */
+  static component (name, schema) {
+    const cvSchema = new CompoundValueSchema()
+    cvSchema.components = []
+    cvSchema.component(name, schema)
+    return cvSchema
+  }
+
+  /**
+   * Like {@link CompoundValueSchema.component} but adds an additional
+   * component to the schema (so that schema will have >1 components, and thus
+   * describe a compound value).
+   */
+  component (name, schema) {
+    if (this.components.length) {
+      assert.ok(name !== 'id' && this.components[0].name !== 'id',
+        'id cannot be the name of a component in a compound schema')
+    }
+    assert.ok(schema.isFluentSchema,
+      'if provided, schema must be a fluent-schema or JsonSchema')
+    schema = schema.valueOf()
+    assert.ok(name !== 'id' || schema.type === 'string',
+      'a schema for an ID field named "id" must be a string type')
+    const valueType = schemaTypeToJSTypeMap[schema.type]
+    const schemaValidator = ajv.compile(schema)
+    // these keys mirror the names used by Field so they can share the
+    // validateSchema() function
+    this.components.push({ name, schema, schemaValidator, valueType })
+    return this
+  }
+
+  /**
+   * Returns the string ID which corresponds to the specified compound ID.
+   *
+   * This method throws {@link InvalidFieldError} if the compound ID does not
+   * match the required schema.
+   *
+   * @param {Object} compoundID maps component names to values
+   */
+  compoundValueToString (compoundID) {
+    const componentNames = Object.keys(compoundID)
+    if (componentNames.length !== this.components.length) {
+      throw new InvalidFieldError(
+        'id', 'invalid number of components for this compound ID')
+    }
+    const pieces = []
+    for (var i = 0; i < this.components.length; i++) {
+      const component = this.components[i]
+      const givenValue = compoundID[component.name]
+      if (givenValue === undefined) {
+        throw new InvalidFieldError(
+          'id', `missing component ${component.name}`)
+      }
+      validateValue(component, givenValue)
+      if (component.valueType === String) {
+        // to workaround this, put them inside an object
+        if (givenValue.indexOf('\0') !== -1) {
+          throw new InvalidFieldError(
+            'id', 'cannot put null bytes in strings in compound IDs')
+        }
+        pieces.push(givenValue)
+      } else {
+        pieces.push(JSON.stringify(givenValue))
+      }
+    }
+    return pieces.join('\0')
+  }
+
+  /**
+   * Returns the compound ID object which corresponds to the given string ID.
+   *
+   * This method throws {@link InvalidFieldError} if the string ID does not
+   * match the required schema.
+   *
+   * @param {String} id the string representation of a compound ID
+   */
+  stringToCompoundValue (id) {
+    const compoundID = {}
+    const pieces = id.split('\0')
+    if (pieces.length !== this.components.length) {
+      throw new InvalidFieldError(
+        'id', 'failed to parse ID: incorrect number of components')
+    }
+    for (let i = 0; i < pieces.length; i++) {
+      const piece = pieces[i]
+      const component = this.components[i]
+      if (component.valueType === String) {
+        compoundID[component.name] = piece
+      } else {
+        compoundID[component.name] = JSON.parse(piece)
+      }
+      validateValue(component, compoundID[component.name])
+    }
+    return compoundID
   }
 }
 
@@ -614,6 +722,87 @@ class Model {
     this.isNew = false
     this.__fields = {}
     this.__written = false
+
+    // add a getter for each component of the ID
+    if (!this.constructor.__isSingularIDWithStandardName()) {
+      const idSchema = this.constructor.__ID_SCHEMA
+      const components = idSchema.components
+      for (let i = 0; i < components.length; i++) {
+        const component = components[i]
+        // would be nice to check if there are collisions with the field names
+        // but we can't since the subclass constructor hasn't finished yet
+        Object.defineProperty(this, component.name, {
+          get: () => this.__idComponents[component.name]
+        })
+      }
+    }
+  }
+
+  /**
+   * Returns whether we're using just the standard partition key ("id").
+   *
+   * Will return false if we have a custom name for the partition key, or if
+   * the partition key is a compound value (i.e., it is composed of more than
+   * one components).
+   */
+  static __isSingularIDWithStandardName () {
+    const idSchema = this.__ID_SCHEMA
+    return !idSchema || (
+      idSchema.components.length === 1 &&
+      idSchema.components[0].name === 'id')
+  }
+
+  /**
+   * Sets the schema for the partition key.
+   * @param {CompoundValueSchema|fluent-schema} idSchema describes the
+   *   structure of the partition key for this model. May be a fluent-schema
+   *   S.string(), or an CompoundValueSchema.
+   */
+  static setSchemaForID (idSchema) {
+    // though the underlying ID is always stored as a string in the database
+    // (not strictly required; just a design choice this library nade), it is
+    // possible for that ID to be "compound" or composed of one or more parts,
+    // each with their own schema
+    assert.ok(!Object.hasOwnProperty.call(this, '__ID_SCHEMA'),
+      'can only call setSchemaForID() once per model class')
+    if (idSchema instanceof CompoundValueSchema) {
+      // the ID is composed of one or more components
+      assert.ok(idSchema.components.length,
+        'a compound ID must have one or more components')
+      this.__ID_SCHEMA = idSchema
+    } else {
+      // the ID has just one component with the usual name "id"; the supplied
+      // schema describes it; create the equivalent compound schema
+      this.__ID_SCHEMA = CompoundValueSchema.component('id', idSchema)
+    }
+  }
+
+  /**
+   * Returns the string ID which corresponds to the specified compound ID.
+   * {@see CompoundValueSchema.compoundValueToString}
+   * @param {Object} compoundID maps component names to values
+   */
+  static compoundValueToString (compoundID) {
+    if (!this.__ID_SCHEMA) {
+      return compoundID.id
+    }
+    return this.__ID_SCHEMA.compoundValueToString(compoundID)
+  }
+
+  /**
+   * Verifies that the ID is valid (i.e., matches the required schema).
+   * @param {String} id the string ID used as the partition key
+   */
+  static __checkValidId (id) {
+    const valid = (typeof id === 'string' || id instanceof String) && id.length
+    if (!valid) {
+      throw new InvalidParameterError('id', 'Must be a non-empty string')
+    }
+
+    if (this.__ID_SCHEMA) {
+      // asserts if the ID is malformed
+      this.__ID_SCHEMA.stringToCompoundValue(id)
+    }
   }
 
   /**
@@ -741,7 +930,7 @@ class Model {
     if (nonIDs.length !== 0) {
       throw new InvalidParameterError('compositeID', 'non key fields detected')
     }
-    checkValidId(compositeID.id)
+    this.constructor.__checkValidId(compositeID.id)
     return true
   }
 
@@ -1039,6 +1228,12 @@ class Model {
         })
       }
     })
+
+    if (!this.constructor.__isSingularIDWithStandardName()) {
+      const idSchema = this.constructor.__ID_SCHEMA
+      this.__idComponents = idSchema.stringToCompoundValue(this.id)
+    }
+
     // Once setup, restrict access to model.
     Object.seal(this)
   }
@@ -1658,6 +1853,7 @@ function setup (config) {
     Key
   ]
   const exportAsClass = {
+    CompoundValueSchema,
     Model,
     Transaction,
 

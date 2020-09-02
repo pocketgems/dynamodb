@@ -1,3 +1,4 @@
+const S = require('fluent-schema')
 const uuidv4 = require('uuid').v4
 
 const { BaseTest, runTests } = require('./base-unit-test')
@@ -26,6 +27,16 @@ class ErrorTest extends BaseTest {
 async function txGet (key, id, func) {
   return db.Transaction.run(async tx => {
     const model = await tx.get(key, id, { createIfMissing: true })
+    if (func) {
+      func(model)
+    }
+    return model
+  })
+}
+
+async function txGetByKey (key, func) {
+  return db.Transaction.run(async tx => {
+    const model = await tx.get(key, { createIfMissing: true })
     if (func) {
       func(model)
     }
@@ -140,6 +151,7 @@ class NewModelTest extends BaseTest {
     const result = await db.Transaction.run(tx => {
       const model = tx.create(SimpleModel, { id: '123' })
       expect(model.id).toBe('123')
+      expect(model.id).toBe(SimpleModel.compoundValueToString({ id: '123' }))
       expect(model.isNew).toBe(true)
       tx.__reset() // Don't write anything, cause it will fail.
       return 321
@@ -172,6 +184,69 @@ class NewModelTest extends BaseTest {
     const model = await txCreate(SimpleModel, { id }, params)
     expect(model.id).toBe(id)
     expect(model.params).toStrictEqual(params)
+  }
+}
+
+class IDWithSchemaModel extends db.Model {}
+IDWithSchemaModel.setSchemaForID(
+  S.string().pattern(/^xyz.*$/).description(
+    'any string that starts with the prefix "xyz"'))
+
+class CompoundIDModel extends db.Model {}
+CompoundIDModel.setSchemaForID(db.CompoundValueSchema
+  .component('year', S.integer().minimum(1900))
+  .component('make', S.string().minLength(3))
+  .component('upc', S.string()))
+
+class IDSchemaTest extends BaseTest {
+  async setUp () {
+    await IDWithSchemaModel.createUnittestResource()
+    await CompoundIDModel.createUnittestResource()
+  }
+
+  async testSimpleIDWithSchema () {
+    const cls = IDWithSchemaModel
+    const id = 'xyz' + uuidv4()
+    const m1 = await txCreate(cls, { id })
+    expect(m1.id).toBe(id)
+    await expect(txCreate(cls, { id: 'bad' })).rejects.toThrow(
+      db.InvalidFieldError)
+
+    // IDs are checked when keys are created too
+    expect(() => db.Key(cls, 'bad')).toThrow(db.InvalidFieldError)
+    expect(() => cls.compoundValueToString({ id: 'X' })).toThrow(
+      db.InvalidFieldError)
+    expect(db.Key(cls, 'xyz').compositeID).toEqual({ id: 'xyz' })
+    expect(cls.compoundValueToString({ id: 'xyz' })).toEqual('xyz')
+  }
+
+  async testCompoundID () {
+    const compoundID = { year: 1900, make: 'Honda', upc: uuidv4() }
+    const id = CompoundIDModel.compoundValueToString(compoundID)
+    function check (entity) {
+      expect(entity.id).toBe(id)
+      expect(entity.year).toBe(1900)
+      expect(entity.make).toBe('Honda')
+      expect(entity.upc).toBe(compoundID.upc)
+    }
+
+    check(await txCreate(CompoundIDModel, { id }))
+    check(await txGet(CompoundIDModel, id))
+    check(await txGetByKey(db.Key(CompoundIDModel, id)))
+    check(await txGet(CompoundIDModel, compoundID))
+
+    expect(() => db.Key(CompoundIDModel, {})).toThrow(db.InvalidFieldError)
+    expect(() => db.Key(CompoundIDModel, {
+      year: undefined, // not allowed!
+      make: 'Toyota',
+      upc: 'nope'
+    })).toThrow(db.InvalidFieldError)
+    expect(() => db.Key(CompoundIDModel, {
+      year: 2020,
+      make: 'Toy\0ta', // no null bytes!
+      upc: 'nope'
+    })).toThrow(db.InvalidFieldError)
+    expect(() => db.Key(CompoundIDModel, 'miss')).toThrow(db.InvalidFieldError)
   }
 }
 
@@ -681,6 +756,7 @@ runTests(
   NewModelTest,
   WriteTest,
   ConditionCheckTest,
+  IDSchemaTest,
   GetArgsParserTest,
   WriteBatcherTest
 )

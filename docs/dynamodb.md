@@ -144,6 +144,52 @@ This library addresses this problem using the provided Transaction class, which 
 * If a `retryable` error or `ConditionalCheckFailedException` or `TransactionCanceledException` is thrown during transactWrite operation, transaction will be retried.
 * If all retries failed, a `TransactionFailedError` will be thrown.
 
+### Partition Key (`id`) Schema
+By default, a `Model`'s partition key (the field named `id`) must be a
+non-empty string. Generally, you should specify a schema for it (the only
+exception is if your `id` field is a random value without any semantic
+meaning):
+```javascript
+// require the "id" field to be an e-mail address
+MyModel.setSchemaForID(S.string().format(S.FORMATS.EMAIL))
+```
+
+Partition keys can also be composed of multiple components:
+```javascript
+// the partition key is composed of a "team" and "player" components; this is
+// called a "Compound ID"
+MyModel.setSchemaForID(db.CompoundValueSchema
+  .component('team', S.string())
+  .component('player', S.string()))
+
+// you can access those components via getters:
+const model = await tx.get(MyModel, { team: 'Dread', player: 'Ann' })
+assert.ok(model.team === 'Dreadnought')
+assert.ok(model.player === 'EDread')
+```
+
+Note that ID components cannot be changed; they are fixed, just like the `id`
+field. To work with a model with a different ID, you'll need to create or get
+it.
+
+Compound IDs may have component(s) with non-string schemas:
+```javascript
+MyModel.setSchemaForID(db.CompoundValueSchema
+  .component('someNumber', S.integer().minimum(1)
+    .description('some useful description here...'))
+  .component('someBool', S.boolean()
+    .description('...')))
+```
+
+You can create keys for models with compound IDs like this:
+```javascript
+db.Key(MyModel, { someNumber: 5, someBool: true })
+```
+
+Similarly, you can use this object representation of the compound ID anywhere
+that takes an `id` partition key value as input.
+
+
 ### Composite IDs
 DynamoDB supports using a combinations of HASH key and RANGE key to identify items. This library refers to IDs like this as CompositeIDs.
 
