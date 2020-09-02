@@ -777,6 +777,7 @@ class Model {
     } else {
       const keys = Object.keys(idSchema)
       assert.ok(keys.length, 'the id field must have one or more components')
+      keys.sort() // must always appear in the exact same order
       this.__ID_SCHEMA = new CompoundValueSchema()
       for (let i = 0; i < keys.length; i++) {
         const key = keys[i]
