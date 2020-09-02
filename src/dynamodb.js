@@ -765,7 +765,7 @@ class Model {
    */
   static setSchemaForID (idSchema) {
     // though the underlying ID is always stored as a string in the database
-    // (not strictly required; just a design choice this library nade), it is
+    // (not strictly required; just a design choice this library made), it is
     // possible for that ID to be "compound" or composed of one or more parts,
     // each with their own schema
     assert.ok(!Object.hasOwnProperty.call(this, '__ID_SCHEMA'),
