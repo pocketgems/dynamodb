@@ -1814,6 +1814,7 @@ const DefaultConfig = {
  * @param {Boolean} [config.enableDAX=true] Whether to use DAX or plain
  *   DynamoDB.
  * @returns {Object} Symbols that clients of this library can use.
+ * @private
  */
 function setup (config) {
   config = loadOptionDefaults(config, DefaultConfig)
@@ -1888,4 +1889,4 @@ function setup (config) {
   return toExport
 }
 
-module.exports = setup
+module.exports = setup()

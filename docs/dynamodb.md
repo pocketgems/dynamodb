@@ -246,7 +246,7 @@ Additional examples are availble in each individual services. You can find the m
 
 ### Import
 ```javascript
-const db = require('db')
+const db = require('dynamodb')
 ```
 
 ### Start A Transaction

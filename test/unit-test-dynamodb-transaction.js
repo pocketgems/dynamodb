@@ -1,7 +1,7 @@
 const uuidv4 = require('uuid').v4
 
 const { BaseTest, runTests } = require('./base-unit-test')
-const db = require('../src/db')
+const db = require('../src/dynamodb')
 
 async function txGet (key, id, func, addRequiredField) {
   return db.Transaction.run(async tx => {

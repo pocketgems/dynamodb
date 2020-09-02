@@ -2,7 +2,7 @@ const S = require('fluent-schema')
 const uuidv4 = require('uuid').v4
 
 const { BaseTest, runTests } = require('./base-unit-test')
-const db = require('../src/db')
+const db = require('../src/dynamodb')
 
 const CONDITION_EXPRESSION_STR = 'ConditionExpression'
 const UPDATE_EXPRESSION_STR = 'UpdateExpression'
@@ -91,7 +91,7 @@ class SimpleModelTest extends BaseTest {
     jest.resetModules()
     const oldVal = process.env.INDEBUGGER
     process.env.INDEBUGGER = 0
-    const tempDB = require('../src/dynamodb')()
+    const tempDB = require('../src/dynamodb')
     expect(tempDB.Model.createUnittestResource).toBe(undefined)
     expect(tempDB.Model.__private__).toBe(undefined)
     process.env.INDEBUGGER = oldVal

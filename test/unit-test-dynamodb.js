@@ -1,5 +1,5 @@
 const { BaseServiceTest, runTests } = require('./base-unit-test')
-const db = require('../src/db')
+const db = require('../src/dynamodb')
 const PropData = require('../src/sharedlib-apis-dynamodb').models[1]
 
 function getURI (postfix) {
