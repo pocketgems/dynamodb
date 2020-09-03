@@ -1880,7 +1880,7 @@ function setup (config) {
   })
 
   if (inDebugger) {
-    toExport.__private__ = {
+    toExport.__private = {
       __Field,
       __WriteBatcher,
       getWithArgs

@@ -93,7 +93,7 @@ class SimpleModelTest extends BaseTest {
     process.env.INDEBUGGER = 0
     const tempDB = require('../src/dynamodb')
     expect(tempDB.Model.createUnittestResource).toBe(undefined)
-    expect(tempDB.Model.__private__).toBe(undefined)
+    expect(tempDB.Model.__private).toBe(undefined)
     process.env.INDEBUGGER = oldVal
     jest.resetModules()
   }
@@ -574,91 +574,91 @@ class JSONModelTest extends BaseTest {
 
 class GetArgsParserTest extends BaseTest {
   async testJustAModel () {
-    await expect(db.__private__.getWithArgs([SimpleModel], () => {})).rejects
+    await expect(db.__private.getWithArgs([SimpleModel], () => {})).rejects
       .toThrow(db.InvalidParameterError)
   }
 
   async testNoArg () {
     const invalidArgs = [undefined, {}, [], 1, '']
     for (const args of invalidArgs) {
-      await expect(db.__private__.getWithArgs(args, () => {})).rejects
+      await expect(db.__private.getWithArgs(args, () => {})).rejects
         .toThrow(db.InvalidParameterError)
     }
   }
 
   async testId () {
     const params = [SimpleModel]
-    await expect(db.__private__.getWithArgs(params, () => {})).rejects
+    await expect(db.__private.getWithArgs(params, () => {})).rejects
       .toThrow(db.InvalidParameterError)
 
     params.push('id')
     expect(async () => {
-      const result = await db.__private__.getWithArgs(params, () => 123)
+      const result = await db.__private.getWithArgs(params, () => 123)
       expect(result).toBe(123)
     }).not.toThrow()
 
     params.push({})
     expect(async () => {
-      const result = await db.__private__.getWithArgs(params, () => 234)
+      const result = await db.__private.getWithArgs(params, () => 234)
       expect(result).toBe(234)
     }).not.toThrow()
 
     params[1] = { id: 'id' }
     expect(async () => {
-      const result = await db.__private__.getWithArgs(params, () => 23)
+      const result = await db.__private.getWithArgs(params, () => 23)
       expect(result).toBe(23)
     }).not.toThrow()
 
     params.push(1)
-    await expect(db.__private__.getWithArgs(params, () => {})).rejects
+    await expect(db.__private.getWithArgs(params, () => {})).rejects
       .toThrow(db.InvalidParameterError)
   }
 
   async testKey () {
     const params = [SimpleModel.key('id')]
     expect(async () => {
-      const result = await db.__private__.getWithArgs(params, () => 123)
+      const result = await db.__private.getWithArgs(params, () => 123)
       expect(result).toBe(123)
     }).not.toThrow()
 
     params.push({})
     expect(async () => {
-      const result = await db.__private__.getWithArgs(params, () => 234)
+      const result = await db.__private.getWithArgs(params, () => 234)
       expect(result).toBe(234)
     }).not.toThrow()
 
     params.push(1)
-    await expect(db.__private__.getWithArgs(params, () => {})).rejects
+    await expect(db.__private.getWithArgs(params, () => {})).rejects
       .toThrow(db.InvalidParameterError)
   }
 
   async testKeys () {
     const keys = []
     const params = [keys]
-    await expect(db.__private__.getWithArgs(params)).rejects
+    await expect(db.__private.getWithArgs(params)).rejects
       .toThrow(db.InvalidParameterError)
 
     keys.push(SimpleModel.key('id'), SimpleModel.key('id1'))
     expect(async () => {
-      const result = await db.__private__.getWithArgs(params,
+      const result = await db.__private.getWithArgs(params,
         (key) => key.compositeID)
       expect(result).toStrictEqual([{ id: 'id' }, { id: 'id1' }])
     }).not.toThrow()
 
     keys.push(1)
-    await expect(db.__private__.getWithArgs(params)).rejects
+    await expect(db.__private.getWithArgs(params)).rejects
       .toThrow(db.InvalidParameterError)
 
     keys.splice(2, 1)
     params.push({})
     expect(async () => {
-      const result = await db.__private__.getWithArgs(params,
+      const result = await db.__private.getWithArgs(params,
         (key) => key.compositeID)
       expect(result).toStrictEqual([{ id: 'id' }, { id: 'id1' }])
     }).not.toThrow()
 
     params.push(1)
-    await expect(db.__private__.getWithArgs(params)).rejects
+    await expect(db.__private.getWithArgs(params)).rejects
       .toThrow(db.InvalidParameterError)
   }
 }
@@ -676,13 +676,13 @@ class WriteBatcherTest extends BaseTest {
   }
 
   async testUntrackedWrite () {
-    const batcher = new db.__private__.__WriteBatcher()
+    const batcher = new db.__private.__WriteBatcher()
     const model = await txGet(BasicModel, 'id')
     await expect(batcher.__write(model)).rejects.toThrow()
   }
 
   async testDupWrite () {
-    const batcher = new db.__private__.__WriteBatcher()
+    const batcher = new db.__private.__WriteBatcher()
     const model = await txGet(BasicModel, 'id')
     batcher.track(model)
     model.noRequiredNoDefault += 1
@@ -693,7 +693,7 @@ class WriteBatcherTest extends BaseTest {
   }
 
   async testReadonly () {
-    const batcher = new db.__private__.__WriteBatcher()
+    const batcher = new db.__private.__WriteBatcher()
     const model1 = await txGet(BasicModel, this.modelNames[0])
     const model2 = await txGet(BasicModel, this.modelNames[1])
     batcher.track(model1)
@@ -730,7 +730,7 @@ class WriteBatcherTest extends BaseTest {
       }
     }
 
-    const batcher = new db.__private__.__WriteBatcher()
+    const batcher = new db.__private.__WriteBatcher()
     expect(() => {
       batcher.__extractError(response)
     }).not.toThrow()

@@ -6,7 +6,7 @@ const db = require('../src/dynamodb')
 class CommonFieldTest extends BaseTest {
   testFieldSubclassValueType () {
     // Subclasses of __Field must supply a valueType
-    const field = new db.__private__.__Field()
+    const field = new db.__private.__Field()
     expect(() => {
       field.valueType // eslint-disable-line no-unused-expressions
     }).toThrow()
