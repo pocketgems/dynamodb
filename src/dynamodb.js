@@ -1615,10 +1615,9 @@ class Transaction {
    * @param {Object} updated Final values for the model.
    *   Values for every field in the model must be provided. Fields with
    *   `undefined` value will be removed from DB.
-   * @param {Object} [params] Parameters to be passed to model's constructor
    */
-  createOrPut (Cls, original, updated, params) {
-    const model = new Cls(params)
+  createOrPut (Cls, original, updated) {
+    const model = new Cls()
     model.__splitIDFromOtherFields(original)
     model.__setupModel(original, true,
       model.constructor.__INIT_METHOD.CREATE_OR_PUT)
@@ -1647,11 +1646,9 @@ class Transaction {
    * @param {Model} Cls A Model class.
    * @param {CompositeID|Object} data A superset of CompositeID of the model,
    *   plus any data for Fields on the Model.
-   * @param {GetParams} params Passed into Model's constructor. Options related
-   *   to DB are useless.
    */
-  create (Cls, data, params) {
-    const model = new Cls(params)
+  create (Cls, data) {
+    const model = new Cls()
     const [compositeID, modelData] = model.__splitIDFromOtherFields(data)
     model.__setupModel(compositeID, true,
       model.constructor.__INIT_METHOD.CREATE)
