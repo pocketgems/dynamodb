@@ -511,6 +511,16 @@ class KeyTest extends BaseTest {
     ])
   }
 
+  async testSortKey () {
+    const id = uuidv4()
+    const compositeID = { id, rangeKey: 1 }
+    await txCreate(RangeKeyModel, compositeID)
+    const model = await txGet(RangeKeyModel, compositeID)
+    expect(model.id).toBe(id)
+    expect(model.rangeKey).toBe(1)
+    expect(model._sk).toBe('1')
+  }
+
   async testValidKey () {
     SimpleModel.key(uuidv4())
     SimpleModel.key({ id: uuidv4() })

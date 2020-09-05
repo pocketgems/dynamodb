@@ -132,7 +132,7 @@ function loadOptionDefaults (options, defaults) {
  */
 class __Field {
   static __validateFieldOptions (keyType, fieldName, options) {
-    if (fieldName.startsWith('_')) {
+    if (fieldName.startsWith('_') && fieldName !== '_sk') {
       throw new InvalidFieldError(
         fieldName, 'property names may not start with "_"')
     }
@@ -1181,9 +1181,9 @@ class Model {
         field.name = key
 
         const keyType = field.keyType
-        if (keyType !== 'HASH' || key === 'id') {
-          // hash fields are implicitly included in the "id" field; they are
-          // otherwise ignored!
+        if (!keyType || key === 'id' || key === '_sk') {
+          // key fields are implicitly included in the "id" or "_sk" field;
+          // they are otherwise ignored!
           this.__fields[key] = field
         }
         const val = vals[key]
