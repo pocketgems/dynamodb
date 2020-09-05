@@ -1,32 +1,36 @@
+const S = require('fluent-schema')
 const uuidv4 = require('uuid').v4
 
 const { BaseTest, runTests } = require('./base-unit-test')
 const db = require('../src/dynamodb')
 
-async function txGet (key, id, func, addRequiredField) {
+async function txGetGeneric (cls, id, func) {
   return db.Transaction.run(async tx => {
-    const model = await tx.get(key, id,
-      { createIfMissing: true, addRequiredField })
+    const model = await tx.get(cls, id, { createIfMissing: true })
     if (func) {
       func(model)
     }
     return model
   })
 }
+async function txGet (id, func) {
+  return txGetGeneric(TransactionModel, id, func)
+}
+async function txGetRequired (id, func) {
+  return txGetGeneric(TransactionModelWithRequiredField, id, func)
+}
 
 class TransactionModel extends db.Model {
-  constructor (params) {
-    super()
-    this.params = params || {}
-    this.field1 = db.NumberField({ optional: true })
-    this.field2 = db.NumberField({ optional: true })
-    this.arrField = db.ArrayField({ optional: true })
-    this.objField = db.ObjectField({ optional: true })
-
-    if (this.params.addRequiredField) {
-      this.required = db.NumberField()
-    }
+  static PRIMARY_KEY = S.string().minLength(1)
+  static FIELDS = {
+    field1: { schema: S.number(), optional: true },
+    field2: { schema: S.number(), optional: true },
+    arrField: { schema: S.array(), optional: true },
+    objField: { schema: S.object(), optional: true }
   }
+}
+class TransactionModelWithRequiredField extends TransactionModel {
+  static FIELDS = { ...super.FIELDS, required: S.number() }
 }
 
 class QuickTransactionTest extends BaseTest {
@@ -38,7 +42,9 @@ class QuickTransactionTest extends BaseTest {
   }
 
   async setUp () {
-    super.setUp()
+    await super.setUp()
+    await TransactionModel.createUnittestResource()
+    await TransactionModelWithRequiredField.createUnittestResource()
     this.oldTransactionOptions = db.Transaction.prototype.defaultOptions
     const newOptions = Object.assign({}, this.oldTransactionOptions)
     Object.assign(newOptions, { retries: 1, initialBackoff: 20 })
@@ -94,11 +100,6 @@ class ParameterTest extends BaseTest {
 }
 
 class TransactionGetTest extends QuickTransactionTest {
-  async setUp () {
-    await super.setUp()
-    await TransactionModel.createUnittestResource()
-  }
-
   async testGetItemTwice () {
     await db.Transaction.run(async (tx) => {
       await tx.get(TransactionModel, 'a',
@@ -153,19 +154,26 @@ class TransactionGetTest extends QuickTransactionTest {
   }
 
   async testGetWithParams () {
-    const params = { something: { unique: 123321 }, createIfMissing: true }
+    const params = { createIfMissing: true }
     await db.Transaction.run(async (tx) => {
       const [m1, m2] = await tx.get([
         TransactionModel.key('a'),
         TransactionModel.key('b')
       ], params)
-      expect(m1.params).toStrictEqual(params)
-      expect(m2.params).toStrictEqual(params)
-
       const m3 = await tx.get(TransactionModel, 'c', params)
       const m4 = await tx.get(TransactionModel.key('d'), params)
-      expect(m3.params).toStrictEqual(params)
-      expect(m4.params).toStrictEqual(params)
+      const m5 = await tx.get(TransactionModel.key('e'))
+      expect(m1.id).toBe('a')
+      expect(m2.id).toBe('b')
+      expect(m3.id).toBe('c')
+      expect(m4.id).toBe('d')
+      expect(m5).toBe(undefined)
+    })
+    await db.Transaction.run(async tx => {
+      const m4NoCreateIfMissing = await tx.get(TransactionModel.key('d'))
+      expect(m4NoCreateIfMissing.id).toBe('d')
+      const m5 = await tx.get(TransactionModel.key('e'))
+      expect(m5).toBe(undefined)
     })
   }
 
@@ -196,9 +204,8 @@ class TransactionGetTest extends QuickTransactionTest {
 class TransactionWriteTest extends QuickTransactionTest {
   async setUp () {
     await super.setUp()
-    await TransactionModel.createUnittestResource()
     this.modelName = '1234'
-    await txGet(TransactionModel, this.modelName, model => {
+    await txGet(this.modelName, model => {
       model.field1 = 0
       model.field2 = 0
     })
@@ -211,7 +218,7 @@ class TransactionWriteTest extends QuickTransactionTest {
       const txModel = await tx.get(key, { createIfMissing: true })
       txModel.field1 = val
     })
-    const model = await txGet(key.Cls, key.compositeID)
+    const model = await txGet(key.compositeID)
     expect(model.field1).toBe(val)
   }
 
@@ -224,7 +231,7 @@ class TransactionWriteTest extends QuickTransactionTest {
       expect(txModel.isNew).toBe(true)
       txModel.field1 = val
     })
-    const model = await txGet(key.Cls, key.compositeID)
+    const model = await txGet(key.compositeID)
     expect(model.isNew).toBe(false)
     expect(model.field1).toBe(val)
   }
@@ -235,7 +242,7 @@ class TransactionWriteTest extends QuickTransactionTest {
       const model = tx.create(TransactionModel, { id: name, field1: 987 })
       model.field2 = 1
     })
-    const model = await txGet(TransactionModel, name)
+    const model = await txGet(name)
     expect(model.field1).toBe(987)
   }
 
@@ -257,7 +264,7 @@ class TransactionWriteTest extends QuickTransactionTest {
     const key = TransactionModel.key(uuidv4())
     const fut = db.Transaction.run({ retries: 0 }, async (tx) => {
       const txModel = await tx.get(key, { createIfMissing: true })
-      await txGet(key.Cls, key.compositeID, model => {
+      await txGet(key.compositeID, model => {
         model.field2 = 321
       })
 
@@ -267,7 +274,7 @@ class TransactionWriteTest extends QuickTransactionTest {
       txModel.field1 = 123
     })
     await expect(fut).rejects.toThrow(db.TransactionFailedError)
-    const result = await txGet(key.Cls, key.compositeID)
+    const result = await txGet(key.compositeID)
     expect(result.field2).toBe(321)
   }
 
@@ -278,7 +285,7 @@ class TransactionWriteTest extends QuickTransactionTest {
     const key = TransactionModel.key(this.modelName)
     const fut = db.Transaction.run({ retries: 0 }, async (tx) => {
       const txModel = await tx.get(key, { createIfMissing: true })
-      await txGet(key.Cls, key.compositeID, model => {
+      await txGet(key.compositeID, model => {
         model.field2 += 1
         result = model.field2
       })
@@ -287,7 +294,7 @@ class TransactionWriteTest extends QuickTransactionTest {
       txModel.field1 = 123
     })
     await expect(fut).rejects.toThrow(db.TransactionFailedError)
-    const m = await txGet(key.Cls, key.compositeID)
+    const m = await txGet(key.compositeID)
     expect(m.field2).toBe(result)
   }
 
@@ -325,7 +332,7 @@ class TransactionWriteTest extends QuickTransactionTest {
       model.objField = { a: deepObj }
     })
     deepObj.a = 32
-    const updated = await txGet(key.Cls, key.compositeID)
+    const updated = await txGet(key.compositeID)
     expect(updated.objField.a.a).toBe(12)
     expect(updated.arrField[0].a).toBe(12)
   }
@@ -338,14 +345,14 @@ class TransactionWriteTest extends QuickTransactionTest {
     const key = TransactionModel.key(this.modelName)
     await db.Transaction.run(async (tx) => {
       const txModel = await tx.get(key, { createIfMissing: true })
-      const model = await txGet(key.Cls, key.compositeID, model => {
+      const model = await txGet(key.compositeID, model => {
         model.field2 += 1
       })
 
       txModel.field1 += 1
       finalVal = [txModel.field1, model.field2]
     })
-    const updated = await txGet(key.Cls, key.compositeID)
+    const updated = await txGet(key.compositeID)
     expect(updated.field1).toBe(finalVal[0])
     expect(updated.field2).toBe(finalVal[1])
   }
@@ -370,7 +377,7 @@ class TransactionWriteTest extends QuickTransactionTest {
         { id },
         { field1: 3, field2: 1, arrField: undefined, objField: undefined })
     })
-    let model = await txGet(TransactionModel, id)
+    let model = await txGet(id)
     expect(model.field1).toBe(3)
 
     await db.Transaction.run(async tx => {
@@ -383,7 +390,7 @@ class TransactionWriteTest extends QuickTransactionTest {
           objField: undefined
         })
     })
-    model = await txGet(TransactionModel, id)
+    model = await txGet(id)
     expect(model.field2).toBe(567)
   }
 
@@ -421,7 +428,7 @@ class TransactionWriteTest extends QuickTransactionTest {
 
   async testUpdateItem () {
     const key = TransactionModel.key(this.modelName)
-    const origModel = await txGet(key.Cls, key.compositeID)
+    const origModel = await txGet(key.compositeID)
     const newVal = Math.floor(Math.random() * 9999999)
     await db.Transaction.run(async tx => {
       const original = {}
@@ -433,7 +440,7 @@ class TransactionWriteTest extends QuickTransactionTest {
       })
       tx.update(key.Cls, original, { field1: newVal })
     })
-    const updated = await txGet(key.Cls, key.compositeID)
+    const updated = await txGet(key.compositeID)
     expect(updated.field1).toBe(newVal)
   }
 
@@ -448,36 +455,35 @@ class TransactionWriteTest extends QuickTransactionTest {
   }
 
   async testUpdateOtherFields () {
-    await txGet(TransactionModel, this.modelName, (m) => { m.field2 = 2 })
+    await txGet(this.modelName, (m) => { m.field2 = 2 })
     await db.Transaction.run(async tx => {
       tx.update(
         TransactionModel,
         { id: this.modelName, field2: 2 },
         { field1: 1 })
     })
-    const model = await txGet(TransactionModel, this.modelName)
+    const model = await txGet(this.modelName)
     expect(model.field1).toBe(1)
   }
 
   async testCreatePartialModel () {
     let fut = db.Transaction.run(async tx => {
       tx.createOrPut(
-        TransactionModel,
+        TransactionModelWithRequiredField,
         { id: this.modelName },
         {
           field1: 1,
           field2: 2,
           arrField: undefined,
           objField: undefined
-        },
-        { addRequiredField: true }
+        }
       )
     })
     await expect(fut).rejects.toThrow(db.InvalidParameterError)
 
     fut = db.Transaction.run(async tx => {
       tx.createOrPut(
-        TransactionModel,
+        TransactionModelWithRequiredField,
         { id: this.modelName },
         {
           field1: 1,
@@ -485,15 +491,14 @@ class TransactionWriteTest extends QuickTransactionTest {
           arrField: undefined,
           objField: undefined,
           required: undefined
-        },
-        { addRequiredField: true }
+        }
       )
     })
     await expect(fut).rejects.toThrow(db.InvalidFieldError)
 
     await db.Transaction.run(async tx => {
       tx.createOrPut(
-        TransactionModel,
+        TransactionModelWithRequiredField,
         { id: this.modelName },
         {
           field1: 111222,
@@ -501,12 +506,10 @@ class TransactionWriteTest extends QuickTransactionTest {
           arrField: undefined,
           objField: undefined,
           required: 333444
-        },
-        { addRequiredField: true }
+        }
       )
     })
-    const model = await txGet(TransactionModel, this.modelName,
-      undefined, true)
+    const model = await txGetRequired(this.modelName)
     expect(model.field1).toBe(111222)
     expect(model.required).toBe(333444)
   }
@@ -526,7 +529,7 @@ class TransactionWriteTest extends QuickTransactionTest {
         }
       )
     })
-    let model = await txGet(TransactionModel, name)
+    let model = await txGet(name)
     expect(model.field1).toBe(333222)
 
     // New model should work with conditions too
@@ -542,7 +545,7 @@ class TransactionWriteTest extends QuickTransactionTest {
         }
       )
     })
-    model = await txGet(TransactionModel, name)
+    model = await txGet(name)
     expect(model.field1).toBe(123123)
   }
 
@@ -560,7 +563,7 @@ class TransactionWriteTest extends QuickTransactionTest {
         }
       )
     })
-    let model = await txGet(TransactionModel, name)
+    let model = await txGet(name)
     expect(model.field1).toBe(9988234)
 
     const fut = db.Transaction.run(async tx => {
@@ -587,7 +590,7 @@ class TransactionWriteTest extends QuickTransactionTest {
         }
       )
     })
-    model = await txGet(TransactionModel, name)
+    model = await txGet(name)
     expect(model.field1).toBe(9988234)
     expect(model.field2).toBe(111)
   }
@@ -595,21 +598,21 @@ class TransactionWriteTest extends QuickTransactionTest {
   async testUpdatePartialModel () {
     // Make sure only fields to be updated are validated.
     const modelName = uuidv4()
-    const fut = txGet(TransactionModel, { id: modelName }, undefined, true)
+    const fut = txGetRequired({ id: modelName })
     await expect(fut).rejects.toThrow() // Missing required field, should fail
 
-    const model = await txGet(TransactionModel, { id: modelName }, (m) => {
+    const model = await txGetRequired({ id: modelName }, (m) => {
       m.required = 1 // With required field, should work.
       m.field1 = 1
-    }, true)
+    })
     const newVal = Math.floor(Math.random() * 99999999)
     await db.Transaction.run(async tx => {
       tx.update(
-        TransactionModel,
+        TransactionModelWithRequiredField,
         { id: modelName, field1: model.field1 },
         { field1: newVal })
     })
-    const updated = await txGet(TransactionModel, { id: modelName })
+    const updated = await txGetRequired({ id: modelName })
     expect(updated.field1).toBe(newVal)
   }
 

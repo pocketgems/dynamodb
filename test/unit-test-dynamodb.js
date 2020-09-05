@@ -1,6 +1,6 @@
 const { BaseServiceTest, runTests } = require('./base-unit-test')
 const db = require('../src/dynamodb')
-const PropData = require('../src/sharedlib-apis-dynamodb').models[1]
+const { PropDataModels } = require('../src/sharedlib-apis-dynamodb')
 
 function getURI (postfix) {
   return '/internal/sharedlib' + postfix
@@ -22,10 +22,10 @@ class DynamodbLibTest extends BaseServiceTest {
   }
 
   async testWriteItem () {
-    expect(PropData.name).toBe('PropData') // check the import is correct
+    const PropData1 = PropDataModels['1']
     async function getItem () {
       return db.Transaction.run(tx => {
-        return tx.get(PropData, 'a:1',
+        return tx.get(PropData1, 'a:1',
           { createIfMissing: true, propCount: 1 })
       })
     }

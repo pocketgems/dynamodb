@@ -4,46 +4,49 @@ const { BaseTest, runTests } = require('./base-unit-test')
 const db = require('../src/dynamodb')
 
 class CommonFieldTest extends BaseTest {
-  testFieldSubclassValueType () {
-    // Subclasses of __Field must supply a valueType
-    const field = new db.__private.__Field()
-    expect(() => {
-      field.valueType // eslint-disable-line no-unused-expressions
-    }).toThrow()
-  }
-
   makeSureMutableFieldWorks (field) {
-    expect(field.validate()).toBe(true)
+    field.validate()
     field.set(1)
     expect(field.get()).toBe(1)
-    expect(field.validate()).toBe(true)
+    field.validate()
     field.set(2)
     expect(field.get()).toBe(2)
-    expect(field.validate()).toBe(true)
+    field.validate()
   }
 
   testFieldMutableByDefault () {
     // Make sure fields are mutable by default && they can be mutated
-    this.makeSureMutableFieldWorks(db.NumberField({ optional: true }))
+    this.makeSureMutableFieldWorks(db.__private.NumberField({ optional: true }))
   }
 
   testMutableField () {
     // Make sure explicit mutable field works
-    this.makeSureMutableFieldWorks(db.NumberField({ optional: true }))
+    this.makeSureMutableFieldWorks(db.__private.NumberField({ optional: true }))
   }
 
   testInvalidFieldOption () {
     expect(() => {
-      db.NumberField({ aaaa: 1 }) // eslint-disable-line no-new
+      db.__private.NumberField({ aaaa: 1 }) // eslint-disable-line no-new
     }).toThrow(db.InvalidOptionsError)
+    expect(() => {
+      db.__private.__Field.__validateFieldOptions(
+        undefined, 'okName', { schema: S.string(), keyType: 'HASH' })
+    }).toThrow(/keyType cannot be specified/)
+  }
+
+  testInvalidFieldName () {
+    expect(() => {
+      db.__private.__Field.__validateFieldOptions(
+        undefined, '__nope', { schema: S.string() })
+    }).toThrow(/may not start with/)
   }
 
   testImmutableFieldNoDefault () {
-    const field = db.NumberField({ immutable: true, optional: true })
-    expect(field.validate()).toBe(true)
+    const field = db.__private.NumberField({ immutable: true, optional: true })
+    field.validate()
     field.set(1)
     expect(field.get()).toBe(1)
-    expect(field.validate()).toBe(true)
+    field.validate()
     expect(() => {
       field.set(2)
     }).toThrow(db.InvalidFieldError)
@@ -53,7 +56,7 @@ class CommonFieldTest extends BaseTest {
   }
 
   testImmutableFieldWithDefault () {
-    const field = db.NumberField({ immutable: true, default: 1 })
+    const field = db.__private.NumberField({ immutable: true, default: 1 })
     expect(() => {
       field.set(2)
     }).toThrow(db.InvalidFieldError)
@@ -63,9 +66,8 @@ class CommonFieldTest extends BaseTest {
   }
 
   testImmutableFieldWithUndefineDefault () {
-    const field = db.NumberField({
+    const field = db.__private.NumberField({
       immutable: true,
-      default: undefined,
       optional: true
     })
     field.set(2)
@@ -80,14 +82,14 @@ class CommonFieldTest extends BaseTest {
   }
 
   testFlagsExist () {
-    const field = db.NumberField()
+    const field = db.__private.NumberField()
     this.allFlags.forEach(flag => {
       expect(Object.prototype.hasOwnProperty.call(field, flag)).toBe(true)
     })
   }
 
   testFlagsImmutable () {
-    const field = db.NumberField()
+    const field = db.__private.NumberField()
     this.allFlags.forEach(flag => {
       expect(() => {
         field[flag] = 1
@@ -96,7 +98,7 @@ class CommonFieldTest extends BaseTest {
   }
 
   testFieldNotExtendable () {
-    const field = db.NumberField()
+    const field = db.__private.NumberField()
     field.__setup(1)
     expect(() => {
       field.invalidProperty = undefined
@@ -106,7 +108,7 @@ class CommonFieldTest extends BaseTest {
   testMutatedFlagWithDefault () {
     // Fields with default are mutated by default also
     // so this field will be tranmitted to server on update
-    const field = db.NumberField({ default: 1, optional: true })
+    const field = db.__private.NumberField({ default: 1, optional: true })
     expect(field.mutated).toBe(true)
 
     // Setting field back to undefined makes it not mutated
@@ -116,13 +118,13 @@ class CommonFieldTest extends BaseTest {
 
   testMutatedFlagWithUndefinedDefault () {
     // Undefined values, shouldn't be mutated
-    const field = db.NumberField({ default: undefined, optional: true })
+    const field = db.__private.NumberField({ optional: true })
     expect(field.mutated).toBe(false)
   }
 
   testMutatedFlagNoDefault () {
     // Fields with no default aren't mutated after initialization
-    let field = db.NumberField({ optional: true })
+    let field = db.__private.NumberField({ optional: true })
     expect(field.mutated).toBe(false)
 
     // Public methods don't affect mutated flag except for `set`
@@ -138,7 +140,7 @@ class CommonFieldTest extends BaseTest {
 
     // Setting up a field makes it mutated
     // So read values from server will not be sent back on update
-    field = db.NumberField()
+    field = db.__private.NumberField()
     field.__setup(1)
     expect(field.mutated).toBe(false)
   }
@@ -147,12 +149,12 @@ class CommonFieldTest extends BaseTest {
     // Array and Object fields detects nested mutation correctly
     const deepobj = {}
     const arr = [1, 2, 3, deepobj]
-    const arrayField = db.ArrayField()
+    const arrayField = db.__private.ArrayField()
     arrayField.__setup(arr)
     expect(arrayField.mutated).toBe(false)
 
     const obj = { key: arr }
-    const objectField = db.ObjectField()
+    const objectField = db.__private.ObjectField()
     objectField.__setup(obj)
     expect(objectField.mutated).toBe(false)
 
@@ -163,7 +165,7 @@ class CommonFieldTest extends BaseTest {
 
   testInitialValue () {
     // Initial value is default
-    const field = db.NumberField({ default: 1 })
+    const field = db.__private.NumberField({ default: 1 })
     expect(field.__initialValue).toBe(undefined)
 
     field.set(2)
@@ -174,121 +176,106 @@ class CommonFieldTest extends BaseTest {
     expect(field.__initialValue).toBe(2)
   }
 
-  testKeyTypeFlag () {
-    db.NumberField({ keyType: 'HASH' }) // eslint-disable-line no-new
-    db.NumberField({ keyType: 'RANGE' }) // eslint-disable-line no-new
-    db.NumberField({ keyType: undefined }) // eslint-disable-line no-new
-    expect(() => {
-      db.NumberField({ keyType: 1 }) // eslint-disable-line no-new
-    }).toThrow(db.InvalidOptionsError)
-  }
-
   testHashKeyImmutable () {
-    let field = db.NumberField({ keyType: 'HASH' })
+    let field = db.__private.NumberField({ keyType: 'HASH' })
     expect(field.immutable).toBe(true)
 
     expect(() => {
-      db.NumberField({ keyType: 'HASH', immutable: false })
+      db.__private.NumberField({ keyType: 'HASH', immutable: false })
     }).toThrow(db.InvalidOptionsError)
 
-    field = db.NumberField({ keyType: 'HASH', immutable: true })
+    field = db.__private.NumberField({ keyType: 'HASH', immutable: true })
     expect(field.immutable).toBe(true)
 
-    field = db.NumberField({ keyType: 'RANGE' })
+    field = db.__private.NumberField({ keyType: 'RANGE' })
     expect(field.immutable).toBe(true)
 
     expect(() => {
-      db.NumberField({ keyType: 'RANGE', immutable: false })
+      db.__private.NumberField({ keyType: 'RANGE', immutable: false })
     }).toThrow(db.InvalidOptionsError)
 
-    field = db.NumberField({ keyType: 'RANGE', immutable: true })
+    field = db.__private.NumberField({ keyType: 'RANGE', immutable: true })
     expect(field.immutable).toBe(true)
   }
 
   testKeyNoDefault () {
-    let field = db.NumberField({ keyType: 'HASH' })
+    let field = db.__private.NumberField({ keyType: 'HASH' })
     expect(field.default).toBe(undefined)
 
     expect(() => {
-      db.NumberField({ keyType: 'HASH', default: undefined })
+      db.__private.NumberField({ keyType: 'HASH', default: 1 })
     }).toThrow(db.InvalidOptionsError)
 
-    expect(() => {
-      db.NumberField({ keyType: 'HASH', default: 1 })
-    }).toThrow(db.InvalidOptionsError)
-
-    field = db.NumberField({ keyType: 'RANGE' })
+    field = db.__private.NumberField({ keyType: 'RANGE' })
     expect(field.default).toBe(undefined)
 
     expect(() => {
-      db.NumberField({ keyType: 'RANGE', default: undefined })
-    }).toThrow(db.InvalidOptionsError)
-
-    expect(() => {
-      db.NumberField({ keyType: 'RANGE', default: 1 })
+      db.__private.NumberField({ keyType: 'RANGE', default: 1 })
     }).toThrow(db.InvalidOptionsError)
   }
 
   testKeyRequired () {
-    let field = db.NumberField({ keyType: 'HASH' })
+    let field = db.__private.NumberField({ keyType: 'HASH' })
     expect(field.optional).toBe(false)
 
-    field = db.NumberField({ keyType: 'HASH' })
+    field = db.__private.NumberField({ keyType: 'HASH' })
     expect(field.optional).toBe(false)
 
     expect(() => {
-      db.NumberField({ keyType: 'HASH', optional: true })
+      db.__private.NumberField({ keyType: 'HASH', optional: true })
     }).toThrow(db.InvalidOptionsError)
-    field = db.NumberField({ keyType: 'HASH', optional: undefined })
+    field = db.__private.NumberField({ keyType: 'HASH', optional: undefined })
     expect(field.optional).toBe(false)
 
     expect(() => {
-      db.NumberField({ keyType: 'HASH', optional: '' })
+      db.__private.NumberField({ keyType: 'HASH', optional: '' })
     }).toThrow(db.InvalidOptionsError)
 
-    field = db.NumberField({ keyType: 'RANGE' })
+    field = db.__private.NumberField({ keyType: 'RANGE' })
     expect(field.optional).toBe(false)
 
-    field = db.NumberField({ keyType: 'RANGE', optional: false })
+    field = db.__private.NumberField({ keyType: 'RANGE', optional: false })
     expect(field.optional).toBe(false)
 
     expect(() => {
-      db.NumberField({ keyType: 'RANGE', optional: true })
+      db.__private.NumberField({ keyType: 'RANGE', optional: true })
     }).toThrow(db.InvalidOptionsError)
-    field = db.NumberField({ keyType: 'RANGE', optional: undefined })
+    field = db.__private.NumberField({ keyType: 'RANGE', optional: undefined })
     expect(field.optional).toBe(false)
 
     expect(() => {
-      db.NumberField({ keyType: 'RANGE', optional: '' })
+      db.__private.NumberField({ keyType: 'RANGE', optional: '' })
     }).toThrow(db.InvalidOptionsError)
   }
 
   testRequiredFlag () {
     // Required w/o default
-    let field = db.NumberField()
+    let field = db.__private.NumberField()
     expect(() => {
       field.validate()
     }).toThrow(db.InvalidFieldError)
 
     field.set(1)
-    expect(field.validate()).toBe(true)
+    field.validate()
 
     // Required w/ default
-    field = db.NumberField({ default: 1 })
-    expect(field.validate()).toBe(true)
+    field = db.__private.NumberField({ default: 1 })
+    field.validate()
 
-    // Required w/ undefined as default. WHY?
+    // Required w/ undefined as default. There's no point since the default is
+    // already undefined. So we disallow this so there's only one right way
+    // for the default value to be undefined.
     expect(() => {
       const opts = { default: undefined }
-      db.NumberField(opts) // eslint-disable-line no-new
+      db.__private.NumberField(opts) // eslint-disable-line no-new
     }).toThrow(db.InvalidFieldError)
   }
 
   testAccessedFlag () {
-    let field = db.NumberField({ default: 1, optional: true })
+    let field = db.__private.NumberField({ default: 1, optional: true })
     expect(field.accessed).toBe(false)
 
-    field = db.NumberField({ optional: true })
+    field = db.__private.NumberField({ optional: true })
     expect(field.accessed).toBe(false)
 
     field.validate()
@@ -303,7 +290,7 @@ class CommonFieldTest extends BaseTest {
     field.get()
     expect(field.accessed).toBe(true)
 
-    field = db.NumberField()
+    field = db.__private.NumberField()
     field.set(1)
     expect(field.accessed).toBe(true)
   }
@@ -312,7 +299,7 @@ class CommonFieldTest extends BaseTest {
     // When an invalid value is set to a field, an exception will be thrown.
     // But we need to make sure even if somehow the error is caught and ignored
     // the field remains valid.
-    const field = db.NumberField({ default: 987 })
+    const field = db.__private.NumberField({ default: 987 })
     expect(() => {
       field.set('123')
     }).toThrow(db.InvalidFieldError)
@@ -321,43 +308,41 @@ class CommonFieldTest extends BaseTest {
 }
 
 class FieldSchemaTest extends BaseTest {
-  testInvalidSchemaType () {
-    // Make sure mixed schema and field types yields an error at creation time
-    expect(() => {
-      db.NumberField({ schema: S.object() })
-    }).toThrow(db.InvalidOptionsError)
-    expect(() => {
-      db.ObjectField({ schema: S.array() })
-    }).toThrow(db.InvalidOptionsError)
-    expect(() => {
-      db.ArrayField({ schema: S.object() })
-    }).toThrow(db.InvalidOptionsError)
-  }
-
   testValidSchemaType () {
-    db.NumberField({ schema: S.number() })
-    db.StringField({ schema: S.string() })
-    db.ArrayField({ schema: S.array() })
-    db.ObjectField({ schema: S.object() })
+    db.__private.NumberField({ schema: S.number() })
+    db.__private.StringField({ schema: S.string() })
+    db.__private.ArrayField({ schema: S.array() })
+    db.__private.ObjectField({ schema: S.object() })
   }
 
   testInvalidSchema () {
     // Make sure schema compilation is checked at field initilization time
     expect(() => {
-      db.NumberField({ schema: { oaisjdf: 'aosijdf' } })
+      db.__private.NumberField({ schema: { oaisjdf: 'aosijdf' } })
     }).toThrow()
+  }
+
+  testInvalidSchemaType () {
+    const badSchema = {
+      isFluentSchema: true,
+      type: 'mystery'
+    }
+    expect(() => {
+      db.__private.__Field.__validateFieldOptions(
+        undefined, 'nameIsFine', { schema: badSchema })
+    }).toThrow(/unsupported field type/)
   }
 
   testInvalidDefault () {
     // Make sure default values are checked against schema
     expect(() => {
-      db.StringField({ schema: S.string().minLength(8), default: '123' })
+      db.__private.StringField({ schema: S.string().minLength(8), default: '123' })
     }).toThrow(db.InvalidFieldError)
   }
 
   testStringValidation () {
     // Make sure string schema is checked
-    const field = db.StringField({
+    const field = db.__private.StringField({
       schema: S.string().minLength(8).maxLength(9)
     })
     expect(() => {
@@ -373,7 +358,7 @@ class FieldSchemaTest extends BaseTest {
 
   testInvalidObject () {
     // Make sure object schema is checked
-    const field = db.ObjectField({
+    const field = db.__private.ObjectField({
       schema: S.object().prop('abc', S.string().required())
     })
 
@@ -447,7 +432,7 @@ class RepeatedFieldTest extends BaseTest {
 
 class NumberFieldTest extends RepeatedFieldTest {
   get fieldFactory () {
-    return db.NumberField
+    return db.__private.NumberField
   }
 
   get valueType () {
@@ -455,8 +440,7 @@ class NumberFieldTest extends RepeatedFieldTest {
   }
 
   testRequiredFlagWithFalsyValue () {
-    const field = this.fieldFactory({ default: 0 })
-    expect(field.validate()).toBe(true)
+    this.fieldFactory({ default: 0 }).validate()
   }
 
   testImmutableFlagWithFalsyValue () {
@@ -467,13 +451,13 @@ class NumberFieldTest extends RepeatedFieldTest {
   }
 
   testIncrementByUndefined () {
-    const field = db.NumberField()
+    const field = db.__private.NumberField()
     field.incrementBy(123321)
     expect(field.get()).toBe(123321)
   }
 
   testIncrementByMultipleTimes () {
-    const field = db.NumberField()
+    const field = db.__private.NumberField()
     field.incrementBy(1)
     field.incrementBy(123)
     field.incrementBy(321)
@@ -481,13 +465,13 @@ class NumberFieldTest extends RepeatedFieldTest {
   }
 
   testMixingSetAndIncrementBy () {
-    let field = db.NumberField()
+    let field = db.__private.NumberField()
     field.incrementBy(1)
     expect(() => {
       field.set(2)
     }).toThrow()
 
-    field = db.NumberField()
+    field = db.__private.NumberField()
     field.set(1)
     expect(() => {
       field.incrementBy(1)
@@ -495,14 +479,14 @@ class NumberFieldTest extends RepeatedFieldTest {
   }
 
   testDefaultThenIncrementBy () {
-    const field = db.NumberField({ default: 1 })
+    const field = db.__private.NumberField({ default: 1 })
     expect(() => {
       field.incrementBy(1)
     }).not.toThrow()
   }
 
   testIncrementByNoConditionExpression () {
-    const field = db.NumberField()
+    const field = db.__private.NumberField()
     field.__setup(0)
     field.incrementBy(1)
     expect(field.accessed).toBe(true)
@@ -511,7 +495,7 @@ class NumberFieldTest extends RepeatedFieldTest {
   }
 
   testIncrementByImmutable () {
-    const field = db.NumberField({ immutable: true })
+    const field = db.__private.NumberField({ immutable: true })
     field.incrementBy(1) // Fine
     expect(() => {
       field.incrementBy(2)
@@ -519,7 +503,7 @@ class NumberFieldTest extends RepeatedFieldTest {
   }
 
   testReadThenIncrementBy () {
-    const field = db.NumberField({ immutable: true })
+    const field = db.__private.NumberField({ immutable: true })
     field.get()
     expect(() => {
       field.incrementBy(788)
@@ -530,7 +514,7 @@ class NumberFieldTest extends RepeatedFieldTest {
   testIncrementByLockInitialUndefined () {
     // Make sure when a field's initial value is undefined (doesn't exists on
     // server), optimistic locking is still performed.
-    const field = db.NumberField({ immutable: true })
+    const field = db.__private.NumberField({ immutable: true })
     field.incrementBy(788)
     expect(field.shouldLock).toBe(true)
   }
@@ -538,7 +522,7 @@ class NumberFieldTest extends RepeatedFieldTest {
 
 class StringFieldTest extends RepeatedFieldTest {
   get fieldFactory () {
-    return db.StringField
+    return db.__private.StringField
   }
 
   get valueType () {
@@ -546,8 +530,7 @@ class StringFieldTest extends RepeatedFieldTest {
   }
 
   testRequiredFlagWithFalsyValue () {
-    const field = this.fieldFactory({ default: '' })
-    expect(field.validate()).toBe(true)
+    this.fieldFactory({ default: '' }).validate()
   }
 
   testImmutableFlagWithFalsyValue () {
@@ -560,7 +543,7 @@ class StringFieldTest extends RepeatedFieldTest {
 
 class ObjectFieldTest extends RepeatedFieldTest {
   get fieldFactory () {
-    return db.ObjectField
+    return db.__private.ObjectField
   }
 
   get valueType () {
@@ -569,7 +552,7 @@ class ObjectFieldTest extends RepeatedFieldTest {
 
   testDefaultDeepCopy () {
     const def = { a: { b: 1 } }
-    const field = db.ObjectField({ default: def })
+    const field = db.__private.ObjectField({ default: def })
     def.a.b = 2
     expect(field.get().a.b).toBe(1)
   }
@@ -577,7 +560,7 @@ class ObjectFieldTest extends RepeatedFieldTest {
 
 class BooleanFieldTest extends RepeatedFieldTest {
   get fieldFactory () {
-    return db.BooleanField
+    return db.__private.BooleanField
   }
 
   get valueType () {
@@ -585,8 +568,7 @@ class BooleanFieldTest extends RepeatedFieldTest {
   }
 
   testRequiredFlagWithFalsyValue () {
-    const field = this.fieldFactory({ default: false })
-    expect(field.validate()).toBe(true)
+    this.fieldFactory({ default: false }).validate()
   }
 
   testImmutableFlagWithFalsyValue () {
@@ -599,7 +581,7 @@ class BooleanFieldTest extends RepeatedFieldTest {
 
 class ArrayFieldTest extends RepeatedFieldTest {
   get fieldFactory () {
-    return db.ArrayField
+    return db.__private.ArrayField
   }
 
   get valueType () {

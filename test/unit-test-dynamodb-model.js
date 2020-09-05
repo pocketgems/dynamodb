@@ -7,6 +7,70 @@ const db = require('../src/dynamodb')
 const CONDITION_EXPRESSION_STR = 'ConditionExpression'
 const UPDATE_EXPRESSION_STR = 'UpdateExpression'
 
+class BadModelTest extends BaseTest {
+  check (cls, msg) {
+    expect(() => cls.__doOneTimeModelPrep()).toThrow(msg)
+  }
+
+  testMissingPrimaryKey () {
+    class BadModel extends db.Model {
+      static PRIMARY_KEY = {}
+    }
+    this.check(BadModel, /at least one field/)
+  }
+
+  testDuplicateField () {
+    const expMsg = /more than once/
+    class BadModel extends db.Model {
+      static PRIMARY_KEY = { name: S.string() }
+      static FIELDS = { name: S.string() }
+    }
+    this.check(BadModel, expMsg)
+
+    class BadModel2 extends db.Model {
+      static SORT_KEYS = { name: S.string() }
+      static FIELDS = { name: S.string() }
+    }
+    this.check(BadModel2, expMsg)
+  }
+
+  testReservedName () {
+    class BadModel extends db.Model {
+      static SORT_KEYS = { isNew: S.string() }
+    }
+    this.check(BadModel, /this name is reserved/)
+  }
+
+  testIDName () {
+    class IDCannotBePartOfACompoundPrimaryKey extends db.Model {
+      static PRIMARY_KEY = { id: S.string(), n: S.number() }
+    }
+    this.check(IDCannotBePartOfACompoundPrimaryKey, /lone primary key field/)
+
+    class IDMustBeAString extends db.Model {
+      static PRIMARY_KEY = { id: S.number() }
+    }
+    this.check(IDMustBeAString, /may only be of type string/)
+
+    const expMsg = /this name is reserved/
+    class IDCannotBeASortKeyName extends db.Model {
+      static PRIMARY_KEY = { x: S.number() }
+      static SORT_KEYS = { id: S.string() }
+    }
+    this.check(IDCannotBeASortKeyName, expMsg)
+    class IDCannotBeAFieldName extends db.Model {
+      static PRIMARY_KEY = { x: S.number() }
+      static FIELDS = { id: S.string() }
+    }
+    this.check(IDCannotBeAFieldName, expMsg)
+
+    class OkModel extends db.Model {
+      static PRIMARY_KEY = { id: S.string() }
+    }
+    OkModel.__doOneTimeModelPrep()
+  }
+}
+
 class ErrorTest extends BaseTest {
   testInvalidFieldError () {
     const err = new db.InvalidFieldError('testField', 'test error')
@@ -50,28 +114,12 @@ async function txCreate (...args) {
   })
 }
 
-class SimpleModel extends db.Model {
-  constructor (params) {
-    super()
-    this.params = params
-  }
-}
+class SimpleModel extends db.Model {}
 
 class SimpleModelTest extends BaseTest {
   async setUp () {
     // Create new table should work
     await SimpleModel.createUnittestResource()
-  }
-
-  testInvalidIDs () {
-    const model = new SimpleModel()
-    expect(() => {
-      model.__checkCompositeID({})
-    }).toThrow(db.InvalidParameterError)
-
-    expect(() => {
-      model.__checkCompositeID({ id: 'abc', notAField: 123 })
-    }).toThrow(db.InvalidParameterError)
   }
 
   testInvalidSetup () {
@@ -149,9 +197,10 @@ class SimpleModelTest extends BaseTest {
 class NewModelTest extends BaseTest {
   async testCreateModelIsNew () {
     const result = await db.Transaction.run(tx => {
-      const model = tx.create(SimpleModel, { id: '123' })
-      expect(model.id).toBe('123')
-      expect(model.id).toBe(SimpleModel.compoundValueToString({ id: '123' }))
+      const id = uuidv4()
+      const model = tx.create(SimpleModel, { id })
+      expect(model.id).toBe(id)
+      expect(model.id).toBe(SimpleModel.__encodeIDToString({ id }))
       expect(model.isNew).toBe(true)
       tx.__reset() // Don't write anything, cause it will fail.
       return 321
@@ -161,7 +210,7 @@ class NewModelTest extends BaseTest {
 
   async testGetNewModel () {
     let ret = await db.Transaction.run(async tx => {
-      return tx.get(SimpleModel, 'something')
+      return tx.get(SimpleModel, uuidv4())
     })
     expect(ret).toBe(undefined)
 
@@ -178,27 +227,27 @@ class NewModelTest extends BaseTest {
       .rejects.toThrow(db.ModelAlreadyExistsError)
   }
 
-  async testNewModelParams () {
+  async testNewModelParamsDeprecated () {
     const id = uuidv4()
-    const params = { b: { d: 321321 } }
-    const model = await txCreate(SimpleModel, { id }, params)
+    const model = await txCreate(SimpleModel, { id })
     expect(model.id).toBe(id)
-    expect(model.params).toStrictEqual(params)
+    expect(model.params).toStrictEqual(undefined)
   }
 }
 
-class IDWithSchemaModel extends db.Model {}
-IDWithSchemaModel.setSchemaForID(
-  S.string().pattern(/^xyz.*$/).description(
-    'any string that starts with the prefix "xyz"'))
+class IDWithSchemaModel extends db.Model {
+  static PRIMARY_KEY = S.string().pattern(/^xyz.*$/).description(
+    'any string that starts with the prefix "xyz"')
+}
 
-class CompoundIDModel extends db.Model {}
-CompoundIDModel.setSchemaForID({
-  // required() does nothing because every component is required
-  year: S.integer().minimum(1900).required(),
-  make: S.string().minLength(3),
-  upc: S.string()
-})
+class CompoundIDModel extends db.Model {
+  static PRIMARY_KEY = {
+    // required() does nothing because every component is required
+    year: S.integer().minimum(1900).required(),
+    make: S.string().minLength(3),
+    upc: S.string()
+  }
+}
 
 class IDSchemaTest extends BaseTest {
   async setUp () {
@@ -215,16 +264,16 @@ class IDSchemaTest extends BaseTest {
       db.InvalidFieldError)
 
     // IDs are checked when keys are created too
-    expect(() => db.Key(cls, 'bad')).toThrow(db.InvalidFieldError)
-    expect(() => cls.compoundValueToString({ id: 'X' })).toThrow(
+    expect(() => cls.key('bad')).toThrow(db.InvalidFieldError)
+    expect(() => cls.__encodeIDToString({ id: 'X' })).toThrow(
       db.InvalidFieldError)
-    expect(db.Key(cls, 'xyz').compositeID).toEqual({ id: 'xyz' })
-    expect(cls.compoundValueToString({ id: 'xyz' })).toEqual('xyz')
+    expect(cls.key('xyz').compositeID).toEqual({ id: 'xyz' })
+    expect(cls.__encodeIDToString({ id: 'xyz' })).toEqual('xyz')
   }
 
   async testCompoundID () {
     const compoundID = { year: 1900, make: 'Honda', upc: uuidv4() }
-    const id = CompoundIDModel.compoundValueToString(compoundID)
+    const id = CompoundIDModel.__encodeIDToString(compoundID)
     function check (entity) {
       expect(entity.id).toBe(id)
       expect(entity.year).toBe(1900)
@@ -232,30 +281,39 @@ class IDSchemaTest extends BaseTest {
       expect(entity.upc).toBe(compoundID.upc)
     }
 
-    check(await txCreate(CompoundIDModel, { id }))
-    check(await txGet(CompoundIDModel, id))
-    check(await txGetByKey(db.Key(CompoundIDModel, id)))
+    check(await txCreate(CompoundIDModel, compoundID))
+    check(await txGetByKey(CompoundIDModel.key(compoundID)))
     check(await txGet(CompoundIDModel, compoundID))
 
-    expect(() => db.Key(CompoundIDModel, {})).toThrow(db.InvalidFieldError)
-    expect(() => db.Key(CompoundIDModel, {
+    expect(() => CompoundIDModel.key({})).toThrow(db.InvalidFieldError)
+    expect(() => CompoundIDModel.key({
       year: undefined, // not allowed!
       make: 'Toyota',
       upc: 'nope'
     })).toThrow(db.InvalidFieldError)
-    expect(() => db.Key(CompoundIDModel, {
+    expect(() => CompoundIDModel.key({
       year: 2020,
       make: 'Toy\0ta', // no null bytes!
       upc: 'nope'
     })).toThrow(db.InvalidFieldError)
-    expect(() => db.Key(CompoundIDModel, 'miss')).toThrow(db.InvalidFieldError)
+    expect(() => CompoundIDModel.key({
+      year: 2040,
+      make: 'need upc too'
+    })).toThrow(db.InvalidFieldError)
+
+    const msg = /incorrect number of components/
+    expect(() => CompoundIDModel.__decodeIDFromString('')).toThrow(msg)
+    expect(() => CompoundIDModel.__decodeIDFromString(id + '\0')).toThrow(msg)
+    expect(() => CompoundIDModel.__decodeIDFromString('\0' + id)).toThrow(msg)
+
+    expect(() => CompoundIDModel.key('unexpected value')).toThrow(
+      db.InvalidParameterError)
   }
 }
 
 class BasicModel extends db.Model {
-  constructor (params) {
-    super(params)
-    this.noRequiredNoDefault = db.NumberField({ optional: true })
+  static FIELDS = {
+    noRequiredNoDefault: { schema: S.number(), optional: true }
   }
 }
 
@@ -390,14 +448,14 @@ class ConditionCheckTest extends BaseTest {
   async testNewModel () {
     const m1 = await txGet(BasicModel, uuidv4())
     expect(m1.isNew).toBe(true)
-    expect(m1.mutated).toBe(true)
+    expect(m1.__isMutated()).toBe(true)
   }
 
   async testMutatedModel () {
     const m1 = await txGet(BasicModel, this.modelName)
-    expect(m1.mutated).toBe(false)
+    expect(m1.__isMutated()).toBe(false)
     m1.noRequiredNoDefault += 1
-    expect(m1.mutated).toBe(true)
+    expect(m1.__isMutated()).toBe(true)
   }
 
   async testConditionCheckMutatedModel () {
@@ -422,9 +480,8 @@ class ConditionCheckTest extends BaseTest {
 }
 
 class RangeKeyModel extends db.Model {
-  constructor () {
-    super()
-    this.rangeKey = db.NumberField({ keyType: 'RANGE' })
+  static SORT_KEYS = {
+    rangeKey: S.integer().minimum(1)
   }
 }
 
@@ -434,91 +491,84 @@ class KeyTest extends BaseTest {
       SimpleModel.createUnittestResource(),
       RangeKeyModel.createUnittestResource()
     ])
-    this.modelName = uuidv4()
-    const futs = []
-    futs.push(txGet(SimpleModel, this.modelName))
-    futs.push(txGet(RangeKeyModel, { id: this.modelName, rangeKey: 1 }))
-    await Promise.all(futs)
   }
 
-  testValidKey () {
-    // These are all correct
-    db.Key(SimpleModel, 'id')
-    db.Key(SimpleModel, { id: 'id' })
-    SimpleModel.key('id')
-    SimpleModel.key({ id: 'id' })
-
-    db.Key(RangeKeyModel, { id: 'id', rangeKey: 1 })
-    RangeKeyModel.key({ id: 'id', rangeKey: 1 })
+  async testValidKey () {
+    SimpleModel.key(uuidv4())
+    SimpleModel.key({ id: uuidv4() })
+    RangeKeyModel.key({ id: uuidv4(), rangeKey: 1 })
   }
 
   async testInvalidKey () {
-    const invalidIDs = [
+    const id = uuidv4()
+    const invalidIDsForSimpleModel = [
+      // these aren't even valid IDs
       1,
       '',
       String(''),
       undefined,
       {},
-      []
+      [],
+      { id, abc: 123 }
     ]
-    for (const id of invalidIDs) {
+    for (const keyValues of invalidIDsForSimpleModel) {
       expect(() => {
-        db.Key(SimpleModel, id)
-      }).toThrow(db.InvalidParameterError)
+        SimpleModel.key(keyValues)
+      }).toThrow()
     }
 
-    // These are technically valid keys, but invalid for the model.
-    // Expect no error from instantiating the key, but throw when key
-    // if fetched.
-    const invalidKeys = [
-      db.Key(RangeKeyModel, 'id'),
-      db.Key(RangeKeyModel, { id: 'id' }),
-      db.Key(RangeKeyModel, { id: 'id', abc: 123 })
+    const invalidIDsForRangeModel = [
+      // these have valid IDs, but are missing the required sort key
+      id,
+      { id },
+      { id, abc: 123 },
+      // has all required key, but the range key is invalid (schema mismatch)
+      { id, rangeKey: '1' },
+      { id, rangeKey: true },
+      { id, rangeKey: 1.1 },
+      { id, rangeKey: { x: 1 } },
+      { id, rangeKey: [1] },
+      // invalid ID and missing range key
+      1,
+      // missing or invalid ID
+      { rangeKey: 1 },
+      { id: 'bad format', rangeKey: 1 },
+      // range key validation fails (right type, but too small)
+      { id, rangeKey: -1 }
     ]
-
-    // Fail here
-    const model = new RangeKeyModel()
-    for (const key of invalidKeys) {
+    for (const keyValues of invalidIDsForRangeModel) {
       expect(() => {
-        model.__checkCompositeID(key.compositeID)
-      }).toThrow(db.InvalidParameterError)
+        console.log(keyValues)
+        RangeKeyModel.key(keyValues)
+      }).toThrow(db.InvalidFieldError)
     }
   }
 
   testDeprecatingLegacySyntax () {
     expect(() => {
-      db.Key(SimpleModel, 'id', 123)
-    }).toThrow()
-  }
-
-  testInvalidModelCls () {
-    expect(() => {
-      db.Key(Object, 'id')
+      SimpleModel.key('id', 123)
     }).toThrow()
   }
 }
 
 class JSONModel extends db.Model {
-  constructor () {
-    super()
-    this.objNoDefaultNoRequired = db.ObjectField({ optional: true })
-    this.objDefaultNoRequired = db.ObjectField({
+  static FIELDS = {
+    objNoDefaultNoRequired: { schema: S.object(), optional: true },
+    objDefaultNoRequired: {
+      schema: S.object(),
       default: { a: 1 },
       optional: true
-    })
-    this.objNoDefaultRequired = db.ObjectField()
-    this.objDefaultRequired = db.ObjectField({
-      default: {}
-    })
-    this.arrNoDefaultNoRequired = db.ArrayField({ optional: true })
-    this.arrDefaultNoRequired = db.ArrayField({
+    },
+    objNoDefaultRequired: S.object(),
+    objDefaultRequired: { schema: S.object(), default: {} },
+    arrNoDefaultNoRequired: { schema: S.array(), optional: true },
+    arrDefaultNoRequired: {
+      schema: S.array(),
       default: [1, 2],
       optional: true
-    })
-    this.arrNoDefaultRequired = db.ArrayField()
-    this.arrDefaultRequired = db.ArrayField({
-      default: []
-    })
+    },
+    arrNoDefaultRequired: S.array(),
+    arrDefaultRequired: { schema: S.array(), default: [] }
   }
 }
 
@@ -530,20 +580,20 @@ class JSONModelTest extends BaseTest {
   async testRequiredFields () {
     const obj = { ab: 2 }
     const arr = [2, 1]
-    const name = uuidv4()
-    await expect(txGet(JSONModel, name))
+    const id = uuidv4()
+    await expect(txGet(JSONModel, id))
       .rejects.toThrow(db.InvalidFieldError)
 
-    await expect(txGet(JSONModel, name, model => {
+    await expect(txGet(JSONModel, id, model => {
       model.objNoDefaultRequired = obj
     })).rejects.toThrow(db.InvalidFieldError)
 
-    await txGet(JSONModel, name, model => {
+    await txGet(JSONModel, id, model => {
       model.objNoDefaultRequired = obj
       model.arrNoDefaultRequired = arr
     })
 
-    const model = await txGet(JSONModel, name)
+    const model = await txGet(JSONModel, id)
     expect(model.arrNoDefaultRequired).toStrictEqual(arr)
     expect(model.objNoDefaultRequired).toStrictEqual(obj)
   }
@@ -591,20 +641,20 @@ class GetArgsParserTest extends BaseTest {
     await expect(db.__private.getWithArgs(params, () => {})).rejects
       .toThrow(db.InvalidParameterError)
 
-    params.push('id')
-    expect(async () => {
+    params.push(uuidv4())
+    await expect(async () => {
       const result = await db.__private.getWithArgs(params, () => 123)
       expect(result).toBe(123)
     }).not.toThrow()
 
     params.push({})
-    expect(async () => {
+    await expect(async () => {
       const result = await db.__private.getWithArgs(params, () => 234)
       expect(result).toBe(234)
     }).not.toThrow()
 
-    params[1] = { id: 'id' }
-    expect(async () => {
+    params[1] = { id: uuidv4() }
+    await expect(async () => {
       const result = await db.__private.getWithArgs(params, () => 23)
       expect(result).toBe(23)
     }).not.toThrow()
@@ -615,7 +665,7 @@ class GetArgsParserTest extends BaseTest {
   }
 
   async testKey () {
-    const params = [SimpleModel.key('id')]
+    const params = [SimpleModel.key(uuidv4())]
     expect(async () => {
       const result = await db.__private.getWithArgs(params, () => 123)
       expect(result).toBe(123)
@@ -638,11 +688,13 @@ class GetArgsParserTest extends BaseTest {
     await expect(db.__private.getWithArgs(params)).rejects
       .toThrow(db.InvalidParameterError)
 
-    keys.push(SimpleModel.key('id'), SimpleModel.key('id1'))
+    const id1 = uuidv4()
+    const id2 = uuidv4()
+    keys.push(SimpleModel.key(id1), SimpleModel.key(id2))
     expect(async () => {
       const result = await db.__private.getWithArgs(params,
         (key) => key.compositeID)
-      expect(result).toStrictEqual([{ id: 'id' }, { id: 'id1' }])
+      expect(result).toStrictEqual([{ id: id1 }, { id: id2 }])
     }).not.toThrow()
 
     keys.push(1)
@@ -654,7 +706,7 @@ class GetArgsParserTest extends BaseTest {
     expect(async () => {
       const result = await db.__private.getWithArgs(params,
         (key) => key.compositeID)
-      expect(result).toStrictEqual([{ id: 'id' }, { id: 'id1' }])
+      expect(result).toStrictEqual([{ id: id1 }, { id: id2 }])
     }).not.toThrow()
 
     params.push(1)
@@ -677,13 +729,13 @@ class WriteBatcherTest extends BaseTest {
 
   async testUntrackedWrite () {
     const batcher = new db.__private.__WriteBatcher()
-    const model = await txGet(BasicModel, 'id')
+    const model = await txGet(BasicModel, uuidv4())
     await expect(batcher.__write(model)).rejects.toThrow()
   }
 
   async testDupWrite () {
     const batcher = new db.__private.__WriteBatcher()
-    const model = await txGet(BasicModel, 'id')
+    const model = await txGet(BasicModel, uuidv4())
     batcher.track(model)
     model.noRequiredNoDefault += 1
     expect(async () => {
@@ -751,6 +803,7 @@ class WriteBatcherTest extends BaseTest {
 }
 
 runTests(
+  BadModelTest,
   ErrorTest,
   KeyTest,
   SimpleModelTest,

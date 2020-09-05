@@ -183,7 +183,7 @@ MyModel.setSchemaForID({
 
 You can create keys for models with compound IDs like this:
 ```javascript
-db.Key(MyModel, { someNumber: 5, someBool: true })
+MyModel.key({ someNumber: 5, someBool: true })
 ```
 
 Similarly, you can use this object representation of the compound ID anywhere
@@ -262,27 +262,22 @@ await db.Transaction.run(async tx => {
 ### Define A Model
 ```javascript
 class Player extends db.Model {
-  constructor () {
-    super()
-    this.guildName = db.StringField()
-    this.smr = db.ObjectField({ default: {} })
-    this.level = db.IntegerField({ default: 0 })
+  static FIELDS = {
+    guildName: S.string()
+    smr: { schema: S.object(), default: {} }
+    level: { schema: S.integer(), default: 0 }
   }
 }
 ```
 
 ### Fields
-There are 5 basic Field types: `NumberField`, `StringField`, `BooleanField`, `ArrayField` and `ObjectField`.
+Fields can be defined with simply their schema, like `guildName` above. You can
+also pass an object containing the schema as well as other options (like `smr`  and `level` above). Options include:
 
-When creating fields some options can be given. For example:
+ * `optional` - set to true to omit a field (not allowed on keys); defaults to false
+ * `immutable` - set to false to disallow a field from having its value changed once it is set; this is false by default for non-key fields (and it is true and unchangeable for key fields)
+ * `default` - the default value to use for a field if no value is provided; this is not allowed on keys. By default, a field's value is undefined unless a different default value is provided using this option. Default values are deep copied whenever they are assigned to a field (so you can safely use objects as default values, like `smr` above).
 
-```javascript
-db.ObjectField({ optional: true, default: {} })
-db.NumberField({ immutable: false })
-db.StringField({ keyType: 'RANGE' })
-```
-
-For more detailed documentation on these options, please read **API Documnetation**.
 
 ### Create An Item
 `create()` instantiates a new item in local memory; it is entirely a local, synchronous method (no network traffic is generated). AOL makes sure when the request to write the item is sent to DB, if an item with the same key already exists, a TransactionFailedError is thrown.
@@ -298,8 +293,8 @@ await tx.get(Player, 'id')
 await tx.get(Player, { id: 'id', rangeKey: 123 })
 await tx.get(Player.key('id'))
 await tx.get([
-  db.Key(Player, 'id'),
-  db.Key(Guild, 'gid')
+  Player.key('id'),
+  Guild.key('gid')
 ])
 ```
 
@@ -398,20 +393,17 @@ await db.Transaction.run(
 ## Advanced Examples
 
 ### Field Schema
-In addition to supporting model level schema via typed Field properties, this library also supports Field level schema via the schema option. The option value may be a ***fluent-schema*** object or a raw json schema object. Read docs for fluent-schema and json schema for a complete list of json structures the validation logic supports.
+Field schemas can be richly validated using a ***fluent-schema*** object:
 
 ```javascript
 const S = require('fluent-schema')
 
 class SchemaModel extends db.Model {
-  constructor () {
-    super()
-    this.str = db.StringField({ schema: S.string().maxLength(2) })
-    this.obj = db.ObjectField({
-      schema: S.object()
-        .prop('str', S.string())
-        .prop('arr', S.array().items(S.string()))
-    })
+  static FIELDS = {
+    str: S.string().maxLength(2),
+    obj: S.object()
+      .prop('str', S.string())
+      .prop('arr', S.array().items(S.string()))
   }
 }
 ```
@@ -466,24 +458,6 @@ With DAX enabled, inconsistent reads can resolve within 10ms as opposed to the c
 
 ```javascript
 await tx.get(Player, 'A new ID', { inconsistentRead: true })
-```
-
-### Constructor Parameters
-Sometimes additional parameters may be needed for Model construction. It can be done like this:
-
-```javascript
-class MyModel extends db.Model {
-  constructor (myArg) {
-    super()
-    this.myArg = myArg
-  }
-}
-```
-Then construct a model with:
-
-```javascript
-tx.create(Player, { id: 'id', rangeKey: 123, guild: 'guild' })
-await tx.get(Player, 'A new ID', { inconsistentRead: true, someOtherParams: 123 })
 ```
 
 ### Nested Transactions
@@ -555,10 +529,12 @@ The inventory example mentioned [here](#composite-ids) can be implemented in cod
 
 ```javascript
 class Inventory extends db.Model {
-  constructor () {
-    super()
-    this.typeKey = db.StringField({ keyType: 'RANGE' })
-    this.items = db.ObjectField({ default: {} })
+  static SORT_KEYS = {
+    typeKey: S.string()
+  }
+
+  static FIELDS = {
+    items: { schema: S.object(), default: {} }
   }
 
   static get tableName () {
@@ -577,9 +553,9 @@ class MoneyInventory extends Inventory {
 }
 
 class WeaponInventory extends Inventory {
-  constructor () {
-    super()
-    this.weaponLevel = db.ObjectField()
+  static FIELDS = {
+    ...super.FIELDS,
+    weaponLevel: S.object()
   }
 
   static typeKey () {

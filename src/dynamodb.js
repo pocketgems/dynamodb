@@ -5,6 +5,9 @@ const ajv = new (require('ajv'))({
 const assert = require('assert')
 const deepeq = require('deep-equal')
 const deepcopy = require('rfdc')()
+const S = require('fluent-schema')
+
+const regexUUIDV4 = /^[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}$/
 
 /**
  * @namespace Errors
@@ -114,6 +117,7 @@ function loadOptionDefaults (options, defaults) {
 
 /**
  * @namespace Fields
+ * @memberof Internal
  */
 
 /**
@@ -123,21 +127,73 @@ function loadOptionDefaults (options, defaults) {
 /**
  * Internal object representing a field / property of a Model.
  *
- * @access package
+ * @private
  * @memberof Internal
  */
 class __Field {
-  /**
-   * Returns supported options, and their default values.
-   */
-  get defaultOptions () {
-    return {
+  static __validateFieldOptions (keyType, fieldName, options) {
+    if (fieldName.startsWith('__')) {
+      throw new InvalidFieldError(
+        fieldName, 'property names may not start with "__"')
+    }
+
+    if (options.isFluentSchema) {
+      options = { schema: options }
+    } else if (!options.schema || !options.schema.isFluentSchema) {
+      throw new InvalidFieldError(
+        fieldName, 'schema must be a fluent-schema')
+    } else {
+      // shallow copy options because we're about to add to the object and we
+      // don't want this to affect the original options (which may be inherited
+      // by a subclass)
+      options = { ...options }
+    }
+    options.schema = options.schema.valueOf()
+    if (options.schema.type !== 'object' && options.schema.required) {
+      delete options.schema.required
+    }
+    const FieldCls = schemaTypeToFieldClassMap[options.schema.type]
+    if (!FieldCls) {
+      throw new InvalidFieldError(
+        fieldName, `unsupported field type ${options.schema.type}`)
+    }
+
+    if (Object.prototype.hasOwnProperty.call(options, 'keyType')) {
+      throw new InvalidFieldError(fieldName, 'keyType cannot be specified')
+    }
+    options.keyType = keyType
+
+    const defaults = {
       keyType: undefined,
       optional: false,
       immutable: false,
       default: undefined,
       schema: undefined
     }
+    checkUnexpectedOptions(options, defaults)
+    const hasDefault = Object.prototype.hasOwnProperty.call(options, 'default')
+    if (hasDefault && options.default === undefined) {
+      throw new InvalidFieldError(fieldName,
+        'the default value cannot be set to undefined')
+    }
+    if (options.keyType !== undefined) {
+      if (hasDefault) {
+        throw new InvalidOptionsError('default',
+          'No defaults for keys. It just doesn\'t make sense.')
+      }
+      if (options.immutable !== undefined && !options.immutable) {
+        throw new InvalidOptionsError('immutable',
+          'Keys must be immutable.')
+      }
+      if (options.optional) {
+        throw new InvalidOptionsError('optional',
+          'Keys must never be optional.')
+      }
+      options.immutable = true
+      options.optional = false
+    }
+    options.schemaValidator = ajv.compile(options.schema)
+    return Object.assign(defaults, options)
   }
 
   /**
@@ -162,59 +218,13 @@ class __Field {
    *   defined with schema.
    *   Noteworthily, Field's optional option superceeds schema's required
    *   property, meaning if an optional StringField's schema requires a string,
-   *   overall the Feild is not required, and vice versa.
+   *   overall the Field is not required, and vice versa.
    */
 
   /**
    * @param {FieldOptions} [options]
    */
   constructor (options) {
-    // Validate options
-    options = Object.assign({}, options) // Copy so we own options now
-    const defaults = this.defaultOptions
-    checkUnexpectedOptions(options, defaults)
-
-    const validKeyTypes = [undefined, 'HASH', 'RANGE']
-    if (!validKeyTypes.includes(options.keyType)) {
-      throw new InvalidOptionsError('keyType',
-        `Invalid value ${options.keyType}. Valid values are ${validKeyTypes}`)
-    }
-
-    // Setup options
-    const hasDefault = Object.prototype.hasOwnProperty.call(options, 'default')
-    if (options.keyType !== undefined) {
-      if (hasDefault) {
-        throw new InvalidOptionsError('default',
-          'No defaults for keys. It just doesn\'t make sense.')
-      }
-      if (options.immutable !== undefined && !options.immutable) {
-        throw new InvalidOptionsError('immutable',
-          'Keys must be immutable.')
-      }
-      if (options.optional) {
-        throw new InvalidOptionsError('optional',
-          'Keys must never be optional.')
-      }
-      options.immutable = true
-      options.optional = false
-    }
-
-    if (options.schema) {
-      assert.ok(options.schema.isFluentSchema)
-      options.schema = options.schema.valueOf()
-
-      if (schemaTypeToJSTypeMap[options.schema.type] !== this.valueType) {
-        throw new InvalidOptionsError('schema',
-          `Incompatible schema type ${options.schema.type} and field type ` +
-          `${this.valueType}.`
-        )
-      }
-
-      options.schemaValidator = compileSchema(options.schema)
-    }
-
-    options = Object.assign(defaults, options)
-
     for (const [key, value] of Object.entries(options)) {
       Object.defineProperty(this, key, {
         value: (key === 'default') ? deepcopy(value) : value,
@@ -233,7 +243,7 @@ class __Field {
     this.__value = undefined
     this.__read = false // If get is called
     this.__written = false // If set is called
-    if (hasDefault) {
+    if (options.default !== undefined) {
       this.set(this.default)
       this.__written = false
     }
@@ -323,15 +333,6 @@ class __Field {
   }
 
   /**
-   * Returns a class name indicating the underlying value's type, e.g. Number
-   *
-   * @abstract
-   */
-  get valueType () {
-    throw new Error('Needs to be overridden')
-  }
-
-  /**
    * Gets the field's current value. Calling this method will mark the field as
    * "{@link accessed}".
    *
@@ -377,17 +378,9 @@ class __Field {
   /**
    * Checks if the field's current value is valid. Throws InvalidFieldError if
    * check fails.
-   * @returns {Boolean} true if valid.
    */
   validate () {
-    const val = this.__value
-    if (!this.optional && val === undefined) {
-      throw new InvalidFieldError(
-        this.name,
-        'is not optional and is unset')
-    }
-    validateValue(this, val)
-    return true
+    validateValue(this.name, this, this.__value)
   }
 }
 
@@ -400,45 +393,44 @@ const schemaTypeToJSTypeMap = {
   object: Object,
   string: String
 }
-function validateValue (field, val) {
-  if (val !== undefined && val.constructor.name !== field.valueType.name) {
-    throw new InvalidFieldError(
-      this.name,
-      `value ${val} is not type ${field.valueType.name}`)
+function validateValue (fieldName, opts, val) {
+  const schema = opts.schema
+  const valueType = schemaTypeToJSTypeMap[schema.type]
+
+  // handle omitted value
+  if (val === undefined) {
+    if (opts.optional) {
+      return valueType
+    } else {
+      throw new InvalidFieldError(fieldName, 'missing required value')
+    }
   }
 
-  if (field.schemaValidator && !field.schemaValidator(val)) {
+  // make sure the value is of the correct type
+  if (val.constructor.name !== valueType.name) {
+    throw new InvalidFieldError(fieldName,
+      `value ${val} is not type ${valueType.name}`)
+  }
+
+  // validate the value against the provided schema
+  const validator = opts.schemaValidator
+  if (!validator(val)) {
     throw new InvalidFieldError(
-      field.name,
+      fieldName,
       `value ${JSON.stringify(val)} does not conform to schema ` +
-      `${JSON.stringify(field.schema)} with error ` +
-      JSON.stringify(field.schemaValidator.errors, null, 2)
+      `${JSON.stringify(schema)} with error ` +
+      JSON.stringify(validator.errors, null, 2)
     )
   }
+  return valueType
 }
 
 /**
- * Return the compiled schema.
- * @param {JsonSChema} schema the JSON schema to compile; if it contains the
- *   key "required" it will be removed unless the schema is of type "object"
- */
-function compileSchema (schema) {
-  if (schema.type !== 'object' && schema.required) {
-    delete schema.required
-  }
-  return ajv.compile(schema)
-}
-
-/**
- * @public
  * @extends Internal.__Field
- * @memberof Fields
+ * @memberof Internal.Fields
+ * @private
  */
 class NumberField extends __Field {
-  get valueType () {
-    return Number
-  }
-
   constructor (options) {
     super(options)
     this.__diff = undefined
@@ -497,26 +489,18 @@ class NumberField extends __Field {
 }
 
 /**
- * @public
  * @extends Internal.__Field
- * @memberof Fields
+ * @memberof Internal.Fields
+ * @private
  */
-class StringField extends __Field {
-  get valueType () {
-    return String
-  }
-}
+class StringField extends __Field {}
 
 /**
- * @public
  * @extends Internal.__Field
- * @memberof Fields
+ * @memberof Internal.Fields
+ * @private
  */
 class ObjectField extends __Field {
-  get valueType () {
-    return Object
-  }
-
   /**
    * This method checks for equality deeply against the initial
    * value so use it as sparsely as possible. It is primarily meant to be
@@ -531,26 +515,18 @@ class ObjectField extends __Field {
 }
 
 /**
- * @public
  * @extends Internal.__Field
- * @memberof Fields
+ * @memberof Internal.Fields
+ * @private
  */
-class BooleanField extends __Field {
-  get valueType () {
-    return Boolean
-  }
-}
+class BooleanField extends __Field {}
 
 /**
- * @public
  * @extends Internal.__Field
- * @memberof Fields
+ * @memberof Internal.Fields
+ * @private
  */
 class ArrayField extends __Field {
-  get valueType () {
-    return Array
-  }
-
   /**
    * This method checks for equality deeply against the initial
    * value so use it as sparsely as possible. It is primarily meant to be
@@ -562,147 +538,30 @@ class ArrayField extends __Field {
   get mutated () {
     return !deepeq(this.__value, this.__initialValue)
   }
+}
+
+const schemaTypeToFieldClassMap = {
+  array: ArrayField,
+  boolean: BooleanField,
+  float: NumberField,
+  integer: NumberField,
+  number: NumberField,
+  object: ObjectField,
+  string: StringField
 }
 
 /**
  * Key object to identify models.
- * @example
- * Key(SomeModel, 'someid') // No range keys
- * Key(SomeOtherModel, { id: 'someOtherID', someRangeKey: 'range' })
  */
 class Key {
   /**
    * @param {Model} Cls a Model class
-   * @param {String|CompositeID} id unique identifier for an item
+   * @param {Object} compositeID map of primary and sort key names to values
+   * @private
    */
-  constructor (Cls, id) {
-    if (arguments.length > 2) {
-      throw new InvalidParameterError('extra params', 'Expects Cls and id')
-    }
-    // id validation is coupled with Model instances. Instead of instantiating
-    // a model here for validating id, just do minimal checks here and have the
-    // library throw when the key is fetched.
-    if (!id) {
-      throw new InvalidParameterError('id', 'Expecting an id')
-    }
-    if (!(Cls.prototype instanceof Model)) {
-      throw new InvalidParameterError('Cls',
-        'Model class must be a subclass of db.Model')
-    }
-
-    if (id instanceof Object && Cls.__ID_SCHEMA) {
-      // this validates the ID too
-      id = { id: Cls.__ID_SCHEMA.compoundValueToString(id) }
-    } else {
-      if (typeof id === 'string') {
-        id = { id }
-      }
-      Cls.__checkValidId(id.id)
-    }
+  constructor (Cls, compositeID) {
     this.Cls = Cls
-    this.compositeID = deepcopy(id)
-  }
-}
-
-/**
- * Describes a field that may be composed of one or more components.
- *
- * Can be serialized to and from a compact string format.
- * @private
- */
-class CompoundValueSchema {
-  /**
-   * Create an empty CompoundValueSchema.
-   */
-  constructor () {
-    this.components = []
-  }
-
-  /**
-   * Like {@link CompoundValueSchema.component} but adds an additional
-   * component to the schema (so that schema will have >1 components, and thus
-   * describe a compound value).
-   */
-  addComponent (name, schema) {
-    if (this.components.length) {
-      assert.ok(name !== 'id' && this.components[0].name !== 'id',
-        'id cannot be the name of a component in a compound schema')
-    }
-    assert.ok(schema.isFluentSchema)
-    schema = schema.valueOf()
-    assert.ok(name !== 'id' || schema.type === 'string',
-      'a schema for an ID field named "id" must be a string type')
-    const valueType = schemaTypeToJSTypeMap[schema.type]
-    const schemaValidator = compileSchema(schema)
-    // these keys mirror the names used by Field so they can share the
-    // validateSchema() function
-    this.components.push({ name, schema, schemaValidator, valueType })
-    return this
-  }
-
-  /**
-   * Returns the string ID which corresponds to the specified compound ID.
-   *
-   * This method throws {@link InvalidFieldError} if the compound ID does not
-   * match the required schema.
-   *
-   * @param {Object} compoundID maps component names to values
-   */
-  compoundValueToString (compoundID) {
-    const componentNames = Object.keys(compoundID)
-    if (componentNames.length !== this.components.length) {
-      throw new InvalidFieldError(
-        'id', 'invalid number of components for this compound ID')
-    }
-    const pieces = []
-    for (var i = 0; i < this.components.length; i++) {
-      const component = this.components[i]
-      const givenValue = compoundID[component.name]
-      if (givenValue === undefined) {
-        throw new InvalidFieldError(
-          'id', `missing component ${component.name}`)
-      }
-      validateValue(component, givenValue)
-      if (component.valueType === String) {
-        // to workaround this, put them inside an object
-        if (givenValue.indexOf('\0') !== -1) {
-          throw new InvalidFieldError(
-            'id', 'cannot put null bytes in strings in compound IDs')
-        }
-        pieces.push(givenValue)
-      } else {
-        pieces.push(JSON.stringify(givenValue))
-      }
-    }
-    return pieces.join('\0')
-  }
-
-  /**
-   * Returns the compound ID object which corresponds to the given string ID.
-   *
-   * This method throws {@link InvalidFieldError} if the string ID does not
-   * match the required schema.
-   *
-   * @param {String} id the string representation of a compound ID
-   */
-  stringToCompoundValue (id) {
-    const compoundID = {}
-    const pieces = id.split('\0')
-    if (pieces.length !== this.components.length) {
-      throw new InvalidFieldError(
-        'id', 'failed to parse ID: incorrect number of components')
-    }
-    for (let i = 0; i < pieces.length; i++) {
-      const piece = pieces[i]
-      const component = this.components[i]
-      if (component.valueType === String) {
-        compoundID[component.name] = piece
-      } else {
-        compoundID[component.name] = JSON.parse(piece)
-      }
-      validateValue(component, compoundID[component.name])
-    }
-    return compoundID
+    this.compositeID = compositeID
   }
 }
 
@@ -710,108 +569,174 @@ class CompoundValueSchema {
  * The base class for modeling data.
  * @public
  *
- * @property {StringField} id The partition key for a model.
  * @property {Boolean} isNew Whether the item exists on server.
  */
 class Model {
   /**
    * Constructs a model. Model has one `id` field. Subclasses should add
    * additional fields by overriding the constructor.
-   *
-   * @param {GetParams} [params] Parameters used to fetch models from DB, or
-   *   device any additional behavior at instantiation time. Unused internally
-   *   here, but documented for the sake of subclassing.
    */
-  constructor (params) {
-    this.id = new StringField({ keyType: 'HASH' })
+  constructor () {
     this.isNew = false
     this.__fields = {}
     this.__written = false
 
-    // add a getter for each component of the ID
-    if (!this.constructor.__isSingularIDWithStandardName()) {
-      const idSchema = this.constructor.__ID_SCHEMA
-      const components = idSchema.components
-      for (let i = 0; i < components.length; i++) {
-        const component = components[i]
-        // would be nice to check if there are collisions with the field names
-        // but we can't since the subclass constructor hasn't finished yet
-        Object.defineProperty(this, component.name, {
-          get: () => this.__idComponents[component.name]
-        })
+    for (const [name, opts] of Object.entries(this.constructor.__FIELDS)) {
+      const Cls = schemaTypeToFieldClassMap[opts.schema.type]
+      this[name] = new Cls(opts)
+    }
+    if (this.constructor.__isIDFieldComputed()) {
+      // add the implicit, computed "id" field
+      this.id = new StringField(__Field.__validateFieldOptions('HASH', 'id', {
+        schema: S.string().minLength(1)
+      }))
+    }
+  }
+
+  /**
+   * Check that field names don't overlap, etc.
+   */
+  static __doOneTimeModelPrep () {
+    // need to check hasOwnProperty because we don't want to access this
+    // property via inheritance (i.e., our parent may have been setup, but
+    // the subclass must do its own setup)
+    if (Object.hasOwnProperty.call(this, '__setupDone')) {
+      return // one-time setup already done
+    }
+    this.__setupDone = true
+
+    // primary key can just be a schema; convert it to the standard format (map
+    // field name to schema)
+    if (this.PRIMARY_KEY.isFluentSchema) {
+      this.PRIMARY_KEY = { id: this.PRIMARY_KEY }
+    }
+
+    // determine the order we'll process the primary keys
+    this.__PRIMARY_KEY_ORDER = Object.keys(this.PRIMARY_KEY)
+    this.__PRIMARY_KEY_ORDER.sort()
+    if (!this.__PRIMARY_KEY_ORDER.length) {
+      throw new InvalidFieldError(
+        'PRIMARY_KEY', 'PRIMARY_KEY must define at least one field')
+    }
+    this.__KEYS = new Set()
+
+    // cannot use the names of non-static Model members
+    const reservedNames = new Set(['getField', 'id', 'isNew', 'toString'])
+    this.__FIELDS = {}
+    const fieldGroups = {
+      PRIMARY_KEY: 'HASH',
+      SORT_KEYS: 'RANGE',
+      FIELDS: undefined
+    }
+    for (const [fieldGroup, keyType] of Object.entries(fieldGroups)) {
+      const props = this[fieldGroup]
+      for (const [fieldName, givenFieldOpts] of Object.entries(props)) {
+        if (this.__FIELDS[fieldName]) {
+          throw new InvalidFieldError(
+            fieldName, 'property name cannot be used more than once')
+        }
+        const finalFieldOpts = __Field.__validateFieldOptions(
+          keyType, fieldName, givenFieldOpts)
+        this.__FIELDS[fieldName] = finalFieldOpts
+        if (fieldGroup !== 'FIELDS') {
+          this.__KEYS.add(fieldName)
+        }
+        if (reservedNames.has(fieldName)) {
+          if (fieldName === 'id' && fieldGroup === 'PRIMARY_KEY') {
+            if (this.__PRIMARY_KEY_ORDER.length !== 1) {
+              throw new InvalidFieldError('id',
+                'id may only be the lone primary key field')
+            } else if (finalFieldOpts.schema.type !== 'string') {
+              throw new InvalidFieldError('id',
+                'id may only be of type string; use a different field name ' +
+                'if you need a different type')
+            }
+            // else: okay!
+          } else {
+            throw new InvalidFieldError(
+              fieldName, 'this name is reserved and may not be used')
+          }
+        }
       }
     }
   }
 
+  static __getResourceDefinition () {
+    const schemaTypeToDBType = {
+      array: 'L',
+      boolean: 'BOOL',
+      integer: 'N',
+      number: 'N',
+      float: 'N',
+      object: 'M',
+      string: 'S'
+    }
+
+    // the partition attribute is always "id" and it is always string type
+    const attrs = [{ AttributeName: 'id', AttributeType: 'S' }]
+    const keys = [{ AttributeName: 'id', KeyType: 'HASH' }]
+
+    for (const name of Object.keys(this.SORT_KEYS)) {
+      const opts = this.__FIELDS[name]
+      attrs.push({
+        AttributeName: name,
+        AttributeType: schemaTypeToDBType[opts.schema.type]
+      })
+      keys.push({
+        AttributeName: name,
+        KeyType: opts.keyType
+      })
+    }
+    return {
+      TableName: this.fullTableName,
+      AttributeDefinitions: attrs,
+      KeySchema: keys
+    }
+  }
+
+  /** the default partition key is a UUIDv4 */
+  static PRIMARY_KEY = { id: S.string().pattern(regexUUIDV4) }
+
+  /** by default there are no sort keys */
+  static SORT_KEYS = {}
+
+  /** by default there are no properties */
+  static FIELDS = {}
+
   /**
-   * Returns whether we're using just the standard partition key ("id").
-   *
-   * Will return false if we have a custom name for the partition key, or if
-   * the partition key is a compound value (i.e., it is composed of more than
-   * one components).
+   * Returns true if the primary key "id" is computed from one or more other
+   * fields.
    */
-  static __isSingularIDWithStandardName () {
-    const idSchema = this.__ID_SCHEMA
-    return !idSchema || (
-      idSchema.components.length === 1 &&
-      idSchema.components[0].name === 'id')
+  static __isIDFieldComputed () {
+    return this.__PRIMARY_KEY_ORDER[0] !== 'id'
   }
 
   /**
-   * Sets the schema for the partition key.
-   * @param {Map<String,fluent-schemna>|fluent-schema} idSchema describes the
-   *   structure of the partition key for this model. May be a fluent-schema
-   *   S.string(), or a map of component names to schemas.
+   * Returns the composite ID for the given values.
+   * Verifies that the keys are valid (i.e., they match the required schema).
+   * @param {Object} values the data to construct the composite ID from; should
+   *   be a map of field names to values
+   * @returns the compound ID object
    */
-  static setSchemaForID (idSchema) {
-    // though the underlying ID is always stored as a string in the database
-    // (not strictly required; just a design choice this library made), it is
-    // possible for that ID to be "compound" or composed of one or more parts,
-    // each with their own schema
-    assert.ok(!Object.hasOwnProperty.call(this, '__ID_SCHEMA'),
-      'can only call setSchemaForID() once per model class')
-    if (idSchema.isFluentSchema) {
-      // the ID has just one component with the usual name "id"; the supplied
-      // schema describes it; create the equivalent compound schema
-      this.__ID_SCHEMA = new CompoundValueSchema().addComponent('id', idSchema)
-    } else {
-      const keys = Object.keys(idSchema)
-      assert.ok(keys.length, 'the id field must have one or more components')
-      keys.sort() // must always appear in the exact same order
-      this.__ID_SCHEMA = new CompoundValueSchema()
-      for (let i = 0; i < keys.length; i++) {
-        const key = keys[i]
-        this.__ID_SCHEMA.addComponent(key, idSchema[key])
+  static __makeCompositeID (values) {
+    // add the partition key "id" to the composite ID and validate it
+    const compositeID = { id: this.__encodeIDToString(values) }
+
+    // if "id" was present, it should match what we computed
+    assert.ok(!values.id || values.id === compositeID.id,
+      'id does not match computed value')
+
+    // add the sort keys, if any, to the composite ID and validate them
+    for (const fieldName of Object.keys(this.SORT_KEYS)) {
+      const value = values[fieldName]
+      if (value === undefined) {
+        throw new InvalidFieldError(fieldName, 'missing sort key')
       }
+      const fieldOpts = this.__FIELDS[fieldName]
+      validateValue(fieldName, fieldOpts, value)
+      compositeID[fieldName] = value
     }
-  }
-
-  /**
-   * Returns the string ID which corresponds to the specified compound ID.
-   * {@see CompoundValueSchema.compoundValueToString}
-   * @param {Object} compoundID maps component names to values
-   */
-  static compoundValueToString (compoundID) {
-    if (!this.__ID_SCHEMA) {
-      return compoundID.id
-    }
-    return this.__ID_SCHEMA.compoundValueToString(compoundID)
-  }
-
-  /**
-   * Verifies that the ID is valid (i.e., matches the required schema).
-   * @param {String} id the string ID used as the partition key
-   */
-  static __checkValidId (id) {
-    const valid = (typeof id === 'string' || id instanceof String) && id.length
-    if (!valid) {
-      throw new InvalidParameterError('id', 'Must be a non-empty string')
-    }
-
-    if (this.__ID_SCHEMA) {
-      // asserts if the ID is malformed
-      this.__ID_SCHEMA.stringToCompoundValue(id)
-    }
+    return compositeID
   }
 
   /**
@@ -849,7 +774,7 @@ class Model {
    * Just a convenience wrapper around the static version of this method.
    * @private
    */
-  get fullTableName () {
+  get __fullTableName () {
     return Object.getPrototypeOf(this).constructor.fullTableName
   }
 
@@ -871,7 +796,7 @@ class Model {
         modelData[key] = data[key]
       }
     })
-    this.__checkCompositeID(compositeID)
+    this.constructor.__makeCompositeID(compositeID)
     return [compositeID, modelData]
   }
 
@@ -883,7 +808,7 @@ class Model {
    */
   __getParams (compositeID, options) {
     return {
-      TableName: this.fullTableName,
+      TableName: this.__fullTableName,
       ConsistentRead: options && !options.inconsistentRead,
       Key: compositeID
     }
@@ -902,46 +827,6 @@ class Model {
    *   can be added. These values will be made available to the Model's
    *   constructor as an argument.
    */
-
-  /**
-   * A composite ID uniquely identifies any model in a table, containing
-   * a partition key and zero to many sort keys.
-   * @typedef {Object} CompositeID
-   * @property {String} id A partition key.
-   * @property {*} [*] Any additional range / sort keys.
-   */
-
-  /**
-   * Validates a CompositeID. Throws if invalid.
-   *
-   * @param {CompositeID} compositeID
-   */
-  __checkCompositeID (compositeID) {
-    if (!compositeID ||
-        compositeID.constructor !== Object ||
-        Object.keys(compositeID).length === 0) {
-      throw new InvalidParameterError('compositeID',
-        'Must be an object containing at least a hash key. For example ' +
-        '{ id: \'someid\' }')
-    }
-    Object.keys(this).forEach(key => {
-      const value = this[key]
-      if (value instanceof __Field &&
-          value.keyType !== undefined &&
-          !compositeID[key]) {
-        throw new InvalidParameterError('compositeID',
-          `missing value for key field ${key}.`)
-      }
-    })
-    const nonIDs = Object.keys(compositeID).filter(key => {
-      return !(this[key] instanceof __Field) || this[key].keyType === undefined
-    })
-    if (nonIDs.length !== 0) {
-      throw new InvalidParameterError('compositeID', 'non key fields detected')
-    }
-    this.constructor.__checkValidId(compositeID.id)
-    return true
-  }
 
   /**
    * Generates parameters for a put request to DynamoDB.
@@ -1028,7 +913,7 @@ class Model {
     }
 
     const ret = {
-      TableName: this.fullTableName,
+      TableName: this.__fullTableName,
       Item: item
     }
     if (conditionExpr.length !== 0) {
@@ -1131,7 +1016,7 @@ class Model {
     }
 
     const ret = {
-      TableName: this.fullTableName,
+      TableName: this.__fullTableName,
       Key: itemKey
     }
     const actions = []
@@ -1161,7 +1046,7 @@ class Model {
    *
    * @type {Boolean}
    */
-  get mutated () {
+  __isMutated () {
     return this.isNew || Object.values(this.__fields).reduce(
       (result, field) => {
         return result || field.mutated
@@ -1180,7 +1065,7 @@ class Model {
    * @returns {Boolean} An Object for ConditionCheck request.
    */
   __conditionCheckParams () {
-    assert.ok(this.isNew || !this.mutated,
+    assert.ok(this.isNew || !this.__isMutated(),
       'Model is mutated, write it instead!')
     const ret = this.__updateParams(false)
     if (ret.ConditionExpression) {
@@ -1208,6 +1093,19 @@ class Model {
    * @param {Model.__INIT_METHOD} method How the model was instantiated.
    */
   __setupModel (vals, isNew, method) {
+    if (this.constructor.__isIDFieldComputed()) {
+      if (!vals.id) {
+        // if the ID is missing, compute it
+        vals.id = this.constructor.__encodeIDToString(vals)
+      } else {
+        // if the components of the ID are missing, compute them from the ID
+        /* istanbul ignore else */
+        if (vals[this.constructor.__PRIMARY_KEY_ORDER[0]] === undefined) {
+          vals = { ...vals, ...this.constructor.__decodeIDFromString(vals.id) }
+        }
+      }
+    }
+
     this.isNew = !!isNew
     const methods = Model.__INIT_METHOD
     if (!Object.values(methods).includes(method)) {
@@ -1219,14 +1117,22 @@ class Model {
       const field = this[key]
       if (field instanceof __Field) {
         field.name = key
-        this.__fields[key] = field
-        field.__setup(vals[key])
 
-        if (field.keyType !== undefined) {
+        const keyType = field.keyType
+        if (keyType !== 'HASH' || key === 'id') {
+          // hash fields are implicitly included in the "id" field; they are
+          // otherwise ignored!
+          this.__fields[key] = field
+        }
+        const val = vals[key]
+        field.__setup(val)
+
+        if (keyType !== undefined) {
           // At this point, new models might not have all the necessary setups,
           // but all key fields should be valid.
           field.validate()
         }
+
         Object.defineProperty(this, key, {
           get: (...args) => {
             return field.get()
@@ -1238,21 +1144,122 @@ class Model {
       }
     })
 
-    if (!this.constructor.__isSingularIDWithStandardName()) {
-      const idSchema = this.constructor.__ID_SCHEMA
-      this.__idComponents = idSchema.stringToCompoundValue(this.id)
-    }
-
     // Once setup, restrict access to model.
     Object.seal(this)
   }
 
   /**
-   * @param {String|CompositeID} id
+   * Returns the string ID for the given field vlaues.
+   *
+   * This method throws {@link InvalidFieldError} if the compound ID does not
+   * match the required schema.
+   *
+   * @param {Object} values maps component names to values; may have extra
+   *   fields (they will be ignored)
+   */
+  static __encodeIDToString (values) {
+    const pieces = []
+    for (var i = 0; i < this.__PRIMARY_KEY_ORDER.length; i++) {
+      const fieldName = this.__PRIMARY_KEY_ORDER[i]
+      const fieldOpts = this.__FIELDS[fieldName]
+      const givenValue = values[fieldName]
+      if (givenValue === undefined) {
+        throw new InvalidFieldError(fieldName, 'missing key component')
+      }
+      const valueType = validateValue(fieldName, fieldOpts, givenValue)
+      if (valueType === String) {
+        // to workaround this, put them inside an object
+        if (givenValue.indexOf('\0') !== -1) {
+          throw new InvalidFieldError(
+            fieldName, 'cannot put null bytes in strings in compound IDs')
+        }
+        pieces.push(givenValue)
+      } else {
+        pieces.push(JSON.stringify(givenValue))
+      }
+    }
+    return pieces.join('\0')
+  }
+
+  /**
+   * Returns the compound ID object which corresponds to the given string ID.
+   *
+   * This method throws {@link InvalidFieldError} if the string ID does not
+   * match the required schema.
+   *
+   * @param {String} id the string representation of a compound primary key
+   */
+  static __decodeIDFromString (id) {
+    const compoundID = {}
+    const pieces = id.split('\0')
+    if (pieces.length !== this.__PRIMARY_KEY_ORDER.length) {
+      throw new InvalidFieldError(
+        'id', 'failed to parse ID: incorrect number of components')
+    }
+    for (let i = 0; i < pieces.length; i++) {
+      const piece = pieces[i]
+      const fieldName = this.__PRIMARY_KEY_ORDER[i]
+      const fieldOpts = this.__FIELDS[fieldName]
+      const valueType = schemaTypeToJSTypeMap[fieldOpts.schema.type]
+      if (valueType === String) {
+        compoundID[fieldName] = piece
+      } else {
+        compoundID[fieldName] = JSON.parse(piece)
+      }
+      validateValue(fieldName, fieldOpts, compoundID[fieldName])
+    }
+    return compoundID
+  }
+
+  /**
+   * Create a Key for a unique row in the DB table associated with this model.
+   * @param {*} keyValues map of primary key field names to values; if there is
+   *   only one primary key field (whose type is not object), then this MAY
+   *   instead be just that field's value
    * @returns {Key} a Key object.
    */
-  static key (id) {
-    return new Key(this, id)
+  static key (keyValues) {
+    // id validation is coupled with Model instances. Instead of instantiating
+    // a model here for validating id, just do minimal checks here and have the
+    // library throw when the key is fetched.
+    if (!keyValues) {
+      throw new InvalidParameterError('primaryKeyValues', 'missing')
+    }
+
+    // if we only have one primary key, then the `id` **MAY** just be the value
+    // rather than a map of primary key field name to value
+    assert.ok(this.__PRIMARY_KEY_ORDER,
+      `model ${this.name} one-time setup was not done (remember to export ` +
+      'the model and in unit tests remember to call createUnittestResource()')
+    if (this.__PRIMARY_KEY_ORDER.length === 1) {
+      const pkFieldName = this.__PRIMARY_KEY_ORDER[0]
+      if (!(keyValues instanceof Object) || !keyValues[pkFieldName]) {
+        keyValues = { [pkFieldName]: keyValues }
+      }
+    }
+    if (!(keyValues instanceof Object)) {
+      throw new InvalidParameterError('keyValues',
+        'should be an object mapping key field names to values')
+    }
+
+    // check if we were given too many keys (if too few, then the validation
+    // will fail, so we don't need to handle that case here)
+    const givenKeys = Object.keys(keyValues)
+    const numKeysGiven = givenKeys.length
+    if (numKeysGiven > this.__KEYS.size) {
+      const excessKeys = []
+      for (const givenKey of givenKeys) {
+        if (!this.__KEYS.has(givenKey)) {
+          excessKeys.push(givenKeys)
+        }
+      }
+      excessKeys.sort()
+      const expKeys = [...this.__KEYS]
+      expKeys.sort()
+      throw new InvalidParameterError('keyValues',
+        `expected keys ${expKeys.join(', ')} but got ${givenKeys.join(', ')}`)
+    }
+    return new Key(this, this.__makeCompositeID(keyValues))
   }
 
   /**
@@ -1309,7 +1316,7 @@ async function getWithArgs (args, callback) {
   const [first, ...args1] = args
   if (first && first.prototype instanceof Model) {
     if (args1.length === 1 || args1.length === 2) {
-      const key = new Key(first, args1[0])
+      const key = first.key(args1[0])
       return getWithArgs([key, ...args1.slice(1)], callback)
     } else {
       throw new InvalidParameterError('args',
@@ -1343,7 +1350,7 @@ async function getWithArgs (args, callback) {
 /**
  * Batches put and update (potentially could support delete) requests to
  * DynamoDB within a transaction and sents on commit.
- * @access package
+ * @private
  * @memberof Internal
  *
  * @example
@@ -1379,7 +1386,7 @@ class __WriteBatcher {
           model.toString())
       }
     }
-    if (!model.mutated) {
+    if (!model.__isMutated()) {
       throw new Error('Attempting to write an unchanged model ' +
         model.toString())
     }
@@ -1422,7 +1429,7 @@ class __WriteBatcher {
     this.resolved = true
 
     for (const model of this.__allModels) {
-      if (this.__toCheck[model] && model.mutated) {
+      if (this.__toCheck[model] && model.__isMutated()) {
         await this.__write(model)
       }
     }
@@ -1544,7 +1551,6 @@ class Transaction {
   async get (...args) {
     return getWithArgs(args, async (key, params) => {
       const model = new key.Cls(params)
-      model.__checkCompositeID(key.compositeID)
       const getParams = model.__getParams(key.compositeID, params)
       const data = await this.documentClient.get(getParams).promise()
       if ((!params || !params.createIfMissing) && !data.Item) {
@@ -1747,39 +1753,11 @@ class Transaction {
 
 function makeCreateUnittestResourceFunc (dynamoDB) {
   return async function () {
-    const attrs = []
-    const keys = []
-    const temp = new this()
-    const typeMap = {
-      String: 'S',
-      Number: 'N',
-      Object: 'M',
-      Array: 'L'
-      // Boolean: 'BOOL' // Really shouldn't be hash key
-    }
-    for (const [name, field] of Object.entries(temp)) {
-      if (!(field instanceof __Field)) {
-        continue
-      }
-      if (field.keyType) {
-        attrs.push({
-          AttributeName: name,
-          AttributeType: typeMap[field.valueType.name]
-        })
-        keys.push({
-          AttributeName: name,
-          KeyType: field.keyType
-        })
-      }
-    }
-    const params = {
-      TableName: temp.fullTableName,
-      AttributeDefinitions: attrs,
-      KeySchema: keys,
-      ProvisionedThroughput: {
-        ReadCapacityUnits: 2,
-        WriteCapacityUnits: 2
-      }
+    this.__doOneTimeModelPrep()
+    const params = this.__getResourceDefinition()
+    params.ProvisionedThroughput = {
+      ReadCapacityUnits: 2,
+      WriteCapacityUnits: 2
     }
     await dynamoDB.createTable(params).promise().catch(err => {
       /* istanbul ignore if */
@@ -1851,14 +1829,6 @@ function setup (config) {
     Model.createUnittestResource = makeCreateUnittestResourceFunc(dynamoDB)
   }
 
-  const exportAsFactory = [
-    ArrayField,
-    BooleanField,
-    NumberField,
-    ObjectField,
-    StringField,
-    Key
-  ]
   const exportAsClass = {
     Model,
     Transaction,
@@ -1872,18 +1842,46 @@ function setup (config) {
   }
 
   const toExport = Object.assign({}, exportAsClass)
-  exportAsFactory.forEach(Cls => {
-    toExport[Cls.name] = (...options) => new Cls(...options)
-  })
-
   if (inDebugger) {
     toExport.__private = {
       __Field,
       __WriteBatcher,
       getWithArgs
     }
+    const exportAsFactory = [
+      ArrayField,
+      BooleanField,
+      NumberField,
+      ObjectField,
+      StringField
+    ]
+    exportAsFactory.forEach(Cls => {
+      toExport.__private[Cls.name] = options => {
+        options = options || {}
+        const keyType = options.keyType
+        if (Object.hasOwnProperty.call(options, 'keyType')) {
+          delete options.keyType
+        }
+        // schema is required; fill in the default if none is provided
+        if (!options.schema) {
+          if (Cls === ArrayField) {
+            options.schema = S.array()
+          } else if (Cls === BooleanField) {
+            options.schema = S.boolean()
+          } else if (Cls === NumberField) {
+            options.schema = S.number()
+          } else if (Cls === ObjectField) {
+            options.schema = S.object()
+          } else {
+            assert.ok(Cls === StringField, 'unexpected class: ' + Cls.name)
+            options.schema = S.string()
+          }
+        }
+        options = __Field.__validateFieldOptions(keyType, 'someName', options)
+        return new Cls(options)
+      }
+    })
   }
   return toExport
 }
-
 module.exports = setup()
