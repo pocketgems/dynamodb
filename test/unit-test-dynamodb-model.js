@@ -14,21 +14,25 @@ class BadModelTest extends BaseTest {
 
   testMissingPrimaryKey () {
     class BadModel extends db.Model {
-      static PRIMARY_KEY = {}
+      static KEY = {}
     }
-    this.check(BadModel, /at least one field/)
+    this.check(BadModel, /at least one partition key field/)
+    class BadModel2 extends db.Model {
+      static KEY = null
+    }
+    this.check(BadModel2, /partition key is required/)
   }
 
   testDuplicateField () {
     const expMsg = /more than once/
     class BadModel extends db.Model {
-      static PRIMARY_KEY = { name: S.string() }
+      static KEY = { name: S.string() }
       static FIELDS = { name: S.string() }
     }
     this.check(BadModel, expMsg)
 
     class BadModel2 extends db.Model {
-      static SORT_KEYS = { name: S.string() }
+      static SORT_KEY = { name: S.string() }
       static FIELDS = { name: S.string() }
     }
     this.check(BadModel2, expMsg)
@@ -36,36 +40,42 @@ class BadModelTest extends BaseTest {
 
   testReservedName () {
     class BadModel extends db.Model {
-      static SORT_KEYS = { isNew: S.string() }
+      static SORT_KEY = { isNew: S.string() }
     }
     this.check(BadModel, /this name is reserved/)
   }
 
   testIDName () {
-    class IDCannotBePartOfACompoundPrimaryKey extends db.Model {
-      static PRIMARY_KEY = { id: S.string(), n: S.number() }
+    class IDCannotBePartOfACompoundPartitionKey extends db.Model {
+      static KEY = { id: S.string(), n: S.number() }
     }
-    this.check(IDCannotBePartOfACompoundPrimaryKey, /lone primary key field/)
+    this.check(IDCannotBePartOfACompoundPartitionKey, /lone partition key/)
 
     class IDMustBeAString extends db.Model {
-      static PRIMARY_KEY = { id: S.number() }
+      static KEY = { id: S.number() }
     }
     this.check(IDMustBeAString, /may only be of type string/)
 
     const expMsg = /this name is reserved/
     class IDCannotBeASortKeyName extends db.Model {
-      static PRIMARY_KEY = { x: S.number() }
-      static SORT_KEYS = { id: S.string() }
+      static KEY = { x: S.number() }
+      static SORT_KEY = { id: S.string() }
     }
     this.check(IDCannotBeASortKeyName, expMsg)
     class IDCannotBeAFieldName extends db.Model {
-      static PRIMARY_KEY = { x: S.number() }
+      static KEY = { x: S.number() }
       static FIELDS = { id: S.string() }
     }
     this.check(IDCannotBeAFieldName, expMsg)
 
+    class SortKeyMustProvideNames extends db.Model {
+      static SORT_KEY = S.number()
+    }
+    this.check(SortKeyMustProvideNames, /must define sort key component name/)
+
     class OkModel extends db.Model {
-      static PRIMARY_KEY = { id: S.string() }
+      static KEY = { id: S.string() }
+      static SORT_KEY = null
     }
     OkModel.__doOneTimeModelPrep()
   }
@@ -200,7 +210,8 @@ class NewModelTest extends BaseTest {
       const id = uuidv4()
       const model = tx.create(SimpleModel, { id })
       expect(model.id).toBe(id)
-      expect(model.id).toBe(SimpleModel.__encodeIDToString({ id }))
+      expect(model.id).toBe(SimpleModel.__encodeCompoundValueToString(
+        SimpleModel.__KEY_ORDER.partition, { id }))
       expect(model.isNew).toBe(true)
       tx.__reset() // Don't write anything, cause it will fail.
       return 321
@@ -236,12 +247,12 @@ class NewModelTest extends BaseTest {
 }
 
 class IDWithSchemaModel extends db.Model {
-  static PRIMARY_KEY = S.string().pattern(/^xyz.*$/).description(
+  static KEY = S.string().pattern(/^xyz.*$/).description(
     'any string that starts with the prefix "xyz"')
 }
 
 class CompoundIDModel extends db.Model {
-  static PRIMARY_KEY = {
+  static KEY = {
     // required() does nothing because every component is required
     year: S.integer().minimum(1900).required(),
     make: S.string().minLength(3),
@@ -265,15 +276,19 @@ class IDSchemaTest extends BaseTest {
 
     // IDs are checked when keys are created too
     expect(() => cls.key('bad')).toThrow(db.InvalidFieldError)
-    expect(() => cls.__encodeIDToString({ id: 'X' })).toThrow(
-      db.InvalidFieldError)
+    const keyOrder = cls.__KEY_ORDER.partition
+    expect(() => cls.__encodeCompoundValueToString(keyOrder, { id: 'X' }))
+      .toThrow(db.InvalidFieldError)
     expect(cls.key('xyz').compositeID).toEqual({ id: 'xyz' })
-    expect(cls.__encodeIDToString({ id: 'xyz' })).toEqual('xyz')
+    expect(cls.__encodeCompoundValueToString(keyOrder, { id: 'xyz' }))
+      .toEqual('xyz')
   }
 
   async testCompoundID () {
     const compoundID = { year: 1900, make: 'Honda', upc: uuidv4() }
-    const id = CompoundIDModel.__encodeIDToString(compoundID)
+    const keyOrder = CompoundIDModel.__KEY_ORDER.partition
+    const id = CompoundIDModel.__encodeCompoundValueToString(
+      keyOrder, compoundID)
     function check (entity) {
       expect(entity.id).toBe(id)
       expect(entity.year).toBe(1900)
@@ -302,9 +317,12 @@ class IDSchemaTest extends BaseTest {
     })).toThrow(db.InvalidFieldError)
 
     const msg = /incorrect number of components/
-    expect(() => CompoundIDModel.__decodeIDFromString('')).toThrow(msg)
-    expect(() => CompoundIDModel.__decodeIDFromString(id + '\0')).toThrow(msg)
-    expect(() => CompoundIDModel.__decodeIDFromString('\0' + id)).toThrow(msg)
+    expect(() => CompoundIDModel.__decodeCompoundValueFromString(
+      keyOrder, '')).toThrow(msg)
+    expect(() => CompoundIDModel.__decodeCompoundValueFromString(
+      keyOrder, id + '\0')).toThrow(msg)
+    expect(() => CompoundIDModel.__decodeCompoundValueFromString(
+      keyOrder, '\0' + id)).toThrow(msg)
 
     expect(() => CompoundIDModel.key('unexpected value')).toThrow(
       db.InvalidParameterError)
@@ -480,7 +498,7 @@ class ConditionCheckTest extends BaseTest {
 }
 
 class RangeKeyModel extends db.Model {
-  static SORT_KEYS = {
+  static SORT_KEY = {
     rangeKey: S.integer().minimum(1)
   }
 }
@@ -538,9 +556,8 @@ class KeyTest extends BaseTest {
     ]
     for (const keyValues of invalidIDsForRangeModel) {
       expect(() => {
-        console.log(keyValues)
         RangeKeyModel.key(keyValues)
-      }).toThrow(db.InvalidFieldError)
+      }).toThrow()
     }
   }
 

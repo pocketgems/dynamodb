@@ -146,22 +146,24 @@ This library addresses this problem using the provided Transaction class, which 
 
 ### Partition Key (`id`) Schema
 By default, a `Model`'s partition key (the field named `id`) must be a
-non-empty string. Generally, you should specify a schema for it (the only
-exception is if your `id` field is a random value without any semantic
-meaning):
+string in the uuidv4 format. You may specify a different schema for it:
 ```javascript
 // require the "id" field to be an e-mail address
-MyModel.setSchemaForID(S.string().format(S.FORMATS.EMAIL))
+class MyModel extends db.Model {
+  static KEY = S.string().format(S.FORMATS.EMAIL)
+}
 ```
 
 Partition keys can also be composed of multiple components:
 ```javascript
 // the partition key is composed of a "team" and "player" components; this is
 // called a "Compound ID"
-MyModel.setSchemaForID({
-  team: S.string(),
-  player: S.string()
-})
+class MyModel extends db.Model {
+  static KEY = {
+    team: S.string(),
+    player: S.string()
+  }
+}
 
 // you can access those components via getters:
 const model = await tx.get(MyModel, { team: 'Dread', player: 'Ann' })
@@ -175,10 +177,12 @@ it.
 
 Compound IDs may have component(s) with non-string schemas:
 ```javascript
-MyModel.setSchemaForID({
-  someNumber: S.integer().minimum(1).description('something useful...'),
-  someBool: S.boolean().description('...')
-})
+class MyModel extends db.Model {
+  static KEY = {
+    someNumber: S.integer().minimum(1).description('something useful...'),
+    someBool: S.boolean().description('...')
+  }
+}
 ```
 
 You can create keys for models with compound IDs like this:
@@ -529,7 +533,7 @@ The inventory example mentioned [here](#composite-ids) can be implemented in cod
 
 ```javascript
 class Inventory extends db.Model {
-  static SORT_KEYS = {
+  static SORT_KEY = {
     typeKey: S.string()
   }
 

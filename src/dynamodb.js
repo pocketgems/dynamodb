@@ -132,9 +132,9 @@ function loadOptionDefaults (options, defaults) {
  */
 class __Field {
   static __validateFieldOptions (keyType, fieldName, options) {
-    if (fieldName.startsWith('__')) {
+    if (fieldName.startsWith('_')) {
       throw new InvalidFieldError(
-        fieldName, 'property names may not start with "__"')
+        fieldName, 'property names may not start with "_"')
     }
 
     if (options.isFluentSchema) {
@@ -556,7 +556,8 @@ const schemaTypeToFieldClassMap = {
 class Key {
   /**
    * @param {Model} Cls a Model class
-   * @param {Object} compositeID map of primary and sort key names to values
+   * @param {Object} compositeID maps partition and sort key component names to
+   *   their values
    * @private
    */
   constructor (Cls, compositeID) {
@@ -591,6 +592,13 @@ class Model {
         schema: S.string().minLength(1)
       }))
     }
+    if (this.constructor.__hasSortKey()) {
+      // add the implicit, computed "_sk" field
+      this._sk = new StringField(
+        __Field.__validateFieldOptions('RANGE', '_sk', {
+          schema: S.string().minLength(1)
+        }))
+    }
   }
 
   /**
@@ -605,47 +613,71 @@ class Model {
     }
     this.__setupDone = true
 
-    // primary key can just be a schema; convert it to the standard format (map
-    // field name to schema)
-    if (this.PRIMARY_KEY.isFluentSchema) {
-      this.PRIMARY_KEY = { id: this.PRIMARY_KEY }
+    // put key into the standard, non-shorthand format
+    const keyComponents = {}
+    function defineKey (kind, opts) {
+      if (!opts) {
+        if (kind === 'partition') {
+          throw new InvalidFieldError('KEY', 'the partition key is required')
+        } else {
+          keyComponents[kind] = {}
+        }
+      } else if (opts.isFluentSchema || opts.schema) {
+        // key was telling us the schema for the id field, or was fieldOpts for
+        // the id field
+        if (kind === 'partition') {
+          keyComponents[kind] = { id: opts }
+        } else {
+          throw new InvalidFieldError('SORT_KEY',
+            'must define sort key component name(s)')
+        }
+      } else {
+        keyComponents[kind] = opts
+      }
     }
+    defineKey('partition', this.KEY)
+    defineKey('sort', this.SORT_KEY)
 
-    // determine the order we'll process the primary keys
-    this.__PRIMARY_KEY_ORDER = Object.keys(this.PRIMARY_KEY)
-    this.__PRIMARY_KEY_ORDER.sort()
-    if (!this.__PRIMARY_KEY_ORDER.length) {
-      throw new InvalidFieldError(
-        'PRIMARY_KEY', 'PRIMARY_KEY must define at least one field')
+    // determine the order for the component(s) of each key type
+    this.__KEY_ORDER = {}
+    for (const [keyType, values] of Object.entries(keyComponents)) {
+      const keyComponentNames = Object.keys(values)
+      keyComponentNames.sort()
+      this.__KEY_ORDER[keyType] = keyComponentNames
     }
-    this.__KEYS = new Set()
+    if (!this.__KEY_ORDER.partition.length) {
+      throw new InvalidFieldError(
+        'KEY', 'must define at least one partition key field')
+    }
+    this.__KEY_COMPONENT_NAMES = new Set()
 
     // cannot use the names of non-static Model members
-    const reservedNames = new Set(['getField', 'id', 'isNew', 'toString'])
+    const reservedNames = new Set([
+      'constructor', 'getField', 'id', 'isNew', 'toString'
+    ])
     this.__FIELDS = {}
-    const fieldGroups = {
-      PRIMARY_KEY: 'HASH',
-      SORT_KEYS: 'RANGE',
-      FIELDS: undefined
+    const fieldsByKeyType = {
+      HASH: keyComponents.partition,
+      RANGE: keyComponents.sort,
+      '': this.FIELDS
     }
-    for (const [fieldGroup, keyType] of Object.entries(fieldGroups)) {
-      const props = this[fieldGroup]
+    for (const [keyType, props] of Object.entries(fieldsByKeyType)) {
       for (const [fieldName, givenFieldOpts] of Object.entries(props)) {
         if (this.__FIELDS[fieldName]) {
           throw new InvalidFieldError(
             fieldName, 'property name cannot be used more than once')
         }
         const finalFieldOpts = __Field.__validateFieldOptions(
-          keyType, fieldName, givenFieldOpts)
+          keyType || undefined, fieldName, givenFieldOpts)
         this.__FIELDS[fieldName] = finalFieldOpts
-        if (fieldGroup !== 'FIELDS') {
-          this.__KEYS.add(fieldName)
+        if (keyType) {
+          this.__KEY_COMPONENT_NAMES.add(fieldName)
         }
         if (reservedNames.has(fieldName)) {
-          if (fieldName === 'id' && fieldGroup === 'PRIMARY_KEY') {
-            if (this.__PRIMARY_KEY_ORDER.length !== 1) {
+          if (fieldName === 'id' && keyType === 'HASH') {
+            if (this.__KEY_ORDER.partition.length !== 1) {
               throw new InvalidFieldError('id',
-                'id may only be the lone primary key field')
+                'id may only be the lone partition key component')
             } else if (finalFieldOpts.schema.type !== 'string') {
               throw new InvalidFieldError('id',
                 'id may only be of type string; use a different field name ' +
@@ -662,30 +694,15 @@ class Model {
   }
 
   static __getResourceDefinition () {
-    const schemaTypeToDBType = {
-      array: 'L',
-      boolean: 'BOOL',
-      integer: 'N',
-      number: 'N',
-      float: 'N',
-      object: 'M',
-      string: 'S'
-    }
-
-    // the partition attribute is always "id" and it is always string type
+    this.__doOneTimeModelPrep()
+    // the partition key attribute is always "id" and of type string
     const attrs = [{ AttributeName: 'id', AttributeType: 'S' }]
     const keys = [{ AttributeName: 'id', KeyType: 'HASH' }]
 
-    for (const name of Object.keys(this.SORT_KEYS)) {
-      const opts = this.__FIELDS[name]
-      attrs.push({
-        AttributeName: name,
-        AttributeType: schemaTypeToDBType[opts.schema.type]
-      })
-      keys.push({
-        AttributeName: name,
-        KeyType: opts.keyType
-      })
+    // if we have a sort key attribute, it always "_sk" and of type string
+    if (this.__KEY_ORDER.sort.length) {
+      attrs.push({ AttributeName: '_sk', AttributeType: 'S' })
+      keys.push({ AttributeName: '_sk', KeyType: 'RANGE' })
     }
     return {
       TableName: this.fullTableName,
@@ -694,47 +711,80 @@ class Model {
     }
   }
 
-  /** the default partition key is a UUIDv4 */
-  static PRIMARY_KEY = { id: S.string().pattern(regexUUIDV4) }
+  /**
+   * Defines the partition key. Every item in the database is uniquely
+   * identified by the combination of its partition and sort key. The default
+   * partition key is a UUIDv4.
+   *
+   * A key can simply be some scalar value:
+   *   KEY = S.string()
+   *
+   * A key may can be "compound key", i.e., a key with one or components, each
+   * with their own name and schema:
+   *   KEY = {
+   *     email: S.string().format(S.FORMATS.EMAIL),
+   *     birthYear: S.integer().minimum(1900)
+   *   }
+   */
+  static KEY = S.string().pattern(regexUUIDV4)
 
-  /** by default there are no sort keys */
-  static SORT_KEYS = {}
+  /** Defines the sort key, if any. Uses the compound key format from KEY. */
+  static SORT_KEY = {}
 
-  /** by default there are no properties */
+  /**
+   * Defines the non-key fields. By default there are no fields.
+   *
+   * Properties are defined as a map from field names to either a fluent-schema
+   * or a {@link FieldOptions}:
+   * @example
+   *   FIELDS = {
+   *     someNumber: S.number(),
+   *     someNumberWithOptions: {
+   *       schema: S.number(),
+   *       optional: true,
+   *       default: 0,
+   *       immutable: true
+   *     }
+   *   }
+   */
   static FIELDS = {}
 
   /**
-   * Returns true if the primary key "id" is computed from one or more other
-   * fields.
+   * Returns true if our "id" field is computed from one or more other fields.
    */
   static __isIDFieldComputed () {
-    return this.__PRIMARY_KEY_ORDER[0] !== 'id'
+    return this.__KEY_ORDER.partition[0] !== 'id'
+  }
+
+  /**
+   * Returns true if this object has a sort key.
+   */
+  static __hasSortKey () {
+    return this.__KEY_ORDER.sort.length > 0
   }
 
   /**
    * Returns the composite ID for the given values.
    * Verifies that the keys are valid (i.e., they match the required schema).
-   * @param {Object} values the data to construct the composite ID from; should
+   * @param {Object} vals the data to construct the composite ID from; should
    *   be a map of field names to values
    * @returns the compound ID object
    */
-  static __makeCompositeID (values) {
+  static __makeCompositeID (vals) {
     // add the partition key "id" to the composite ID and validate it
-    const compositeID = { id: this.__encodeIDToString(values) }
+    const compositeID = {
+      id: this.__encodeCompoundValueToString(this.__KEY_ORDER.partition, vals)
+    }
 
     // if "id" was present, it should match what we computed
-    assert.ok(!values.id || values.id === compositeID.id,
+    assert.ok(!vals.id || vals.id === compositeID.id,
       'id does not match computed value')
 
-    // add the sort keys, if any, to the composite ID and validate them
-    for (const fieldName of Object.keys(this.SORT_KEYS)) {
-      const value = values[fieldName]
-      if (value === undefined) {
-        throw new InvalidFieldError(fieldName, 'missing sort key')
-      }
-      const fieldOpts = this.__FIELDS[fieldName]
-      validateValue(fieldName, fieldOpts, value)
-      compositeID[fieldName] = value
+    // add the sort key, if any, to the composite ID and validate it
+    if (this.__hasSortKey()) {
+      compositeID._sk = this.__encodeCompoundValueToString(
+        this.__KEY_ORDER.sort, vals
+      )
     }
     return compositeID
   }
@@ -1083,6 +1133,24 @@ class Model {
     }
   }
 
+  __setupKey (isPartitionKey, vals) {
+    const attrName = isPartitionKey ? 'id' : '_sk'
+    const keyOrderKey = (attrName === 'id') ? 'partition' : 'sort'
+    const keyOrder = this.constructor.__KEY_ORDER[keyOrderKey]
+    if (!vals[attrName]) {
+      // if the computed field is missing, compute it
+      vals[attrName] = this.constructor.__encodeCompoundValueToString(
+        keyOrder, vals)
+    } else {
+      // if the components of the computed field are missing, compute them
+      /* istanbul ignore else */
+      if (vals[keyOrder[0]] === undefined) {
+        Object.assign(vals, this.constructor.__decodeCompoundValueFromString(
+          keyOrder, vals[attrName]))
+      }
+    }
+  }
+
   /**
    * Sets up a model, restricts access to the model afterwards, e.g. can no
    * longer add properties.
@@ -1094,16 +1162,10 @@ class Model {
    */
   __setupModel (vals, isNew, method) {
     if (this.constructor.__isIDFieldComputed()) {
-      if (!vals.id) {
-        // if the ID is missing, compute it
-        vals.id = this.constructor.__encodeIDToString(vals)
-      } else {
-        // if the components of the ID are missing, compute them from the ID
-        /* istanbul ignore else */
-        if (vals[this.constructor.__PRIMARY_KEY_ORDER[0]] === undefined) {
-          vals = { ...vals, ...this.constructor.__decodeIDFromString(vals.id) }
-        }
-      }
+      this.__setupKey(true, vals)
+    }
+    if (this.constructor.__hasSortKey()) {
+      this.__setupKey(false, vals)
     }
 
     this.isNew = !!isNew
@@ -1149,18 +1211,19 @@ class Model {
   }
 
   /**
-   * Returns the string ID for the given field vlaues.
+   * Returns the string representation for the given compound values.
    *
-   * This method throws {@link InvalidFieldError} if the compound ID does not
-   * match the required schema.
+   * This method throws {@link InvalidFieldError} if the compound value does
+   * not match the required schema.
    *
+   * @param {Array<String>} keyOrder order of keys in the string representation
    * @param {Object} values maps component names to values; may have extra
    *   fields (they will be ignored)
    */
-  static __encodeIDToString (values) {
+  static __encodeCompoundValueToString (keyOrder, values) {
     const pieces = []
-    for (var i = 0; i < this.__PRIMARY_KEY_ORDER.length; i++) {
-      const fieldName = this.__PRIMARY_KEY_ORDER[i]
+    for (var i = 0; i < keyOrder.length; i++) {
+      const fieldName = keyOrder[i]
       const fieldOpts = this.__FIELDS[fieldName]
       const givenValue = values[fieldName]
       if (givenValue === undefined) {
@@ -1182,23 +1245,24 @@ class Model {
   }
 
   /**
-   * Returns the compound ID object which corresponds to the given string ID.
+   * Returns the map which corresponds to the given compound value string
    *
-   * This method throws {@link InvalidFieldError} if the string ID does not
-   * match the required schema.
+   * This method throws {@link InvalidFieldError} if the decoded string does
+   * not match the required schema.
    *
-   * @param {String} id the string representation of a compound primary key
+   * @param {Array<String>} keyOrder order of keys in the string representation
+   * @param {String} strVal the string representation of a compound value
    */
-  static __decodeIDFromString (id) {
+  static __decodeCompoundValueFromString (keyOrder, strVal) {
     const compoundID = {}
-    const pieces = id.split('\0')
-    if (pieces.length !== this.__PRIMARY_KEY_ORDER.length) {
+    const pieces = strVal.split('\0')
+    if (pieces.length !== keyOrder.length) {
       throw new InvalidFieldError(
         'id', 'failed to parse ID: incorrect number of components')
     }
     for (let i = 0; i < pieces.length; i++) {
       const piece = pieces[i]
-      const fieldName = this.__PRIMARY_KEY_ORDER[i]
+      const fieldName = keyOrder[i]
       const fieldOpts = this.__FIELDS[fieldName]
       const valueType = schemaTypeToJSTypeMap[fieldOpts.schema.type]
       if (valueType === String) {
@@ -1213,8 +1277,8 @@ class Model {
 
   /**
    * Create a Key for a unique row in the DB table associated with this model.
-   * @param {*} keyValues map of primary key field names to values; if there is
-   *   only one primary key field (whose type is not object), then this MAY
+   * @param {*} keyValues map of key component names to values; if there is
+   *   only one partition key field (whose type is not object), then this MAY
    *   instead be just that field's value
    * @returns {Key} a Key object.
    */
@@ -1223,38 +1287,39 @@ class Model {
     // a model here for validating id, just do minimal checks here and have the
     // library throw when the key is fetched.
     if (!keyValues) {
-      throw new InvalidParameterError('primaryKeyValues', 'missing')
+      throw new InvalidParameterError('keyValues', 'missing')
     }
 
-    // if we only have one primary key, then the `id` **MAY** just be the value
-    // rather than a map of primary key field name to value
-    assert.ok(this.__PRIMARY_KEY_ORDER,
+    // if we only have one key component, then the `id` **MAY** just be the
+    // value rather than a map of key component names to values
+    assert.ok(this.__KEY_ORDER,
       `model ${this.name} one-time setup was not done (remember to export ` +
       'the model and in unit tests remember to call createUnittestResource()')
-    if (this.__PRIMARY_KEY_ORDER.length === 1) {
-      const pkFieldName = this.__PRIMARY_KEY_ORDER[0]
-      if (!(keyValues instanceof Object) || !keyValues[pkFieldName]) {
-        keyValues = { [pkFieldName]: keyValues }
+    const pKeyOrder = this.__KEY_ORDER.partition
+    if (pKeyOrder.length === 1 && !this.__KEY_ORDER.sort.length) {
+      const pFieldName = pKeyOrder[0]
+      if (!(keyValues instanceof Object) || !keyValues[pFieldName]) {
+        keyValues = { [pFieldName]: keyValues }
       }
     }
     if (!(keyValues instanceof Object)) {
       throw new InvalidParameterError('keyValues',
-        'should be an object mapping key field names to values')
+        'should be an object mapping key component names to values')
     }
 
     // check if we were given too many keys (if too few, then the validation
     // will fail, so we don't need to handle that case here)
     const givenKeys = Object.keys(keyValues)
     const numKeysGiven = givenKeys.length
-    if (numKeysGiven > this.__KEYS.size) {
+    if (numKeysGiven > this.__KEY_COMPONENT_NAMES.size) {
       const excessKeys = []
       for (const givenKey of givenKeys) {
-        if (!this.__KEYS.has(givenKey)) {
+        if (!this.__KEY_COMPONENT_NAMES.has(givenKey)) {
           excessKeys.push(givenKeys)
         }
       }
       excessKeys.sort()
-      const expKeys = [...this.__KEYS]
+      const expKeys = [...this.__KEY_COMPONENT_NAMES]
       expKeys.sort()
       throw new InvalidParameterError('keyValues',
         `expected keys ${expKeys.join(', ')} but got ${givenKeys.join(', ')}`)

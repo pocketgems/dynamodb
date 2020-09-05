@@ -21,7 +21,7 @@ async function txGetRequired (id, func) {
 }
 
 class TransactionModel extends db.Model {
-  static PRIMARY_KEY = S.string().minLength(1)
+  static KEY = S.string().minLength(1)
   static FIELDS = {
     field1: { schema: S.number(), optional: true },
     field2: { schema: S.number(), optional: true },
