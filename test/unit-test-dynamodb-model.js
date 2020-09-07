@@ -501,6 +501,10 @@ class RangeKeyModel extends db.Model {
   static SORT_KEY = {
     rangeKey: S.integer().minimum(1)
   }
+
+  static FIELDS = {
+    n: S.integer()
+  }
 }
 
 class KeyTest extends BaseTest {
@@ -512,13 +516,52 @@ class KeyTest extends BaseTest {
   }
 
   async testSortKey () {
-    const id = uuidv4()
-    const compositeID = { id, rangeKey: 1 }
-    await txCreate(RangeKeyModel, compositeID)
-    const model = await txGet(RangeKeyModel, compositeID)
-    expect(model.id).toBe(id)
-    expect(model.rangeKey).toBe(1)
-    expect(model._sk).toBe('1')
+    async function check (id, rangeKey, n, create = true) {
+      const compositeID = { id, rangeKey }
+      if (create) {
+        await txCreate(RangeKeyModel, { ...compositeID, n })
+      }
+      const model = await txGet(RangeKeyModel, compositeID)
+      expect(model.id).toBe(id)
+      expect(model.rangeKey).toBe(rangeKey)
+      expect(model._sk).toBe(rangeKey.toString())
+      expect(model.n).toBe(n)
+    }
+
+    const id1 = uuidv4()
+    await check(id1, 1, 0)
+
+    // changing the sort key means we're working with a different item
+    await check(id1, 2, 1)
+    await check(id1, 1, 0, false)
+
+    // changing the partition key but not the sort key also means we're working
+    // with a different item
+    const id2 = uuidv4()
+    await check(id2, 1, 2)
+    await check(id2, 2, 3)
+    await check(id1, 1, 0, false)
+    await check(id1, 2, 1, false)
+
+    // should be able to update fields in a model with a sort key
+    await db.Transaction.run(async tx => {
+      await tx.update(RangeKeyModel, { id: id1, rangeKey: 1, n: 0 }, { n: 99 })
+    })
+    await check(id1, 1, 99, false)
+    // but not the sort key itself
+    // this throws because no such item exists:
+    await expect(db.Transaction.run(async tx => {
+      await tx.update(RangeKeyModel, { id: id1, rangeKey: 9, n: 0 }, { n: 99 })
+    })).rejects.toThrow()
+    // these last two both throw because we can't modify key values
+    await expect(db.Transaction.run(async tx => {
+      const x = await tx.get(RangeKeyModel, { id: id1, rangeKey: 1 })
+      x.rangeKey = 2
+    })).rejects.toThrow(/rangeKey is immutable/)
+    await expect(db.Transaction.run(async tx => {
+      const x = await tx.get(RangeKeyModel, { id: id1, rangeKey: 1 })
+      x.id = uuidv4()
+    })).rejects.toThrow(/id is immutable/)
   }
 
   async testValidKey () {
