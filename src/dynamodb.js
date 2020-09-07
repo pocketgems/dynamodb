@@ -1227,7 +1227,7 @@ class Model {
       const fieldOpts = this.__FIELDS[fieldName]
       const givenValue = values[fieldName]
       if (givenValue === undefined) {
-        throw new InvalidFieldError(fieldName, 'missing key component')
+        throw new InvalidFieldError(fieldName, 'must be provided')
       }
       const valueType = validateValue(fieldName, fieldOpts, givenValue)
       if (valueType === String) {
