@@ -177,9 +177,9 @@ class __Field {
         'the default value cannot be set to undefined')
     }
     if (isKey) {
-      if (hasDefault) {
+      if (hasDefault && keyType === 'HASH') {
         throw new InvalidOptionsError('default',
-          'No defaults for keys. It just doesn\'t make sense.')
+          'No defaults for partition keys. It just doesn\'t make sense.')
       }
       if (schema.readOnly === false) {
         throw new InvalidOptionsError('immutable',

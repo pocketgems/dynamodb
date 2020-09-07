@@ -205,9 +205,9 @@ class CommonFieldTest extends BaseTest {
     field = db.__private.NumberField({ keyType: 'RANGE' })
     expect(field.default).toBe(undefined)
 
-    expect(() => {
-      db.__private.NumberField({ keyType: 'RANGE', default: 1 })
-    }).toThrow(db.InvalidOptionsError)
+    // sort keys can have defaults
+    field = db.__private.NumberField({ keyType: 'RANGE', default: 1 })
+    expect(field.default).toBe(1)
   }
 
   testKeyRequired () {
