@@ -382,15 +382,6 @@ class __Field {
   }
 }
 
-const schemaTypeToJSTypeMap = {
-  array: Array,
-  boolean: Boolean,
-  integer: Number,
-  number: Number,
-  float: Number,
-  object: Object,
-  string: String
-}
 function validateValue (fieldName, opts, val) {
   const schema = opts.schema
   const valueType = schemaTypeToJSTypeMap[schema.type]
@@ -546,6 +537,15 @@ const schemaTypeToFieldClassMap = {
   number: NumberField,
   object: ObjectField,
   string: StringField
+}
+const schemaTypeToJSTypeMap = {
+  array: Array,
+  boolean: Boolean,
+  integer: Number,
+  number: Number,
+  float: Number,
+  object: Object,
+  string: String
 }
 
 /**
