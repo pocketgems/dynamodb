@@ -1229,10 +1229,13 @@ class Model {
       }
       const valueType = validateValue(fieldName, fieldOpts, givenValue)
       if (valueType === String) {
-        // to workaround this, put them inside an object
+        // the '\0' character cannot be stored in string fields. If you need to
+        // store a string containing this character, then you need to store it
+        // inside of an object field, e.g.,
+        // item.someObjField = { myString: '\0' } is okay
         if (givenValue.indexOf('\0') !== -1) {
           throw new InvalidFieldError(
-            fieldName, 'cannot put null bytes in strings in compound IDs')
+            fieldName, 'cannot put null bytes in strings in compound values')
         }
         pieces.push(givenValue)
       } else {
