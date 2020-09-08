@@ -7,8 +7,6 @@ const deepeq = require('deep-equal')
 const deepcopy = require('rfdc')()
 const S = require('fluent-schema')
 
-const regexUUIDV4 = /^[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}$/
-
 /**
  * @namespace Errors
  */
@@ -726,7 +724,7 @@ class Model {
    *     birthYear: S.integer().minimum(1900)
    *   }
    */
-  static KEY = S.string().pattern(regexUUIDV4)
+  static KEY = S.string().format(S.FORMATS.UUID)
 
   /** Defines the sort key, if any. Uses the compound key format from KEY. */
   static SORT_KEY = {}
