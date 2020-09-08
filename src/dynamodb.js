@@ -649,16 +649,17 @@ class Model {
     }
     this.__KEY_COMPONENT_NAMES = new Set()
 
-    // cannot use the names of non-static Model members
-    const reservedNames = new Set([
-      'constructor', 'getField', 'id', 'isNew', 'toString'
-    ])
+    // cannot use the names of non-static Model members (only need to list
+    // those that are defined by the constructor; those which are on the
+    // prototype are enforced automatically)
+    const reservedNames = new Set(['id', 'isNew'])
     this.__FIELDS = {}
     const fieldsByKeyType = {
       HASH: keyComponents.partition,
       RANGE: keyComponents.sort,
       '': this.FIELDS
     }
+    const proto = this.prototype
     for (const [keyType, props] of Object.entries(fieldsByKeyType)) {
       for (const [fieldName, givenFieldOpts] of Object.entries(props)) {
         if (this.__FIELDS[fieldName]) {
@@ -686,6 +687,9 @@ class Model {
             throw new InvalidFieldError(
               fieldName, 'this name is reserved and may not be used')
           }
+        }
+        if (fieldName in proto) {
+          throw new InvalidFieldError(fieldName, 'shadows another name')
         }
       }
     }

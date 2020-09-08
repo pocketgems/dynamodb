@@ -43,6 +43,11 @@ class BadModelTest extends BaseTest {
       static SORT_KEY = { isNew: S.string() }
     }
     this.check(BadModel, /this name is reserved/)
+
+    class BadModel2 extends db.Model {
+      static SORT_KEY = { getField: S.string() }
+    }
+    this.check(BadModel2, /shadows another name/)
   }
 
   testIDName () {
