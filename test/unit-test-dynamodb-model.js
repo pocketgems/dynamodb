@@ -51,38 +51,43 @@ class BadModelTest extends BaseTest {
   }
 
   testIDName () {
-    class IDCannotBePartOfACompoundPartitionKey extends db.Model {
-      static KEY = { id: S.string(), n: S.number() }
-    }
-    this.check(IDCannotBePartOfACompoundPartitionKey, /lone partition key/)
-
-    class IDMustBeAString extends db.Model {
-      static KEY = { id: S.number() }
-    }
-    this.check(IDMustBeAString, /may only be of type string/)
-
-    const expMsg = /this name is reserved/
-    class IDCannotBeASortKeyName extends db.Model {
-      static KEY = { x: S.number() }
-      static SORT_KEY = { id: S.string() }
-    }
-    this.check(IDCannotBeASortKeyName, expMsg)
-    class IDCannotBeAFieldName extends db.Model {
-      static KEY = { x: S.number() }
-      static FIELDS = { id: S.string() }
-    }
-    this.check(IDCannotBeAFieldName, expMsg)
-
     class SortKeyMustProvideNames extends db.Model {
       static SORT_KEY = S.number()
     }
-    this.check(SortKeyMustProvideNames, /must define sort key component name/)
+    this.check(SortKeyMustProvideNames, /must define key component name/)
+
+    class PartitionKeyMustProvideNames extends db.Model {
+      static KEY = S.number()
+    }
+    this.check(PartitionKeyMustProvideNames, /must define key component name/)
 
     class OkModel extends db.Model {
       static KEY = { id: S.string() }
       static SORT_KEY = null
     }
     OkModel.__doOneTimeModelPrep()
+
+    class IDCanBePartOfACompoundPartitionKey extends db.Model {
+      static KEY = { id: S.string(), n: S.number() }
+    }
+    IDCanBePartOfACompoundPartitionKey.__doOneTimeModelPrep()
+
+    class IDDoesntHaveToBeAString extends db.Model {
+      static KEY = { id: S.number() }
+    }
+    IDDoesntHaveToBeAString.__doOneTimeModelPrep()
+
+    class IDCanBeASortKeyName extends db.Model {
+      static KEY = { x: S.number() }
+      static SORT_KEY = { id: S.string() }
+    }
+    IDCanBeASortKeyName.__doOneTimeModelPrep()
+
+    class IDCanBeAFieldName extends db.Model {
+      static KEY = { x: S.number() }
+      static FIELDS = { id: S.string() }
+    }
+    IDCanBeAFieldName.__doOneTimeModelPrep()
   }
 }
 
@@ -140,8 +145,8 @@ class SimpleModelTest extends BaseTest {
   testInvalidSetup () {
     const model = new SimpleModel()
     expect(() => {
-      model.__setupModel({}, true, 'abc')
-    }).toThrow(db.InvalidParameterError)
+      model.__setupModel({ _id: uuidv4() }, true, 'abc')
+    }).toThrow(/must be one of CREATE or GET/)
   }
 
   async testRecreatingTable () {
@@ -240,7 +245,7 @@ class NewModelTest extends BaseTest {
     const id = uuidv4()
     await txCreate(SimpleModel, { id })
     await expect(txCreate(SimpleModel, { id }))
-      .rejects.toThrow(db.ModelAlreadyExistsError)
+      .rejects.toThrow(`Tried to recreate an existing model: _id=${id}`)
   }
 
   async testNewModelParamsDeprecated () {
@@ -252,8 +257,10 @@ class NewModelTest extends BaseTest {
 }
 
 class IDWithSchemaModel extends db.Model {
-  static KEY = S.string().pattern(/^xyz.*$/).description(
-    'any string that starts with the prefix "xyz"')
+  static KEY = {
+    id: S.string().pattern(/^xyz.*$/).description(
+      'any string that starts with the prefix "xyz"')
+  }
 }
 
 class CompoundIDModel extends db.Model {
@@ -284,7 +291,7 @@ class IDSchemaTest extends BaseTest {
     const keyOrder = cls.__KEY_ORDER.partition
     expect(() => cls.__encodeCompoundValueToString(keyOrder, { id: 'X' }))
       .toThrow(db.InvalidFieldError)
-    expect(cls.key('xyz').compositeID).toEqual({ id: 'xyz' })
+    expect(cls.key('xyz').compositeID).toEqual({ _id: 'xyz' })
     expect(cls.__encodeCompoundValueToString(keyOrder, { id: 'xyz' }))
       .toEqual('xyz')
   }
@@ -295,7 +302,7 @@ class IDSchemaTest extends BaseTest {
     const id = CompoundIDModel.__encodeCompoundValueToString(
       keyOrder, compoundID)
     function check (entity) {
-      expect(entity.id).toBe(id)
+      expect(entity._id).toBe(id)
       expect(entity.year).toBe(1900)
       expect(entity.make).toBe('Honda')
       expect(entity.upc).toBe(compoundID.upc)
@@ -323,11 +330,11 @@ class IDSchemaTest extends BaseTest {
 
     const msg = /incorrect number of components/
     expect(() => CompoundIDModel.__decodeCompoundValueFromString(
-      keyOrder, '')).toThrow(msg)
+      keyOrder, '', 'fake')).toThrow(msg)
     expect(() => CompoundIDModel.__decodeCompoundValueFromString(
-      keyOrder, id + '\0')).toThrow(msg)
+      keyOrder, id + '\0', 'fake')).toThrow(msg)
     expect(() => CompoundIDModel.__decodeCompoundValueFromString(
-      keyOrder, '\0' + id)).toThrow(msg)
+      keyOrder, '\0' + id, 'fake')).toThrow(msg)
 
     expect(() => CompoundIDModel.key('unexpected value')).toThrow(
       db.InvalidParameterError)
@@ -389,7 +396,7 @@ class WriteTest extends BaseTest {
     params = m1.__updateParams()
     expect(params).not.toHaveProperty(CONDITION_EXPRESSION_STR)
     expect(params).not.toHaveProperty(UPDATE_EXPRESSION_STR)
-    expect(m1.__fields.id.accessed).toBe(false)
+    expect(m1.__db_attrs._id.accessed).toBe(false)
   }
 
   async testWriteSetToUndefinedProp () {
@@ -564,9 +571,15 @@ class KeyTest extends BaseTest {
       x.rangeKey = 2
     })).rejects.toThrow(/rangeKey is immutable/)
     await expect(db.Transaction.run(async tx => {
+      await tx.update(RangeKeyModel, { id: id1, rangeKey: 1 }, { rangeKey: 2 })
+    })).rejects.toThrow(/must not contain key fields/)
+    await expect(db.Transaction.run(async tx => {
       const x = await tx.get(RangeKeyModel, { id: id1, rangeKey: 1 })
       x.id = uuidv4()
     })).rejects.toThrow(/id is immutable/)
+    await expect(db.Transaction.run(async tx => {
+      await tx.update(RangeKeyModel, { id: id1, rangeKey: 1 }, { id: id2 })
+    })).rejects.toThrow(/must not contain key fields/)
   }
 
   async testValidKey () {
@@ -769,7 +782,7 @@ class GetArgsParserTest extends BaseTest {
     expect(async () => {
       const result = await db.__private.getWithArgs(params,
         (key) => key.compositeID)
-      expect(result).toStrictEqual([{ id: id1 }, { id: id2 }])
+      expect(result).toStrictEqual([{ _id: id1 }, { _id: id2 }])
     }).not.toThrow()
 
     keys.push(1)
@@ -781,7 +794,7 @@ class GetArgsParserTest extends BaseTest {
     expect(async () => {
       const result = await db.__private.getWithArgs(params,
         (key) => key.compositeID)
-      expect(result).toStrictEqual([{ id: id1 }, { id: id2 }])
+      expect(result).toStrictEqual([{ _id: id1 }, { _id: id2 }])
     }).not.toThrow()
 
     params.push(1)
@@ -864,11 +877,16 @@ class WriteBatcherTest extends BaseTest {
 
     reasons.push({
       Code: 'ConditionalCheckFailed',
-      Item: { id: '123' }
+      Item: { _id: ['123'] }
     })
     expect(() => {
       batcher.__extractError(response)
-    }).toThrow(db.ModelAlreadyExistsError)
+    }).toThrow(/Tried to recreate an existing model: _id=123/)
+
+    reasons[reasons.length - 1].Item._sk = ['456']
+    expect(() => {
+      batcher.__extractError(response)
+    }).toThrow(/Tried to recreate an existing model: _id=123 _sk=456/)
 
     reasons[0].Code = 'anything else'
     expect(() => {

@@ -71,11 +71,12 @@ class TransactionFailedError extends Error {
 
 /**
  * Thrown when a model is to be created, but DB already has an item with the
- * same ID.
+ * same key.
  */
 class ModelAlreadyExistsError extends Error {
-  constructor (id) {
-    super(`Tried to recreate an existing model: ${id}`)
+  constructor (_id, _sk) {
+    const skStr = (_sk !== undefined) ? ` _sk=${_sk}` : ''
+    super(`Tried to recreate an existing model: _id=${_id}${skStr}`)
     this.name = this.constructor.name
   }
 }
@@ -130,9 +131,11 @@ function loadOptionDefaults (options, defaults) {
  */
 class __Field {
   static __validateFieldOptions (keyType, fieldName, options) {
-    if (fieldName.startsWith('_') && fieldName !== '_sk') {
-      throw new InvalidFieldError(
-        fieldName, 'property names may not start with "_"')
+    if (fieldName.startsWith('_')) {
+      if (fieldName !== '_sk' && fieldName !== '_id') {
+        throw new InvalidFieldError(
+          fieldName, 'property names may not start with "_"')
+      }
     }
 
     if (options.isFluentSchema) {
@@ -577,19 +580,21 @@ class Model {
    */
   constructor () {
     this.isNew = false
-    this.__fields = {}
     this.__written = false
+    // After __setupModel() is called, __db_attrs will contain a __Field
+    // subclass object which for each attribute to be written to the database.
+    // There is one entry for each entry in FIELDS, plus an _id field (the
+    // partition key) and optionally an _sk field (the optional sort key).
+    this.__db_attrs = {}
 
-    for (const [name, opts] of Object.entries(this.constructor.__FIELDS)) {
+    for (const [name, opts] of Object.entries(this.constructor.__VIS_ATTRS)) {
       const Cls = schemaTypeToFieldClassMap[opts.schema.type]
       this[name] = new Cls(opts)
     }
-    if (this.constructor.__isIDFieldComputed()) {
-      // add the implicit, computed "id" field
-      this.id = new StringField(__Field.__validateFieldOptions('HASH', 'id', {
-        schema: S.string().minLength(1)
-      }))
-    }
+    // add the implicit, computed "_id" field
+    this._id = new StringField(__Field.__validateFieldOptions('HASH', '_id', {
+      schema: S.string().minLength(1)
+    }))
     if (this.constructor.__hasSortKey()) {
       // add the implicit, computed "_sk" field
       this._sk = new StringField(
@@ -621,14 +626,7 @@ class Model {
           keyComponents[kind] = {}
         }
       } else if (opts.isFluentSchema || opts.schema) {
-        // key was telling us the schema for the id field, or was fieldOpts for
-        // the id field
-        if (kind === 'partition') {
-          keyComponents[kind] = { id: opts }
-        } else {
-          throw new InvalidFieldError('SORT_KEY',
-            'must define sort key component name(s)')
-        }
+        throw new InvalidFieldError('key', 'must define key component name(s)')
       } else {
         keyComponents[kind] = opts
       }
@@ -652,41 +650,33 @@ class Model {
     // cannot use the names of non-static Model members (only need to list
     // those that are defined by the constructor; those which are on the
     // prototype are enforced automatically)
-    const reservedNames = new Set(['id', 'isNew'])
-    this.__FIELDS = {}
+    const reservedNames = new Set(['isNew'])
     const fieldsByKeyType = {
       HASH: keyComponents.partition,
       RANGE: keyComponents.sort,
       '': this.FIELDS
     }
     const proto = this.prototype
+
+    // __VIS_ATTRS maps the name of attributes that are visible to users of
+    // this model. This is the combination of attributes (keys) defined by KEY,
+    // SORT_KEY and FIELDS.
+    this.__VIS_ATTRS = {}
     for (const [keyType, props] of Object.entries(fieldsByKeyType)) {
       for (const [fieldName, givenFieldOpts] of Object.entries(props)) {
-        if (this.__FIELDS[fieldName]) {
+        if (this.__VIS_ATTRS[fieldName]) {
           throw new InvalidFieldError(
             fieldName, 'property name cannot be used more than once')
         }
         const finalFieldOpts = __Field.__validateFieldOptions(
           keyType || undefined, fieldName, givenFieldOpts)
-        this.__FIELDS[fieldName] = finalFieldOpts
+        this.__VIS_ATTRS[fieldName] = finalFieldOpts
         if (keyType) {
           this.__KEY_COMPONENT_NAMES.add(fieldName)
         }
         if (reservedNames.has(fieldName)) {
-          if (fieldName === 'id' && keyType === 'HASH') {
-            if (this.__KEY_ORDER.partition.length !== 1) {
-              throw new InvalidFieldError('id',
-                'id may only be the lone partition key component')
-            } else if (finalFieldOpts.schema.type !== 'string') {
-              throw new InvalidFieldError('id',
-                'id may only be of type string; use a different field name ' +
-                'if you need a different type')
-            }
-            // else: okay!
-          } else {
-            throw new InvalidFieldError(
-              fieldName, 'this name is reserved and may not be used')
-          }
+          throw new InvalidFieldError(
+            fieldName, 'this name is reserved and may not be used')
         }
         if (fieldName in proto) {
           throw new InvalidFieldError(fieldName, 'shadows another name')
@@ -697,9 +687,9 @@ class Model {
 
   static __getResourceDefinition () {
     this.__doOneTimeModelPrep()
-    // the partition key attribute is always "id" and of type string
-    const attrs = [{ AttributeName: 'id', AttributeType: 'S' }]
-    const keys = [{ AttributeName: 'id', KeyType: 'HASH' }]
+    // the partition key attribute is always "_id" and of type string
+    const attrs = [{ AttributeName: '_id', AttributeType: 'S' }]
+    const keys = [{ AttributeName: '_id', KeyType: 'HASH' }]
 
     // if we have a sort key attribute, it always "_sk" and of type string
     if (this.__KEY_ORDER.sort.length) {
@@ -719,7 +709,7 @@ class Model {
    * partition key is a UUIDv4.
    *
    * A key can simply be some scalar value:
-   *   KEY = S.string()
+   *   KEY = { id: S.string() }
    *
    * A key may can be "compound key", i.e., a key with one or components, each
    * with their own name and schema:
@@ -728,7 +718,7 @@ class Model {
    *     birthYear: S.integer().minimum(1900)
    *   }
    */
-  static KEY = S.string().format(S.FORMATS.UUID)
+  static KEY = { id: S.string().format(S.FORMATS.UUID) }
 
   /** Defines the sort key, if any. Uses the compound key format from KEY. */
   static SORT_KEY = {}
@@ -752,13 +742,6 @@ class Model {
   static FIELDS = {}
 
   /**
-   * Returns true if our "id" field is computed from one or more other fields.
-   */
-  static __isIDFieldComputed () {
-    return this.__KEY_ORDER.partition[0] !== 'id'
-  }
-
-  /**
    * Returns true if this object has a sort key.
    */
   static __hasSortKey () {
@@ -766,39 +749,36 @@ class Model {
   }
 
   /**
-   * Returns the composite ID for the given values.
+   * Returns a map containing the model's computed key values (_id, as well as
+   * _sk if model has a sort key).
    * Verifies that the keys are valid (i.e., they match the required schema).
-   * @param {Object} vals the data to construct the composite ID from; should
-   *   be a map of field names to values
-   * @returns the compound ID object
+   * @param {Object} vals map of field names to values
+   * @returns map of _id and (if hasSortKey()) _sk attribute values
    */
-  static __makeCompositeID (vals) {
-    // add the partition key "id" to the composite ID and validate it
-    const compositeID = {
-      id: this.__encodeCompoundValueToString(this.__KEY_ORDER.partition, vals)
+  static __computeKeyAttrMap (vals) {
+    // compute and validate the partition attribute
+    const keyAttrs = {
+      _id: this.__encodeCompoundValueToString(this.__KEY_ORDER.partition, vals)
     }
 
-    // if "id" was present, it should match what we computed
-    assert.ok(!vals.id || vals.id === compositeID.id,
-      'id does not match computed value')
-
-    // add the sort key, if any, to the composite ID and validate it
+    // add and validate the sort attribute, if any
     if (this.__hasSortKey()) {
-      compositeID._sk = this.__encodeCompoundValueToString(
+      keyAttrs._sk = this.__encodeCompoundValueToString(
         this.__KEY_ORDER.sort, vals
       )
     }
-    return compositeID
+    return keyAttrs
   }
 
   /**
-   * Retrieves a field to achieve more complex behaviors.
+   * Returns the underlying __Field associated with an attribute.
    *
-   * @param {String} name Property name.
+   * @param {String} name the name of a field from FIELDS
    * @returns {BooleanField|ArrayField|ObjectField|NumberField|StringField}
    */
   getField (name) {
-    return this.__fields[name]
+    assert.ok(!name.startsWith('_'), 'may not access internal computed fields')
+    return this.__db_attrs[name]
   }
 
   /**
@@ -840,7 +820,7 @@ class Model {
     const compositeID = {}
     const modelData = {}
     Object.keys(data).forEach(key => {
-      const value = this.__fields[key] || this[key]
+      const value = this.__db_attrs[key] || this[key]
       if (value instanceof __Field &&
           value.keyType !== undefined) {
         compositeID[key] = data[key]
@@ -848,7 +828,7 @@ class Model {
         modelData[key] = data[key]
       }
     })
-    this.constructor.__makeCompositeID(compositeID)
+    this.constructor.__computeKeyAttrMap(compositeID)
     return [compositeID, modelData]
   }
 
@@ -901,15 +881,15 @@ class Model {
       // It can happen only when the model isNew.
       // However, when items are setup from updateItem method, we pretend the
       // items to be not new. Hence, the condition will never be satisfied.
-      // conditions.push('attribute_exists(id)')
+      // conditions.push('attribute_exists(_id)')
       assert.fail('This should be unreachable unless something is broken.')
     }
 
     const item = {}
     const accessedFields = []
     let exprCount = 0
-    Object.keys(this.__fields).forEach(key => {
-      const field = this.__fields[key]
+    Object.keys(this.__db_attrs).forEach(key => {
+      const field = this.__db_attrs[key]
       field.validate()
 
       if (field.__value !== undefined) {
@@ -928,6 +908,7 @@ class Model {
     })
 
     let conditionExpr
+    let hasExistsCheck = false
     const isCreateOrPut =
       this.__initMethod === Model.__INIT_METHOD.CREATE_OR_PUT
     const exprValues = {}
@@ -946,10 +927,12 @@ class Model {
         conditionExpr = conditions.join(' AND ')
 
         if (conditionExpr.length !== 0) {
-          conditionExpr = `attribute_not_exists(id) OR (${conditionExpr})`
+          conditionExpr = `attribute_not_exists(#id) OR (${conditionExpr})`
+          hasExistsCheck = true
         }
       } else {
-        conditionExpr = 'attribute_not_exists(id)'
+        conditionExpr = 'attribute_not_exists(#id)'
+        hasExistsCheck = true
       }
     } else {
       const conditions = []
@@ -973,6 +956,9 @@ class Model {
     }
     if (Object.keys(exprValues).length) {
       ret.ExpressionAttributeValues = exprValues
+    }
+    if (hasExistsCheck) {
+      ret.ExpressionAttributeNames = { '#id': '_id' }
     }
     return ret
   }
@@ -1007,8 +993,8 @@ class Model {
     const isUpdate =
       this.__initMethod === Model.__INIT_METHOD.UPDATE
 
-    Object.keys(this.__fields).forEach(key => {
-      const field = this.__fields[key]
+    Object.keys(this.__db_attrs).forEach(key => {
+      const field = this.__db_attrs[key]
       const omitInUpdate = isUpdate && field.get() === undefined
       const doValidate = (shouldValidate === undefined || shouldValidate) &&
         !omitInUpdate
@@ -1043,11 +1029,14 @@ class Model {
       }
     })
 
+    let hasExistsCheck = false
     if (this.isNew) {
-      conditions.push('attribute_not_exists(id)')
+      conditions.push('attribute_not_exists(#id)')
+      hasExistsCheck = true
     } else {
       if (isUpdate) {
-        conditions.push('attribute_exists(id)')
+        conditions.push('attribute_exists(#id)')
+        hasExistsCheck = true
       }
 
       for (const field of accessedFields) {
@@ -1089,6 +1078,9 @@ class Model {
     if (Object.keys(exprValues).length) {
       ret.ExpressionAttributeValues = exprValues
     }
+    if (hasExistsCheck) {
+      ret.ExpressionAttributeNames = { '#id': '_id' }
+    }
     return ret
   }
 
@@ -1099,7 +1091,7 @@ class Model {
    * @type {Boolean}
    */
   __isMutated () {
-    return this.isNew || Object.values(this.__fields).reduce(
+    return this.isNew || Object.values(this.__db_attrs).reduce(
       (result, field) => {
         return result || field.mutated
       },
@@ -1136,8 +1128,14 @@ class Model {
   }
 
   __setupKey (isPartitionKey, vals) {
-    const attrName = isPartitionKey ? 'id' : '_sk'
-    const keyOrderKey = (attrName === 'id') ? 'partition' : 'sort'
+    let attrName, keyOrderKey
+    if (isPartitionKey) {
+      attrName = '_id'
+      keyOrderKey = 'partition'
+    } else {
+      attrName = '_sk'
+      keyOrderKey = 'sort'
+    }
     const keyOrder = this.constructor.__KEY_ORDER[keyOrderKey]
     if (!vals[attrName]) {
       // if the computed field is missing, compute it
@@ -1148,7 +1146,7 @@ class Model {
       /* istanbul ignore else */
       if (vals[keyOrder[0]] === undefined) {
         Object.assign(vals, this.constructor.__decodeCompoundValueFromString(
-          keyOrder, vals[attrName]))
+          keyOrder, vals[attrName], attrName))
       }
     }
   }
@@ -1163,9 +1161,7 @@ class Model {
    * @param {Model.__INIT_METHOD} method How the model was instantiated.
    */
   __setupModel (vals, isNew, method) {
-    if (this.constructor.__isIDFieldComputed()) {
-      this.__setupKey(true, vals)
-    }
+    this.__setupKey(true, vals)
     if (this.constructor.__hasSortKey()) {
       this.__setupKey(false, vals)
     }
@@ -1183,10 +1179,10 @@ class Model {
         field.name = key
 
         const keyType = field.keyType
-        if (!keyType || key === 'id' || key === '_sk') {
-          // key fields are implicitly included in the "id" or "_sk" field;
+        if (!keyType || key === '_id' || key === '_sk') {
+          // key fields are implicitly included in the "_id" or "_sk" field;
           // they are otherwise ignored!
-          this.__fields[key] = field
+          this.__db_attrs[key] = field
         }
         const val = vals[key]
         field.__setup(val)
@@ -1226,7 +1222,7 @@ class Model {
     const pieces = []
     for (var i = 0; i < keyOrder.length; i++) {
       const fieldName = keyOrder[i]
-      const fieldOpts = this.__FIELDS[fieldName]
+      const fieldOpts = this.__VIS_ATTRS[fieldName]
       const givenValue = values[fieldName]
       if (givenValue === undefined) {
         throw new InvalidFieldError(fieldName, 'must be provided')
@@ -1257,18 +1253,19 @@ class Model {
    *
    * @param {Array<String>} keyOrder order of keys in the string representation
    * @param {String} strVal the string representation of a compound value
+   * @param {String} attrName which key we're parsing
    */
-  static __decodeCompoundValueFromString (keyOrder, strVal) {
+  static __decodeCompoundValueFromString (keyOrder, strVal, attrName) {
     const compoundID = {}
     const pieces = strVal.split('\0')
     if (pieces.length !== keyOrder.length) {
       throw new InvalidFieldError(
-        'id', 'failed to parse ID: incorrect number of components')
+        attrName, 'failed to parse key: incorrect number of components')
     }
     for (let i = 0; i < pieces.length; i++) {
       const piece = pieces[i]
       const fieldName = keyOrder[i]
-      const fieldOpts = this.__FIELDS[fieldName]
+      const fieldOpts = this.__VIS_ATTRS[fieldName]
       const valueType = schemaTypeToJSTypeMap[fieldOpts.schema.type]
       if (valueType === String) {
         compoundID[fieldName] = piece
@@ -1288,14 +1285,11 @@ class Model {
    * @returns {Key} a Key object.
    */
   static key (keyValues) {
-    // id validation is coupled with Model instances. Instead of instantiating
-    // a model here for validating id, just do minimal checks here and have the
-    // library throw when the key is fetched.
     if (!keyValues) {
       throw new InvalidParameterError('keyValues', 'missing')
     }
 
-    // if we only have one key component, then the `id` **MAY** just be the
+    // if we only have one key component, then the `_id` **MAY** just be the
     // value rather than a map of key component names to values
     assert.ok(this.__KEY_ORDER,
       `model ${this.name} one-time setup was not done (remember to export ` +
@@ -1329,7 +1323,7 @@ class Model {
       throw new InvalidParameterError('keyValues',
         `expected keys ${expKeys.join(', ')} but got ${givenKeys.join(', ')}`)
     }
-    return new Key(this, this.__makeCompositeID(keyValues))
+    return new Key(this, this.__computeKeyAttrMap(keyValues))
   }
 
   /**
@@ -1354,7 +1348,7 @@ class Model {
         if (!error.retryable) {
           if (this.__initMethod === Model.__INIT_METHOD.CREATE &&
               error.code === 'ConditionalCheckFailedException') {
-            throw new ModelAlreadyExistsError(this.id)
+            throw new ModelAlreadyExistsError(this._id, this._sk)
           } else {
             throw error
           }
@@ -1371,11 +1365,16 @@ class Model {
   }
 
   /**
-   * Shows the type and id of a model, for example, [Model Foo:someid], so that
-   * each model has a unique identifier to be used in Object and Set.
+   * Shows the type and key of a model, for example,
+   * [Model Foo:paritionKey:sortKey], so that each model has a unique
+   * identifier to be used in Object and Set.
    */
   toString () {
-    return `[Model ${this.constructor.name}:${this.__fields.id.__value}]`
+    let keyStr = this.__db_attrs._id.__value
+    if (this.constructor.__hasSortKey()) {
+      keyStr += this.__db_attrs._sk.__value
+    }
+    return `[Model ${this.constructor.name}:${keyStr}]`
   }
 }
 
@@ -1390,7 +1389,7 @@ async function getWithArgs (args, callback) {
       return getWithArgs([key, ...args1.slice(1)], callback)
     } else {
       throw new InvalidParameterError('args',
-        'Expecting args to have a tuple of (Model, id, optionalOpt).')
+        'Expecting args to have a tuple of (Model, keyValues, optionalOpt).')
     }
   } else if (first && first instanceof Key) {
     if (args1.length > 1) {
@@ -1547,8 +1546,10 @@ class __WriteBatcher {
         // We only ask for the object to be returned when it's `created`.
         // If we see ConditionalCheckFailed and an Item we know it's due
         // to creating an existing item.
-        const itemId = Object.values(reason.Item.id)[0]
-        const error = new ModelAlreadyExistsError(itemId)
+        const itemId = Object.values(reason.Item._id)[0]
+        const _sk = reason.Item._sk
+        const itemSk = (_sk !== undefined) ? Object.values(_sk)[0] : undefined
+        const error = new ModelAlreadyExistsError(itemId, itemSk)
         error.name = reason.Code
         error.retryable = false
         throw error
@@ -1609,14 +1610,14 @@ class Transaction {
   /**
    * Fetches model(s) from database.
    * This method supports 3 different signatures.
-   *   get(Cls, id, params)
+   *   get(Cls, keyValues, params)
    *   get(Key, params)
    *   get([Key], params)
    *
    * @param {Model} Cls a Model class.
-   * @param {String|CompositeID} id
+   * @param {String|CompositeID} key Key or keyValues
    * @param {GetParams} [params]
-   * @returns Model(s) associated with provided id.
+   * @returns Model(s) associated with provided key
    */
   async get (...args) {
     return getWithArgs(args, async (key, params) => {
@@ -1626,7 +1627,7 @@ class Transaction {
       if ((!params || !params.createIfMissing) && !data.Item) {
         return undefined
       }
-      model.__setupModel(data.Item || key.compositeID, !data.Item,
+      model.__setupModel(data.Item || { ...key.compositeID }, !data.Item,
         model.constructor.__INIT_METHOD.GET)
       this.__writeBatcher.track(model)
       return model
@@ -1658,14 +1659,14 @@ class Transaction {
     }
 
     const model = new Cls(params)
-    const data = model.__splitIDFromOtherFields(original)[1] // also check ids
+    const data = model.__splitIDFromOtherFields(original)[1] // also check keys
     model.__setupModel(original, false, model.constructor.__INIT_METHOD.UPDATE)
     Object.keys(data).forEach(k => {
       model.getField(k).get() // Read to show in ConditionExpression
     })
 
     Object.keys(updated).forEach(key => {
-      if (model.__fields[key].keyType !== undefined) {
+      if (model.constructor.__VIS_ATTRS[key].keyType !== undefined) {
         throw new InvalidParameterError(
           'updated', 'must not contain key fields')
       }
@@ -1700,7 +1701,8 @@ class Transaction {
     Object.keys(updated).forEach(key => {
       model[key] = updated[key]
     })
-    const missingFields = Object.keys(model.__fields).filter(key => {
+    const fieldNames = Object.keys(model.constructor.__VIS_ATTRS)
+    const missingFields = fieldNames.filter(key => {
       return !Object.prototype.hasOwnProperty.call(original, key) &&
         !Object.prototype.hasOwnProperty.call(updated, key)
     })
