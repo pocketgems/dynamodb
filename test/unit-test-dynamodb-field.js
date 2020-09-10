@@ -27,17 +27,13 @@ class CommonFieldTest extends BaseTest {
   testInvalidFieldOption () {
     expect(() => {
       db.__private.NumberField({ aaaa: 1 }) // eslint-disable-line no-new
-    }).toThrow(db.InvalidOptionsError)
-    expect(() => {
-      db.__private.__Field.__validateFieldOptions(
-        undefined, 'okName', { schema: S.string(), keyType: 'HASH' })
-    }).toThrow(/keyType cannot be specified/)
+    }).toThrow(/unexpected option/)
   }
 
   testInvalidFieldName () {
     expect(() => {
       db.__private.__Field.__validateFieldOptions(
-        undefined, '__nope', { schema: S.string() })
+        undefined, '_nope', S.string())
     }).toThrow(/may not start with/)
   }
 
@@ -227,10 +223,6 @@ class CommonFieldTest extends BaseTest {
     field = db.__private.NumberField({ keyType: 'HASH', optional: undefined })
     expect(field.optional).toBe(false)
 
-    expect(() => {
-      db.__private.NumberField({ keyType: 'HASH', optional: '' })
-    }).toThrow(db.InvalidOptionsError)
-
     field = db.__private.NumberField({ keyType: 'RANGE' })
     expect(field.optional).toBe(false)
 
@@ -242,10 +234,6 @@ class CommonFieldTest extends BaseTest {
     }).toThrow(db.InvalidOptionsError)
     field = db.__private.NumberField({ keyType: 'RANGE', optional: undefined })
     expect(field.optional).toBe(false)
-
-    expect(() => {
-      db.__private.NumberField({ keyType: 'RANGE', optional: '' })
-    }).toThrow(db.InvalidOptionsError)
   }
 
   testRequiredFlag () {
@@ -329,7 +317,7 @@ class FieldSchemaTest extends BaseTest {
     }
     expect(() => {
       db.__private.__Field.__validateFieldOptions(
-        undefined, 'nameIsFine', { schema: badSchema })
+        undefined, 'nameIsFine', badSchema)
     }).toThrow(/unsupported field type/)
   }
 
@@ -359,7 +347,7 @@ class FieldSchemaTest extends BaseTest {
   testInvalidObject () {
     // Make sure object schema is checked
     const field = db.__private.ObjectField({
-      schema: S.object().prop('abc', S.string().required())
+      schema: S.object().prop('abc', S.string())
     })
 
     const invalidValues = [

@@ -265,8 +265,7 @@ class IDWithSchemaModel extends db.Model {
 
 class CompoundIDModel extends db.Model {
   static KEY = {
-    // required() does nothing because every component is required
-    year: S.integer().minimum(1900).required(),
+    year: S.integer().minimum(1900),
     make: S.string().minLength(3),
     upc: S.string()
   }
@@ -343,7 +342,7 @@ class IDSchemaTest extends BaseTest {
 
 class BasicModel extends db.Model {
   static FIELDS = {
-    noRequiredNoDefault: { schema: S.number(), optional: true }
+    noRequiredNoDefault: S.number().optional()
   }
 }
 
@@ -641,22 +640,14 @@ class KeyTest extends BaseTest {
 
 class JSONModel extends db.Model {
   static FIELDS = {
-    objNoDefaultNoRequired: { schema: S.object(), optional: true },
-    objDefaultNoRequired: {
-      schema: S.object(),
-      default: { a: 1 },
-      optional: true
-    },
+    objNoDefaultNoRequired: S.object().optional(),
+    objDefaultNoRequired: S.object().default({ a: 1 }).optional(),
     objNoDefaultRequired: S.object(),
-    objDefaultRequired: { schema: S.object(), default: {} },
-    arrNoDefaultNoRequired: { schema: S.array(), optional: true },
-    arrDefaultNoRequired: {
-      schema: S.array(),
-      default: [1, 2],
-      optional: true
-    },
+    objDefaultRequired: S.object().default({}),
+    arrNoDefaultNoRequired: S.array().optional(),
+    arrDefaultNoRequired: S.array().default([1, 2]).optional(),
     arrNoDefaultRequired: S.array(),
-    arrDefaultRequired: { schema: S.array(), default: [] }
+    arrDefaultRequired: S.array().default([])
   }
 }
 

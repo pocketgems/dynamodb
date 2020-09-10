@@ -28,10 +28,10 @@ async function txGetRequired (keyValues, func) {
 class TransactionModel extends db.Model {
   static KEY = { id: S.string().minLength(1) }
   static FIELDS = {
-    field1: { schema: S.number(), optional: true },
-    field2: { schema: S.number(), optional: true },
-    arrField: { schema: S.array(), optional: true },
-    objField: { schema: S.object(), optional: true }
+    field1: S.number().optional(),
+    field2: S.number().optional(),
+    arrField: S.array().optional(),
+    objField: S.object().optional()
   }
 }
 class TransactionModelWithRequiredField extends TransactionModel {
@@ -80,7 +80,9 @@ class ParameterTest extends BaseTest {
     const badOptions = [
       { retries: -1 },
       { initialBackoff: 0 },
-      { maxBackoff: 199 }
+      { maxBackoff: 199 },
+      { notAValidOption: 1 },
+      { retries: 'wrong type' }
     ]
     for (const opt of badOptions) {
       expect(() => {

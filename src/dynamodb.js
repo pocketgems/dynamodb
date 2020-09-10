@@ -130,7 +130,7 @@ function loadOptionDefaults (options, defaults) {
  * @memberof Internal
  */
 class __Field {
-  static __validateFieldOptions (keyType, fieldName, options) {
+  static __validateFieldOptions (keyType, fieldName, schema) {
     if (fieldName.startsWith('_')) {
       if (fieldName !== '_sk' && fieldName !== '_id') {
         throw new InvalidFieldError(
@@ -138,18 +138,16 @@ class __Field {
       }
     }
 
-    if (options.isFluentSchema) {
-      options = { schema: options }
-    } else if (!options.schema || !options.schema.isFluentSchema) {
-      throw new InvalidFieldError(
-        fieldName, 'schema must be a fluent-schema')
-    } else {
-      // shallow copy options because we're about to add to the object and we
-      // don't want this to affect the original options (which may be inherited
-      // by a subclass)
-      options = { ...options }
+    assert.ok(schema.isFluentSchema, 'should be fluent-schema')
+    schema = schema.valueOf()
+    const isKey = !!keyType
+    const options = {
+      keyType,
+      schema,
+      optional: schema.required === undefined,
+      immutable: isKey || schema.readOnly === true,
+      default: schema.default
     }
-    options.schema = options.schema.valueOf()
     if (options.schema.type !== 'object' && options.schema.required) {
       delete options.schema.required
     }
@@ -159,30 +157,17 @@ class __Field {
         fieldName, `unsupported field type ${options.schema.type}`)
     }
 
-    if (Object.prototype.hasOwnProperty.call(options, 'keyType')) {
-      throw new InvalidFieldError(fieldName, 'keyType cannot be specified')
-    }
-    options.keyType = keyType
-
-    const defaults = {
-      keyType: undefined,
-      optional: false,
-      immutable: false,
-      default: undefined,
-      schema: undefined
-    }
-    checkUnexpectedOptions(options, defaults)
-    const hasDefault = Object.prototype.hasOwnProperty.call(options, 'default')
+    const hasDefault = Object.prototype.hasOwnProperty.call(schema, 'default')
     if (hasDefault && options.default === undefined) {
       throw new InvalidFieldError(fieldName,
         'the default value cannot be set to undefined')
     }
-    if (options.keyType !== undefined) {
+    if (isKey) {
       if (hasDefault) {
         throw new InvalidOptionsError('default',
           'No defaults for keys. It just doesn\'t make sense.')
       }
-      if (options.immutable !== undefined && !options.immutable) {
+      if (schema.readOnly === false) {
         throw new InvalidOptionsError('immutable',
           'Keys must be immutable.')
       }
@@ -190,11 +175,9 @@ class __Field {
         throw new InvalidOptionsError('optional',
           'Keys must never be optional.')
       }
-      options.immutable = true
-      options.optional = false
     }
     options.schemaValidator = ajv.compile(options.schema)
-    return Object.assign(defaults, options)
+    return options
   }
 
   /**
@@ -211,15 +194,8 @@ class __Field {
    * @property {*} [default=undefined] Default value to use. IMPORTANT: Value
    *   is deeply copied, so additional modifications to the parameter will
    *   not reflect in the field.
-   * @property {fluent-schema} [schema=undefined] An optional fluent schema
-   *   to validate Field's value. Field class obviously already constraints the
-   *   root object's type, but schema option can be used to add additional
-   *   constraints. For example, limiting StringField's values min and max
-   *   length. Or for ArrayField, shape of the underlying data can be better
-   *   defined with schema.
-   *   Noteworthily, Field's optional option superceeds schema's required
-   *   property, meaning if an optional StringField's schema requires a string,
-   *   overall the Field is not required, and vice versa.
+   * @property {schema} [schema=undefined] An optional JSON schema
+   *   to validate Field's value.
    */
 
   /**
@@ -592,15 +568,12 @@ class Model {
       this[name] = new Cls(opts)
     }
     // add the implicit, computed "_id" field
-    this._id = new StringField(__Field.__validateFieldOptions('HASH', '_id', {
-      schema: S.string().minLength(1)
-    }))
+    this._id = new StringField(__Field.__validateFieldOptions(
+      'HASH', '_id', S.string().minLength(1)))
     if (this.constructor.__hasSortKey()) {
       // add the implicit, computed "_sk" field
-      this._sk = new StringField(
-        __Field.__validateFieldOptions('RANGE', '_sk', {
-          schema: S.string().minLength(1)
-        }))
+      this._sk = new StringField(__Field.__validateFieldOptions(
+        'RANGE', '_sk', S.string().minLength(1)))
     }
   }
 
@@ -663,13 +636,13 @@ class Model {
     // SORT_KEY and FIELDS.
     this.__VIS_ATTRS = {}
     for (const [keyType, props] of Object.entries(fieldsByKeyType)) {
-      for (const [fieldName, givenFieldOpts] of Object.entries(props)) {
+      for (const [fieldName, schema] of Object.entries(props)) {
         if (this.__VIS_ATTRS[fieldName]) {
           throw new InvalidFieldError(
             fieldName, 'property name cannot be used more than once')
         }
         const finalFieldOpts = __Field.__validateFieldOptions(
-          keyType || undefined, fieldName, givenFieldOpts)
+          keyType || undefined, fieldName, schema)
         this.__VIS_ATTRS[fieldName] = finalFieldOpts
         if (keyType) {
           this.__KEY_COMPONENT_NAMES.add(fieldName)
@@ -726,17 +699,11 @@ class Model {
   /**
    * Defines the non-key fields. By default there are no fields.
    *
-   * Properties are defined as a map from field names to either a fluent-schema
-   * or a {@link FieldOptions}:
+   * Properties are defined as a map from field names to a fluent-schema:
    * @example
    *   FIELDS = {
    *     someNumber: S.number(),
-   *     someNumberWithOptions: {
-   *       schema: S.number(),
-   *       optional: true,
-   *       default: 0,
-   *       immutable: true
-   *     }
+   *     someNumberWithOptions: S.number().optional().default(0).readOnly()
    *   }
    */
   static FIELDS = {}
@@ -1935,21 +1902,44 @@ function setup (config) {
           delete options.keyType
         }
         // schema is required; fill in the default if none is provided
-        if (!options.schema) {
+        let schema = options.schema
+        if (!schema) {
           if (Cls === ArrayField) {
-            options.schema = S.array()
+            schema = S.array()
           } else if (Cls === BooleanField) {
-            options.schema = S.boolean()
+            schema = S.boolean()
           } else if (Cls === NumberField) {
-            options.schema = S.number()
+            schema = S.number()
           } else if (Cls === ObjectField) {
-            options.schema = S.object()
+            schema = S.object()
           } else {
             assert.ok(Cls === StringField, 'unexpected class: ' + Cls.name)
-            options.schema = S.string()
+            schema = S.string()
           }
         }
-        options = __Field.__validateFieldOptions(keyType, 'someName', options)
+        delete options.schema
+        if (Object.hasOwnProperty.call(options, 'optional')) {
+          if (options.optional) {
+            schema = schema.optional()
+          }
+          delete options.optional
+        }
+        if (Object.hasOwnProperty.call(options, 'immutable')) {
+          if (options.immutable) {
+            schema = schema.readOnly()
+          } else {
+            schema = schema.readOnly(false)
+          }
+          delete options.immutable
+        }
+        if (Object.hasOwnProperty.call(options, 'default')) {
+          schema = schema.default(options.default)
+          delete options.default
+        }
+        const optionKeysLeft = Object.keys(options)
+        assert.ok(optionKeysLeft.length === 0,
+          `unexpected option(s): ${optionKeysLeft}`)
+        options = __Field.__validateFieldOptions(keyType, 'someName', schema)
         return new Cls(options)
       }
     })
