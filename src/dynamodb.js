@@ -1895,45 +1895,46 @@ function setup (config) {
       StringField
     ]
     exportAsFactory.forEach(Cls => {
-      toExport.__private[Cls.name] = options => {
-        options = options || {}
-        let schema
-        function processOption (key, func) {
-          if (Object.hasOwnProperty.call(options, key)) {
-            const val = options[key]
-            schema = func(val)
-            delete options[key]
-            return val
-          }
-        }
-        // schema is required; fill in the default if none is provided
-        processOption('schema', schema => schema)
-        if (!schema) {
-          if (Cls === ArrayField) {
-            schema = S.array()
-          } else if (Cls === BooleanField) {
-            schema = S.boolean()
-          } else if (Cls === NumberField) {
-            schema = S.number()
-          } else if (Cls === ObjectField) {
-            schema = S.object()
-          } else {
-            assert.ok(Cls === StringField, 'unexpected class: ' + Cls.name)
-            schema = S.string()
-          }
-        }
-        const keyType = processOption('keyType', () => schema)
-        processOption('optional', isOpt => isOpt ? schema.optional() : schema)
-        processOption('immutable', isReadOnly => schema.readOnly(isReadOnly))
-        processOption('default', val => schema.default(val))
-        const optionKeysLeft = Object.keys(options)
-        assert.ok(optionKeysLeft.length === 0,
-          `unexpected option(s): ${optionKeysLeft}`)
-        options = __Field.__validateFieldOptions(keyType, 'someName', schema)
-        return new Cls(options)
-      }
+      toExport.__private[Cls.name] = opts => fieldFromFieldOptions(Cls, opts)
     })
   }
   return toExport
+}
+function fieldFromFieldOptions (Cls, options) {
+  options = options || {}
+  let schema
+  function processOption (key, func) {
+    if (Object.hasOwnProperty.call(options, key)) {
+      const val = options[key]
+      schema = func(val)
+      delete options[key]
+      return val
+    }
+  }
+  // schema is required; fill in the default if none is provided
+  processOption('schema', schema => schema)
+  if (!schema) {
+    if (Cls === ArrayField) {
+      schema = S.array()
+    } else if (Cls === BooleanField) {
+      schema = S.boolean()
+    } else if (Cls === NumberField) {
+      schema = S.number()
+    } else if (Cls === ObjectField) {
+      schema = S.object()
+    } else {
+      assert.ok(Cls === StringField, 'unexpected class: ' + Cls.name)
+      schema = S.string()
+    }
+  }
+  const keyType = processOption('keyType', () => schema)
+  processOption('optional', isOpt => isOpt ? schema.optional() : schema)
+  processOption('immutable', isReadOnly => schema.readOnly(isReadOnly))
+  processOption('default', val => schema.default(val))
+  const optionKeysLeft = Object.keys(options)
+  assert.ok(optionKeysLeft.length === 0,
+      `unexpected option(s): ${optionKeysLeft}`)
+  options = __Field.__validateFieldOptions(keyType, 'someName', schema)
+  return new Cls(options)
 }
 module.exports = setup()
