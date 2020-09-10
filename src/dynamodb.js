@@ -1700,7 +1700,6 @@ class Transaction {
    */
   createOrPut (Cls, original, updated) {
     const model = new Cls()
-    model.__splitIDFromOtherFields(original)
     model.__setupModel(original, true,
       model.constructor.__INIT_METHOD.CREATE_OR_PUT)
     Object.keys(updated).forEach(key => {
