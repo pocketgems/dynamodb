@@ -242,7 +242,7 @@ class __Field {
 
   /**
    * Sets up field's state using data fetched from server. Seals the object to
-   * prevent futher modifications.
+   * prevent further modifications.
    *
    * @access package
    */
@@ -426,7 +426,7 @@ class NumberField extends __Field {
   }
 
   /**
-   * Updates the field's value by an offset. Doesn't perform optimisitic
+   * Updates the field's value by an offset. Doesn't perform optimistic
    * locking on write. May not mix usages of set and incrementBy.
    * @param {Number} diff The diff amount.
    */
@@ -764,7 +764,7 @@ class Model {
 
   /**
    * The table name this model is associated with, excluding the service ID
-   * prefix. This is the model's class name. However, suclasses may choose to
+   * prefix. This is the model's class name. However, subclasses may choose to
    * override this method and provide duplicated table name for co-existed
    * models.
    *
@@ -949,9 +949,9 @@ class Model {
    * Update only overrides fields that got updated to a different value.
    * Untracked fields will not be removed from DynamoDB. This library supports
    * optimistic locking for update. Since update only touches specific fields
-   * of an item, optimisitc locking is only performed on fields accessed (read
+   * of an item, optimistic locking is only performed on fields accessed (read
    * or write). This locking mechanism results in less likely contentions,
-   * hence is prefered over put.
+   * hence is preferred over put.
    *
    * @access package
    * @param {Boolean} shouldValidate Whether each field needs to be validated.
@@ -959,7 +959,7 @@ class Model {
    *   It is used for generating params for ConditionCheck which is mostly
    *   identical to updateParams. But omit validation since the model is either
    *   from server which must be valid already (from validations on last
-   *   write), or fields sitll need to be setup before they are all valid.
+   *   write), or fields still need to be setup before they are all valid.
    * @returns parameters for a update request to DynamoDB
    */
   __updateParams (shouldValidate) {
@@ -1049,8 +1049,8 @@ class Model {
       actions.push(`REMOVE ${removes.join(',')}`)
     }
     if (actions.length) {
-      // NOTE: This is optional in dynamodb's update call,
-      // but required in the transactWrite.update conterpart.
+      // NOTE: This is optional in DynamoDB's update call,
+      // but required in the transactWrite.update counterpart.
       ret.UpdateExpression = actions.join(' ')
     }
     if (conditions.length) {
@@ -1352,7 +1352,7 @@ class Model {
 
   /**
    * Shows the type and key of a model, for example,
-   * [Model Foo:paritionKey:sortKey], so that each model has a unique
+   * [Model Foo:partitionKey:sortKey], so that each model has a unique
    * identifier to be used in Object and Set.
    */
   toString () {
@@ -1404,7 +1404,7 @@ async function getWithArgs (args, callback) {
 
 /**
  * Batches put and update (potentially could support delete) requests to
- * DynamoDB within a transaction and sents on commit.
+ * DynamoDB within a transaction and sent on commit.
  * @private
  * @memberof Internal
  *
@@ -1424,7 +1424,7 @@ class __WriteBatcher {
 
   /**
    * Gets params for the request according to method, batches the params.
-   * Favors update over put for writting to DynamoDB, except for a corner case
+   * Favors update over put for writing to DynamoDB, except for a corner case
    * where update disallows write operations without an UpdateExpression. This
    * happens when a new model is created with no fields besides keys populated
    * and written to DB.
@@ -1472,7 +1472,7 @@ class __WriteBatcher {
   }
 
   /**
-   * Commits batched writes by sending DynamodDB requests.
+   * Commits batched writes by sending DynamoDB requests.
    *
    * @returns {Boolean} whether any model is written to DB.
    */
@@ -1680,7 +1680,7 @@ class Transaction {
 
     this.__writeBatcher.track(model)
 
-    // Don't return model, since it should be closed to futhur modifications.
+    // Don't return model, since it should be closed to further modifications.
     // return model
   }
 
@@ -1718,12 +1718,12 @@ class Transaction {
     }
     this.__writeBatcher.track(model)
 
-    // Don't return model, since it should be closed to futhur modifications.
+    // Don't return model, since it should be closed to further modifications.
     // return model
   }
 
   /**
-   * Creates a model without accesing DB. Write will make sure the item does
+   * Creates a model without accessing DB. Write will make sure the item does
    * not exist.
    *
    * @param {Model} Cls A Model class.
