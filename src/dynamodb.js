@@ -1897,12 +1897,17 @@ function setup (config) {
     exportAsFactory.forEach(Cls => {
       toExport.__private[Cls.name] = options => {
         options = options || {}
-        const keyType = options.keyType
-        if (Object.hasOwnProperty.call(options, 'keyType')) {
-          delete options.keyType
+        let schema
+        function processOption (key, func) {
+          if (Object.hasOwnProperty.call(options, key)) {
+            const val = options[key]
+            schema = func(val)
+            delete options[key]
+            return val
+          }
         }
         // schema is required; fill in the default if none is provided
-        let schema = options.schema
+        processOption('schema', schema => schema)
         if (!schema) {
           if (Cls === ArrayField) {
             schema = S.array()
@@ -1917,25 +1922,10 @@ function setup (config) {
             schema = S.string()
           }
         }
-        delete options.schema
-        if (Object.hasOwnProperty.call(options, 'optional')) {
-          if (options.optional) {
-            schema = schema.optional()
-          }
-          delete options.optional
-        }
-        if (Object.hasOwnProperty.call(options, 'immutable')) {
-          if (options.immutable) {
-            schema = schema.readOnly()
-          } else {
-            schema = schema.readOnly(false)
-          }
-          delete options.immutable
-        }
-        if (Object.hasOwnProperty.call(options, 'default')) {
-          schema = schema.default(options.default)
-          delete options.default
-        }
+        const keyType = processOption('keyType', () => schema)
+        processOption('optional', isOpt => isOpt ? schema.optional() : schema)
+        processOption('immutable', isReadOnly => schema.readOnly(isReadOnly))
+        processOption('default', val => schema.default(val))
         const optionKeysLeft = Object.keys(options)
         assert.ok(optionKeysLeft.length === 0,
           `unexpected option(s): ${optionKeysLeft}`)
