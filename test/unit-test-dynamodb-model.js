@@ -862,27 +862,77 @@ class WriteBatcherTest extends BaseTest {
     }
 
     const batcher = new db.__private.__WriteBatcher()
-    expect(() => {
-      batcher.__extractError(response)
-    }).not.toThrow()
+    batcher.track({
+      _id: '123',
+      __initMethod: db.Model.__INIT_METHOD.CREATE
+    })
+    batcher.__extractError({}, response)
+    expect(response.error).toBe(undefined)
 
+    const item = { _id: { S: '123' } }
     reasons.push({
       Code: 'ConditionalCheckFailed',
-      Item: { _id: ['123'] }
+      Item: item
     })
-    expect(() => {
-      batcher.__extractError(response)
-    }).toThrow(/Tried to recreate an existing model: _id=123/)
+    const request = {
+      params: {
+        TransactItems: [{ Put: { Item: item } }]
+      }
+    }
+    response.error = undefined
+    batcher.__extractError(request, response)
+    expect(response.error.message)
+      .toBe('Tried to recreate an existing model: _id=123')
 
-    reasons[reasons.length - 1].Item._sk = ['456']
-    expect(() => {
-      batcher.__extractError(response)
-    }).toThrow(/Tried to recreate an existing model: _id=123 _sk=456/)
+    batcher.__allModels[0]._sk = '456'
+    request.params.TransactItems = [
+      {
+        Update: { Key: { _id: { S: '123' }, _sk: { S: '456' } } }
+      }
+    ]
+    response.error = undefined
+    batcher.__extractError(request, response)
+    expect(response.error.message)
+      .toBe('Tried to recreate an existing model: _id=123 _sk=456')
+
+    response.error = undefined
+    batcher.__allModels[0].__initMethod = 'something else'
+    batcher.__extractError(request, response)
+    expect(response.error).toBe(undefined)
 
     reasons[0].Code = 'anything else'
-    expect(() => {
-      batcher.__extractError(response)
-    }).not.toThrow()
+    response.error = undefined
+    batcher.__extractError({}, response)
+    expect(response.error).toBe(undefined)
+  }
+
+  async testModelAlreadyExistsError () {
+    // Single item transactions
+    const id = uuidv4()
+    await txCreate(BasicModel, { id })
+    let fut = txCreate(BasicModel, { id })
+    await expect(fut).rejects.toThrow(db.ModelAlreadyExistsError)
+
+    // Multi-items transactions
+    fut = db.Transaction.run(async (tx) => {
+      tx.create(BasicModel, { id })
+      tx.create(BasicModel, { id: uuidv4() })
+    })
+    await expect(fut).rejects.toThrow(db.ModelAlreadyExistsError)
+  }
+
+  async testInvalidModelUpdateError () {
+    const id = uuidv4()
+    let fut = db.Transaction.run(async (tx) => {
+      tx.update(BasicModel, { id }, { noRequiredNoDefault: 1 })
+    })
+    await expect(fut).rejects.toThrow(db.InvalidModelUpdateError)
+
+    fut = db.Transaction.run(async (tx) => {
+      tx.create(BasicModel, { id: uuidv4() })
+      tx.update(BasicModel, { id }, { noRequiredNoDefault: 1 })
+    })
+    await expect(fut).rejects.toThrow(db.InvalidModelUpdateError)
   }
 }
 

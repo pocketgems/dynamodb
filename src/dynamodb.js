@@ -78,6 +78,20 @@ class ModelAlreadyExistsError extends Error {
     const skStr = (_sk !== undefined) ? ` _sk=${_sk}` : ''
     super(`Tried to recreate an existing model: _id=${_id}${skStr}`)
     this.name = this.constructor.name
+    this.retryable = false
+  }
+}
+
+/**
+ * Thrown when a model is to be updated, but condition check failed.
+ */
+class InvalidModelUpdateError extends Error {
+  constructor (_id, _sk) {
+    const skStr = (_sk !== undefined) ? ` _sk=${_sk}` : ''
+    super(`Tried to update model _id=${_id}${skStr} ` +
+      'with outdated / invalid conditions')
+    this.name = this.constructor.name
+    this.retryable = false
   }
 }
 
@@ -1313,9 +1327,14 @@ class Model {
         return
       } catch (error) {
         if (!error.retryable) {
-          if (this.__initMethod === Model.__INIT_METHOD.CREATE &&
-              error.code === 'ConditionalCheckFailedException') {
+          const isConditionalCheckFailure =
+            error.code === 'ConditionalCheckFailedException'
+          if (isConditionalCheckFailure &&
+            this.__initMethod === Model.__INIT_METHOD.CREATE) {
             throw new ModelAlreadyExistsError(this._id, this._sk)
+          } else if (isConditionalCheckFailure &&
+                     this.__initMethod === Model.__INIT_METHOD.UPDATE) {
+            throw new InvalidModelUpdateError(this.id, this._sk)
           } else {
             throw error
           }
@@ -1437,9 +1456,6 @@ class __WriteBatcher {
       action = 'Put'
       params = model.__putParams()
     }
-    if (model.__initMethod === model.constructor.__INIT_METHOD.CREATE) {
-      params.ReturnValuesOnConditionCheckFailure = 'ALL_OLD'
-    }
     this.__toWrite.push({ [action]: params })
   }
 
@@ -1497,29 +1513,51 @@ class __WriteBatcher {
     const request = this.documentClient.transactWrite(params)
     /* istanbul ignore next */
     request.on('extractError', (response) => {
-      this.__extractError(response)
+      this.__extractError(request, response)
     })
     await request.promise()
     return true
   }
 
-  __extractError (response) {
+  __getModelWithKeys (it) {
+    const id = Object.values(it._id)[0]
+    const sk = it._sk ? Object.values(it._sk)[0] : undefined
+    let ret
+    for (const model of this.__allModels) {
+      if (model._id === id && model._sk === sk) {
+        ret = model
+        break
+      }
+    }
+    return ret
+  }
+
+  __extractError (request, response) {
     const responseBody = response.httpResponse.body.toString()
     const reasons = JSON.parse(responseBody).CancellationReasons
-    for (const reason of reasons) {
-      if (reason.Code === 'ConditionalCheckFailed' &&
-          reason.Item &&
-          Object.keys(reason.Item).length) {
-        // We only ask for the object to be returned when it's `created`.
-        // If we see ConditionalCheckFailed and an Item we know it's due
-        // to creating an existing item.
-        const itemId = Object.values(reason.Item._id)[0]
-        const _sk = reason.Item._sk
-        const itemSk = (_sk !== undefined) ? Object.values(_sk)[0] : undefined
-        const error = new ModelAlreadyExistsError(itemId, itemSk)
-        error.name = reason.Code
-        error.retryable = false
-        throw error
+    for (let idx = 0; idx < reasons.length; idx++) {
+      const reason = reasons[idx]
+      if (reason.Code === 'ConditionalCheckFailed') {
+        // Items in reasons maps 1to1 to items in request, here we do a reverse
+        // lookup to find the original model that triggered the error.
+        const trasact = request.params.TransactItems[idx]
+        const method = Object.keys(trasact)[0]
+        let model
+
+        switch (method) {
+          case 'Update':
+          case 'ConditionCheck':
+            model = this.__getModelWithKeys(trasact[method].Key)
+            break
+          case 'Put':
+            model = this.__getModelWithKeys(trasact[method].Item)
+            break
+        }
+        if (model.__initMethod === Model.__INIT_METHOD.CREATE) {
+          response.error = new ModelAlreadyExistsError(model._id, model._sk)
+        } else if (model.__initMethod === Model.__INIT_METHOD.UPDATE) {
+          response.error = new InvalidModelUpdateError(model._id, model._sk)
+        }
       }
     }
   }
@@ -1877,7 +1915,8 @@ function setup (config) {
     InvalidParameterError,
     InvalidFieldError,
     TransactionFailedError,
-    ModelAlreadyExistsError
+    ModelAlreadyExistsError,
+    InvalidModelUpdateError
   }
 
   const toExport = Object.assign({}, exportAsClass)
