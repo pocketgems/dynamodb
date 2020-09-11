@@ -77,10 +77,12 @@ order.quantity = 2
 Each item is uniquely identified by a key. By default, the key is composed of a
 single field named `id` which has the format of a UUIDv4 string (e.g.,
 `"c40ef065-4034-4be8-8a1d-0959695b213e"`) typically produced by calling
-`uuidv4()`, as shown in the minimal example above. An item's key cannot be changed.
+`uuidv4()`, as shown in the minimal example above. An item's key cannot be
+changed.
 
 You can override the default and define your key to be composed of one _or
-more_ fields with arbitrary [fluent-schema](https://github.com/fastify/fluent-schema)s (`S`):
+more_ fields with arbitrary
+[fluent-schema](https://github.com/fastify/fluent-schema)s (`S`):
 ```javascript
 class RaceResult extends db.Model {
   static KEY = {
@@ -130,10 +132,10 @@ Fields can be configured to be optional, immutable and/or have default values:
  * `optional()` - unless a field is marked as optional, a value must be
    provided (i.e., it cannot be omitted or set to `undefined`)
  * `readOnly()` - if a field is marked as read only, it cannot be changed once
-   it is set
+   the item has been created
  * `default()` - a field will be assigned its default value if one isn't given
-   (this value gets deep copied so you can safely use a non-primitive type like
-   an object as a default value)
+   when the item is created (this value gets deep copied so you can safely use
+   a non-primitive type like an object as a default value).
 ```javascript
 class ModelWithComplexFields extends db.Model {
   static FIELDS = {
@@ -569,6 +571,13 @@ would look like this:
 ```javascript
 const item = tx.create(RaceResult, { raceID: 123, runnerName: 'Joe' })
 expect(item._id).toBe('123\0Joe')
+
+// the encoded key is also contained in the output of Model.key():
+const key = RaceResult.key({ runnerName: 'Mel', raceID: 123 })
+expect(key.Cls).toBe(RaceResult)
+expect(key.compositeID._id).toBe('123\0Mel')
+
+// the encoded sort key, if any, will be stored in the _sk attribute
 ```
 
 For this reason, string values cannot contain the null character. If you need
