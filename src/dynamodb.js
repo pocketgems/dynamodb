@@ -797,19 +797,17 @@ class Model {
    *
    * @param {Object} data data to be split
    */
-  __splitIDFromOtherFields (data) {
+  static __splitKeysAndData (data) {
     const compositeID = {}
     const modelData = {}
     Object.keys(data).forEach(key => {
-      const value = this.__db_attrs[key] || this[key]
-      if (value instanceof __Field &&
-          value.keyType !== undefined) {
+      if (this.__KEY_COMPONENT_NAMES.has(key)) {
         compositeID[key] = data[key]
       } else {
         modelData[key] = data[key]
       }
     })
-    this.constructor.__computeKeyAttrMap(compositeID)
+    this.__computeKeyAttrMap(compositeID)
     return [compositeID, modelData]
   }
 
@@ -1663,8 +1661,8 @@ class Transaction {
         'must have values to be updated')
     }
 
-    const model = new Cls(params)
-    const data = model.__splitIDFromOtherFields(original)[1] // also check keys
+    const model = new Cls()
+    const data = Cls.__splitKeysAndData(original)[1] // also check keys
     model.__setupModel(original, false, model.constructor.__INIT_METHOD.UPDATE)
     Object.keys(data).forEach(k => {
       model.getField(k).get() // Read to show in ConditionExpression
@@ -1731,7 +1729,7 @@ class Transaction {
    */
   create (Cls, data) {
     const model = new Cls()
-    const [compositeID, modelData] = model.__splitIDFromOtherFields(data)
+    const [compositeID, modelData] = Cls.__splitKeysAndData(data)
     model.__setupModel(compositeID, true,
       model.constructor.__INIT_METHOD.CREATE)
     for (const [key, val] of Object.entries(modelData)) {
