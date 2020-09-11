@@ -28,8 +28,7 @@ class DynamodbLibTest extends BaseServiceTest {
     const PropData1 = PropDataModels['1']
     async function getItem () {
       return db.Transaction.run(tx => {
-        return tx.get(PropData1, 'a:1',
-          { createIfMissing: true, propCount: 1 })
+        return tx.get(PropData1, 'a:1', { createIfMissing: true })
       })
     }
     const oldModel = await getItem()

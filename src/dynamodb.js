@@ -1624,7 +1624,7 @@ class Transaction {
    */
   async get (...args) {
     return getWithArgs(args, async (key, params) => {
-      const model = new key.Cls(params)
+      const model = new key.Cls()
       const getParams = model.__getParams(key.compositeID, params)
       const data = await this.documentClient.get(getParams).promise()
       if ((!params || !params.createIfMissing) && !data.Item) {
@@ -1646,9 +1646,8 @@ class Transaction {
    *   field's values. Used as conditions for the update
    * @param {Object} updated Updated fields for the item, without CompositeID
    *   fields.
-   * @param {Object} [params] Parameters to be passed to model's constructor
    */
-  update (Cls, original, updated, params) {
+  update (Cls, original, updated) {
     if (Object.values(original).filter(d => d === undefined).length !== 0) {
       // We don't check for attribute_not_exists anyway.
       throw new InvalidParameterError(
