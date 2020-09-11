@@ -95,7 +95,7 @@ class CommonFieldTest extends BaseTest {
 
   testFieldNotExtendable () {
     const field = db.__private.NumberField()
-    field.__setup(1)
+    field.__setupWithValueFromServer(1)
     expect(() => {
       field.invalidProperty = undefined
     }).toThrow(TypeError)
@@ -137,7 +137,7 @@ class CommonFieldTest extends BaseTest {
     // Setting up a field makes it mutated
     // So read values from server will not be sent back on update
     field = db.__private.NumberField()
-    field.__setup(1)
+    field.__setupWithValueFromServer(1)
     expect(field.mutated).toBe(false)
   }
 
@@ -146,12 +146,12 @@ class CommonFieldTest extends BaseTest {
     const deepobj = {}
     const arr = [1, 2, 3, deepobj]
     const arrayField = db.__private.ArrayField()
-    arrayField.__setup(arr)
+    arrayField.__setupWithValueFromServer(arr)
     expect(arrayField.mutated).toBe(false)
 
     const obj = { key: arr }
     const objectField = db.__private.ObjectField()
-    objectField.__setup(obj)
+    objectField.__setupWithValueFromServer(obj)
     expect(objectField.mutated).toBe(false)
 
     deepobj.prop = 1
@@ -168,7 +168,7 @@ class CommonFieldTest extends BaseTest {
     expect(field.__initialValue).toBe(undefined)
 
     // Initial value is sync'd after setup
-    field.__setup(2)
+    field.__setupWithValueFromServer(2)
     expect(field.__initialValue).toBe(2)
   }
 
@@ -272,7 +272,7 @@ class CommonFieldTest extends BaseTest {
     field.mutated // eslint-disable-line no-unused-expressions
     expect(field.accessed).toBe(false)
 
-    field.__setup(1)
+    field.__setupWithValueFromServer(1)
     expect(field.accessed).toBe(false)
 
     field.get()
@@ -475,7 +475,7 @@ class NumberFieldTest extends RepeatedFieldTest {
 
   testIncrementByNoConditionExpression () {
     const field = db.__private.NumberField()
-    field.__setup(0)
+    field.__setupWithValueFromServer(0)
     field.incrementBy(1)
     expect(field.accessed).toBe(true)
     expect(field.mutated).toBe(true)

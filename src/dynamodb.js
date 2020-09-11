@@ -246,7 +246,7 @@ class __Field {
    *
    * @access package
    */
-  __setup (val) {
+  __setupWithValueFromServer (val) {
     // Val is from server. We don't store undefined on server: we remove the
     // key on write. So if val is undefined, server does not have value for it.
     // Then don't set __value to keep the default.
@@ -1166,7 +1166,7 @@ class Model {
           this.__db_attrs[key] = field
         }
         const val = vals[key]
-        field.__setup(val)
+        field.__setupWithValueFromServer(val)
 
         if (keyType !== undefined) {
           // At this point, new models might not have all the necessary setups,
