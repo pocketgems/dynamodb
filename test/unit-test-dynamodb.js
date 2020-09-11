@@ -1,4 +1,7 @@
-const { BaseServiceTest, runTests } = require('./base-unit-test')
+const S = require('fluent-schema')
+const uuidv4 = require('uuid').v4
+
+const { BaseServiceTest, BaseTest, runTests } = require('./base-unit-test')
 const db = require('../src/dynamodb')
 const { PropDataModels } = require('../src/sharedlib-apis-dynamodb')
 
@@ -88,4 +91,111 @@ class DynamodbLibTest extends BaseServiceTest {
   }
 }
 
-runTests(DynamodbLibTest)
+class Order extends db.Model {
+  static FIELDS = {
+    product: S.string(),
+    quantity: S.integer()
+  }
+}
+
+class RaceResult extends db.Model {
+  static KEY = {
+    raceID: S.integer(),
+    runnerName: S.string()
+  }
+}
+
+class ModelWithFields extends db.Model {
+  static FIELDS = {
+    someNumber: S.integer().minimum(0),
+    someBool: S.boolean(),
+    someObj: S.object().prop('arr', S.array().items(S.string()))
+  }
+}
+
+class ModelWithOptionalFields extends db.Model {
+  static FIELDS = {
+    someNumber: S.integer().minimum(0),
+    someBool: S.boolean().optional(),
+    anotherNum: S.integer().readOnly().default(5)
+  }
+}
+
+// code from the readme
+class ReadmeTest extends BaseTest {
+  async setUp () {
+    await Order.createUnittestResource()
+    await RaceResult.createUnittestResource()
+    await ModelWithFields.createUnittestResource()
+    await ModelWithOptionalFields.createUnittestResource()
+  }
+
+  async testMinimalExample () {
+    const id = uuidv4()
+    await db.Transaction.run(tx => {
+      const order = tx.create(Order, { id, product: 'coffee', quantity: 1 })
+      expect(order.product).toBe('coffee')
+      expect(order.quantity).toBe(1)
+    })
+    await db.Transaction.run(async tx => {
+      const order = await tx.get(Order, { id })
+      expect(order.product).toBe('coffee')
+      expect(order.quantity).toBe(1)
+      order.quantity = 2
+    })
+    await db.Transaction.run(async tx => {
+      const order = await tx.get(Order, { id })
+      expect(order.product).toBe('coffee')
+      expect(order.quantity).toBe(2)
+    })
+  }
+
+  async testSchemaEnforcement () {
+    const id = uuidv4()
+    await db.Transaction.run(tx => {
+      // fields are checked immediately when creating a new item; this throws
+      // db.InvalidFieldError because someNumber should be an integer
+      expect(() => {
+        tx.create(ModelWithOptionalFields, { id, someNumber: '1' })
+      }).toThrow(db.InvalidFieldError)
+      tx.create(ModelWithOptionalFields, { id, someNumber: 1 })
+
+      // fields are checked when set
+      const x = tx.create(ModelWithFields, {
+        id, someNumber: 1, someBool: false, someObj: { arr: [] }
+      })
+      expect(() => {
+        x.someBool = 1 // throws because the type should be boolean not int
+      }).toThrow(db.InvalidFieldError)
+      expect(() => {
+        x.someObj = {} // throws because the required "arr" key is missing
+      }).toThrow(db.InvalidFieldError)
+      expect(() => {
+        // throws b/c arr is supposed to contain strings
+        x.someObj = { arr: [5] }
+      }).toThrow(db.InvalidFieldError)
+      x.someObj = { arr: ['ok'] } // ok!
+    })
+
+    const badTx = db.Transaction.run(async tx => {
+      const [opt, req] = await Promise.all([
+        tx.get(ModelWithOptionalFields.key(id)),
+        tx.get(ModelWithFields.key(id))
+      ])
+      expect(opt.someNumber).toBe(1)
+      expect(req.someNumber).toBe(1)
+      expect(req.someBool).toBe(false)
+      expect(req.someObj).toEqual({ arr: ['ok'] })
+      // changes within a non-primitive type aren't detected or validated until
+      // we try to write the change so this next line won't throw!
+      req.someObj.arr.push(5)
+
+      expect(() => {
+        req.getField('someObj').validate()
+      }).toThrow(db.InvalidFieldError)
+    })
+    await expect(badTx).rejects.toThrow(db.InvalidFieldError)
+  }
+}
+
+runTests(DynamodbLibTest, ReadmeTest)
