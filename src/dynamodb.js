@@ -47,7 +47,7 @@ class InvalidParameterError extends Error {
  */
 class InvalidFieldError extends Error {
   constructor (field, reason) {
-    super(`${field || ''} ${reason}`)
+    super(`${field} ${reason}`)
     this.name = this.constructor.name
   }
 }
@@ -213,13 +213,12 @@ class __Field {
 
   /**
    * @param {FieldOptions} [options]
+   * @param {boolean} mayUseDefault only used if isForNewItem is true
    */
-  constructor (options) {
+  constructor (name, options, val, isForNewItem, mayUseDefault, isPartial,
+    noSeal) {
     for (const [key, value] of Object.entries(options)) {
-      Object.defineProperty(this, key, {
-        value: (key === 'default') ? deepcopy(value) : value,
-        writable: false
-      })
+      Object.defineProperty(this, key, { value, writable: false })
     }
 
     // Setup states
@@ -228,35 +227,35 @@ class __Field {
      * @instance
      * @member {String} name The name of the owning property.
      */
-    this.name = undefined // Will be set after params for model are setup
+    this.name = name // Will be set after params for model are setup
     this.__initialValue = undefined
     this.__value = undefined
     this.__read = false // If get is called
     this.__written = false // If set is called
-    if (options.default !== undefined) {
-      this.set(this.default)
-      this.__written = false
+    this.__default = options.default // only used for new items!
+    if (!noSeal) { // subclasses may need to add properties
+      Object.seal(this)
     }
-  }
 
-  /**
-   * Sets up field's state using data fetched from server. Seals the object to
-   * prevent further modifications.
-   *
-   * @access package
-   */
-  __setupWithValueFromServer (val) {
-    // Val is from server. We don't store undefined on server: we remove the
-    // key on write. So if val is undefined, server does not have value for it.
-    // Then don't set __value to keep the default.
-    if (val !== undefined) {
-      // Copy for initial value so changes through __value doesn't affect it.
+    if (isForNewItem) {
+      // use the default if no value is provided (if undefined is
+      // explicitly provided as a value, then it is used as the value
+      // [that is only valid for optional fields, as an undefined value
+      // means the field will not be stored on the server])
+      mayUseDefault = mayUseDefault && this.__default !== undefined
+      val = mayUseDefault ? deepcopy(this.__default) : val
+      this.__value = val
+      this.validate()
+    } else {
+      // make a copy of the value we got from the server
       this.__initialValue = deepcopy(val)
       this.__value = val
+      // keys already validated by Model's __setupKey()
+      // if the object is partial, don't validate missing values
+      if (!options.keyType && (!isPartial || val !== undefined)) {
+        this.validate()
+      }
     }
-
-    // Don't add or remove properties after initialization.
-    Object.seal(this)
   }
 
   /**
@@ -345,9 +344,7 @@ class __Field {
    * @access public
    */
   set (val) {
-    // If field is immutable
-    // And it's been written or has a value
-    if (this.immutable && this.__value !== undefined) {
+    if (this.immutable) {
       throw new InvalidFieldError(
         this.name,
         'is immutable so value cannot be changed after first initialized.')
@@ -387,12 +384,6 @@ function validateValue (fieldName, opts, val) {
     }
   }
 
-  // make sure the value is of the correct type
-  if (val.constructor.name !== valueType.name) {
-    throw new InvalidFieldError(fieldName,
-      `value ${val} is not type ${valueType.name}`)
-  }
-
   // validate the value against the provided schema
   const validator = opts.schemaValidator
   if (!validator(val)) {
@@ -412,9 +403,10 @@ function validateValue (fieldName, opts, val) {
  * @private
  */
 class NumberField extends __Field {
-  constructor (options) {
-    super(options)
+  constructor (name, options, val, isForNewItem, mayUseDefault, isPartial) {
+    super(name, options, val, isForNewItem, mayUseDefault, isPartial, true)
     this.__diff = undefined
+    Object.seal(this)
   }
 
   set (val) {
@@ -546,15 +538,27 @@ const schemaTypeToJSTypeMap = {
 class Key {
   /**
    * @param {Model} Cls a Model class
-   * @param {Object} compositeID maps partition and sort key component names to
-   *   their values
+   * @param {Object} encodedKeys map of encoded partition and sort key
+   * @param {Object} keyComponents key component values
+   * @param {Object} fields field (non-key) values (optional)
    * @private
    */
-  constructor (Cls, compositeID) {
+  constructor (Cls, encodedKeys, keyComponents, fields) {
     this.Cls = Cls
-    this.compositeID = compositeID
+    this.encodedKeys = encodedKeys
+    this.keyComponents = keyComponents
+    this.data = fields
+  }
+
+  get vals () {
+    return { ...this.keyComponents, ...this.data }
   }
 }
+
+const _ID_FIELD_OPTS = __Field.__validateFieldOptions(
+  'HASH', '_id', S.string().minLength(1))
+const _SK_FIELD_OPTS = __Field.__validateFieldOptions(
+  'RANGE', '_sk', S.string().minLength(1))
 
 /**
  * The base class for modeling data.
@@ -567,27 +571,68 @@ class Model {
    * Constructs a model. Model has one `id` field. Subclasses should add
    * additional fields by overriding the constructor.
    */
-  constructor () {
-    this.isNew = false
+  constructor (method, isNew, vals) {
+    this.isNew = !!isNew
+
+    const methods = Model.__INIT_METHOD
+    if (!Object.values(methods).includes(method)) {
+      throw new InvalidParameterError('method',
+        'must be one of CREATE or GET.')
+    }
+    this.__initMethod = method
+
+    // track whether this item has been written to the db yet
     this.__written = false
-    // After __setupModel() is called, __db_attrs will contain a __Field
+
+    // __db_attrs will contain a __Field
     // subclass object which for each attribute to be written to the database.
     // There is one entry for each entry in FIELDS, plus an _id field (the
     // partition key) and optionally an _sk field (the optional sort key).
     this.__db_attrs = {}
+    // one entry for each key component
+    this.__nondb_attrs = {}
 
-    for (const [name, opts] of Object.entries(this.constructor.__VIS_ATTRS)) {
-      const Cls = schemaTypeToFieldClassMap[opts.schema.type]
-      this[name] = new Cls(opts)
-    }
-    // add the implicit, computed "_id" field
-    this._id = new StringField(__Field.__validateFieldOptions(
-      'HASH', '_id', S.string().minLength(1)))
+    // make sure val is populated with both the encoded keys (_id and _sk) as
+    // well as each key components (i.e., the keys in KEY and SORT_KEYS)
+    this.constructor.__setupKey(true, vals)
     if (this.constructor.__hasSortKey()) {
-      // add the implicit, computed "_sk" field
-      this._sk = new StringField(__Field.__validateFieldOptions(
-        'RANGE', '_sk', S.string().minLength(1)))
+      this.constructor.__setupKey(false, vals)
     }
+
+    // add user-defined fields from FIELDS & key components from KEY & SORT_KEY
+    for (const [name, opts] of Object.entries(this.constructor.__VIS_ATTRS)) {
+      this.__addField(name, opts, vals)
+    }
+    this.__addField('_id', _ID_FIELD_OPTS, vals)
+    if (this.constructor.__hasSortKey()) {
+      this.__addField('_sk', _SK_FIELD_OPTS, vals)
+    }
+    Object.seal(this)
+  }
+
+  __addField (name, opts, vals) {
+    const val = vals[name]
+    const mayUseDefault = !Object.hasOwnProperty.call(vals, name)
+    const Cls = schemaTypeToFieldClassMap[opts.schema.type]
+    const isPartial = (this.__initMethod === Model.__INIT_METHOD.UPDATE)
+    const field = new Cls(
+      name, opts, val, this.isNew, mayUseDefault, isPartial)
+    this[name] = field
+    if (!opts.keyType || name === '_id' || name === '_sk') {
+      // key fields are implicitly included in the "_id" or "_sk" field;
+      // they are otherwise ignored!
+      this.__db_attrs[name] = field
+    } else {
+      this.__nondb_attrs[name] = field
+    }
+    Object.defineProperty(this, name, {
+      get: (...args) => {
+        return field.get()
+      },
+      set: (val) => {
+        field.set(val)
+      }
+    })
   }
 
   /**
@@ -758,7 +803,7 @@ class Model {
    */
   getField (name) {
     assert.ok(!name.startsWith('_'), 'may not access internal computed fields')
-    return this.__db_attrs[name]
+    return this.__db_attrs[name] || this.__nondb_attrs[name]
   }
 
   /**
@@ -792,35 +837,36 @@ class Model {
 
   /**
    * Given a mapping, split compositeKeys from other model fields. Return a
-   * 2-tuple, [compositeID, modelData].
+   * 3-tuple, [keyComponents, modelData, encodedKeys].
    *
    * @param {Object} data data to be split
    */
   static __splitKeysAndData (data) {
-    const compositeID = {}
+    const keyComponents = {}
     const modelData = {}
     Object.keys(data).forEach(key => {
       if (this.__KEY_COMPONENT_NAMES.has(key)) {
-        compositeID[key] = data[key]
-      } else {
+        keyComponents[key] = data[key]
+      } else if (this.__VIS_ATTRS[key]) {
         modelData[key] = data[key]
+      } else {
+        throw new InvalidParameterError('data', 'unknown field ' + key)
       }
     })
-    this.__computeKeyAttrMap(compositeID)
-    return [compositeID, modelData]
+    return [this.__computeKeyAttrMap(keyComponents), keyComponents, modelData]
   }
 
   /**
    * @access package
-   * @param {CompositeID} compositeID
-   * @param {GetParams} [options]
+   * @param {CompositeID} encodedKeys
+   * @param {GetParams} options
    * @returns {Object} parameters for a get request to DynamoDB
    */
-  __getParams (compositeID, options) {
+  static __getParams (encodedKeys, options) {
     return {
-      TableName: this.__fullTableName,
-      ConsistentRead: options && !options.inconsistentRead,
-      Key: compositeID
+      TableName: this.fullTableName,
+      ConsistentRead: !options.inconsistentRead,
+      Key: encodedKeys
     }
   }
 
@@ -1106,7 +1152,7 @@ class Model {
     }
   }
 
-  __setupKey (isPartitionKey, vals) {
+  static __setupKey (isPartitionKey, vals) {
     let attrName, keyOrderKey
     if (isPartitionKey) {
       attrName = '_id'
@@ -1115,76 +1161,19 @@ class Model {
       attrName = '_sk'
       keyOrderKey = 'sort'
     }
-    const keyOrder = this.constructor.__KEY_ORDER[keyOrderKey]
+    const keyOrder = this.__KEY_ORDER[keyOrderKey]
     if (!vals[attrName]) {
       // if the computed field is missing, compute it
-      vals[attrName] = this.constructor.__encodeCompoundValueToString(
+      vals[attrName] = this.__encodeCompoundValueToString(
         keyOrder, vals)
     } else {
       // if the components of the computed field are missing, compute them
       /* istanbul ignore else */
       if (vals[keyOrder[0]] === undefined) {
-        Object.assign(vals, this.constructor.__decodeCompoundValueFromString(
+        Object.assign(vals, this.__decodeCompoundValueFromString(
           keyOrder, vals[attrName], attrName))
       }
     }
-  }
-
-  /**
-   * Sets up a model, restricts access to the model afterwards, e.g. can no
-   * longer add properties.
-   * @access package
-   *
-   * @param {Object} vals values to use for populating fields.
-   * @param {Boolean} isNew whether the data exists on server.
-   * @param {Model.__INIT_METHOD} method How the model was instantiated.
-   */
-  __setupModel (vals, isNew, method) {
-    this.__setupKey(true, vals)
-    if (this.constructor.__hasSortKey()) {
-      this.__setupKey(false, vals)
-    }
-
-    this.isNew = !!isNew
-    const methods = Model.__INIT_METHOD
-    if (!Object.values(methods).includes(method)) {
-      throw new InvalidParameterError('method',
-        'must be one of CREATE or GET.')
-    }
-    this.__initMethod = method
-    Object.keys(this).forEach(key => {
-      const field = this[key]
-      if (field instanceof __Field) {
-        field.name = key
-
-        const keyType = field.keyType
-        if (!keyType || key === '_id' || key === '_sk') {
-          // key fields are implicitly included in the "_id" or "_sk" field;
-          // they are otherwise ignored!
-          this.__db_attrs[key] = field
-        }
-        const val = vals[key]
-        field.__setupWithValueFromServer(val)
-
-        if (keyType !== undefined) {
-          // At this point, new models might not have all the necessary setups,
-          // but all key fields should be valid.
-          field.validate()
-        }
-
-        Object.defineProperty(this, key, {
-          get: (...args) => {
-            return field.get()
-          },
-          set: (val) => {
-            field.set(val)
-          }
-        })
-      }
-    })
-
-    // Once setup, restrict access to model.
-    Object.seal(this)
   }
 
   /**
@@ -1258,14 +1247,15 @@ class Model {
 
   /**
    * Create a Key for a unique row in the DB table associated with this model.
-   * @param {*} keyValues map of key component names to values; if there is
+   * @param {*} vals map of key component names to values; if there is
    *   only one partition key field (whose type is not object), then this MAY
-   *   instead be just that field's value
+   *   instead be just that field's value. If the key is to be used to create
+   *   a new item, it must also include at least any required data fields.
    * @returns {Key} a Key object.
    */
-  static key (keyValues) {
-    if (!keyValues) {
-      throw new InvalidParameterError('keyValues', 'missing')
+  static key (vals) {
+    if (!vals) {
+      throw new InvalidParameterError('values', 'missing')
     }
 
     // if we only have one key component, then the `_id` **MAY** just be the
@@ -1276,33 +1266,18 @@ class Model {
     const pKeyOrder = this.__KEY_ORDER.partition
     if (pKeyOrder.length === 1 && !this.__KEY_ORDER.sort.length) {
       const pFieldName = pKeyOrder[0]
-      if (!(keyValues instanceof Object) || !keyValues[pFieldName]) {
-        keyValues = { [pFieldName]: keyValues }
+      if (!(vals instanceof Object) || !vals[pFieldName]) {
+        vals = { [pFieldName]: vals }
       }
     }
-    if (!(keyValues instanceof Object)) {
-      throw new InvalidParameterError('keyValues',
+    if (!(vals instanceof Object)) {
+      throw new InvalidParameterError('values',
         'should be an object mapping key component names to values')
     }
 
     // check if we were given too many keys (if too few, then the validation
     // will fail, so we don't need to handle that case here)
-    const givenKeys = Object.keys(keyValues)
-    const numKeysGiven = givenKeys.length
-    if (numKeysGiven > this.__KEY_COMPONENT_NAMES.size) {
-      const excessKeys = []
-      for (const givenKey of givenKeys) {
-        if (!this.__KEY_COMPONENT_NAMES.has(givenKey)) {
-          excessKeys.push(givenKeys)
-        }
-      }
-      excessKeys.sort()
-      const expKeys = [...this.__KEY_COMPONENT_NAMES]
-      expKeys.sort()
-      throw new InvalidParameterError('keyValues',
-        `expected keys ${expKeys.join(', ')} but got ${givenKeys.join(', ')}`)
-    }
-    return new Key(this, this.__computeKeyAttrMap(keyValues))
+    return new Key(this, ...this.__splitKeysAndData(vals))
   }
 
   /**
@@ -1657,14 +1632,19 @@ class Transaction {
    * @param {GetParams} params Params for how to get the item
    */
   async __getItem (key, params) {
-    const model = new key.Cls(params)
-    const getParams = model.__getParams(key.compositeID, params)
+    params = params || {}
+    if (!params.createIfMissing && Object.keys(key.data).length) {
+      throw new InvalidParameterError('key()',
+        'may only pass non-key fields to key() when createIfMissing is true')
+    }
+    const getParams = key.Cls.__getParams(key.encodedKeys, params)
     const data = await this.documentClient.get(getParams).promise()
-    if ((!params || !params.createIfMissing) && !data.Item) {
+    if (!params.createIfMissing && !data.Item) {
       return undefined
     }
-    model.__setupModel(data.Item || { ...key.compositeID }, !data.Item,
-      Model.__INIT_METHOD.GET)
+    const isNew = !data.Item
+    const vals = data.Item || key.vals
+    const model = new key.Cls(Model.__INIT_METHOD.GET, isNew, vals)
     this.__writeBatcher.track(model)
     return model
   }
@@ -1845,15 +1825,14 @@ class Transaction {
         'must have values to be updated')
     }
 
-    const model = new Cls()
-    const data = Cls.__splitKeysAndData(original)[1] // also check keys
-    model.__setupModel(original, false, model.constructor.__INIT_METHOD.UPDATE)
+    const data = Cls.__splitKeysAndData(original)[2] // this also checks keys
+    const model = new Cls(Model.__INIT_METHOD.UPDATE, false, original)
     Object.keys(data).forEach(k => {
       model.getField(k).get() // Read to show in ConditionExpression
     })
 
     Object.keys(updated).forEach(key => {
-      if (model.constructor.__VIS_ATTRS[key].keyType !== undefined) {
+      if (Cls.__VIS_ATTRS[key].keyType !== undefined) {
         throw new InvalidParameterError(
           'updated', 'must not contain key fields')
       }
@@ -1881,22 +1860,25 @@ class Transaction {
    *   `undefined` value will be removed from DB.
    */
   createOrPut (Cls, original, updated) {
-    const model = new Cls()
-    model.__setupModel(original, true,
-      model.constructor.__INIT_METHOD.CREATE_OR_PUT)
-    Object.keys(updated).forEach(key => {
-      model[key] = updated[key]
-    })
-    const fieldNames = Object.keys(model.constructor.__VIS_ATTRS)
-    const missingFields = fieldNames.filter(key => {
-      return !Object.prototype.hasOwnProperty.call(original, key) &&
-        !Object.prototype.hasOwnProperty.call(updated, key)
-    })
-    if (missingFields.length) {
-      throw new InvalidParameterError(
-        'updated',
-        `is missing keys ${missingFields}`)
+    const newData = { ...updated }
+    for (const key of Object.keys(original)) {
+      if (Object.hasOwnProperty.call(newData, key)) {
+        // cannot change a key component's value
+        if (Cls.__KEY_COMPONENT_NAMES.has(key)) {
+          if (newData[key] !== original[key]) {
+            throw new InvalidParameterError(updated,
+              'key components values in updated must match (or be omitted)')
+          }
+        }
+      } else {
+        // old values which aren't explicitly changed are kept the same
+        newData[key] = original[key]
+      }
     }
+    const model = new Cls(Model.__INIT_METHOD.CREATE_OR_PUT, true, newData)
+    Object.keys(original).forEach(key => {
+      model.getField(key).__initialValue = original[key]
+    })
     this.__writeBatcher.track(model)
 
     // Don't return model, since it should be closed to further modifications.
@@ -1912,13 +1894,7 @@ class Transaction {
    *   plus any data for Fields on the Model.
    */
   create (Cls, data) {
-    const model = new Cls()
-    const [compositeID, modelData] = Cls.__splitKeysAndData(data)
-    model.__setupModel(compositeID, true,
-      model.constructor.__INIT_METHOD.CREATE)
-    for (const [key, val] of Object.entries(modelData)) {
-      model[key] = val
-    }
+    const model = new Cls(Model.__INIT_METHOD.CREATE, true, { ...data })
     this.__writeBatcher.track(model)
     return model
   }
@@ -2141,7 +2117,9 @@ function fieldFromFieldOptions (Cls, options) {
   function processOption (key, func) {
     if (Object.hasOwnProperty.call(options, key)) {
       const val = options[key]
-      schema = func(val)
+      if (func) {
+        schema = func(val)
+      }
       delete options[key]
       return val
     }
@@ -2162,15 +2140,34 @@ function fieldFromFieldOptions (Cls, options) {
       schema = S.string()
     }
   }
-  const keyType = processOption('keyType', () => schema)
+  let mayUseDefault = true
+  let initVal
+  if (Object.hasOwnProperty.call(options, 'val')) {
+    initVal = options.val
+    delete options.val
+    mayUseDefault = false
+  } else if (options.default) {
+    initVal = options.default
+  } else {
+    initVal = {
+      ArrayField: [],
+      BooleanField: false,
+      NumberField: 0,
+      ObjectField: {},
+      StringField: ''
+    }[Cls.name]
+  }
+  const isForNewItem = !processOption('isForOldItem')
+  const keyType = processOption('keyType')
   processOption('optional', isOpt => isOpt ? schema.optional() : schema)
   processOption('immutable', isReadOnly => schema.readOnly(isReadOnly))
   processOption('default', val => schema.default(val))
   const optionKeysLeft = Object.keys(options)
   assert.ok(optionKeysLeft.length === 0,
       `unexpected option(s): ${optionKeysLeft}`)
-  options = __Field.__validateFieldOptions(keyType, 'someName', schema)
-  return new Cls(options)
+  const name = 'someName'
+  options = __Field.__validateFieldOptions(keyType, name, schema)
+  return new Cls(name, options, initVal, isForNewItem, mayUseDefault)
 }
 
 module.exports = setup()

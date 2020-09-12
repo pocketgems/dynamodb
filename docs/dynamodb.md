@@ -140,11 +140,11 @@ Fields can be configured to be optional, immutable and/or have default values:
 ```javascript
 class ModelWithComplexFields extends db.Model {
   static FIELDS = {
-    aNonNegativeInt: S.integer().minimum(0),
-    anOptionalBool: S.boolean().optional(), // default value is undefined
+    aNonNegInt: S.integer().minimum(0),
+    anOptBool: S.boolean().optional(), // default value is undefined
     // this field defaults to 5; once it is set, it cannot be changed (though
     // it won't always be 5 since it can be created with a non-default value)
-    anIntThatCannotBeChanged: S.integer().readOnly().default(5)
+    immutableInt: S.integer().readOnly().default(5)
   }
 }
 ```
@@ -169,7 +169,7 @@ The schema is checked as follows:
     ```javascript
          // fields are checked immediately when creating a new item; this throws
          // db.InvalidFieldError because someNumber should be an integer
-         tx.create(ModelWithComplexFields, { id: uuidv4(), aNonNegativeInt: '1' })
+         tx.create(ModelWithComplexFields, { id: uuidv4(), aNonNegInt: '1' })
 
          // fields are checked when set
          const x = tx.get(ModelWithFields, ...)
@@ -624,7 +624,7 @@ expect(item._id).toBe('123\0Joe')
 // the encoded key is also contained in the output of Model.key():
 const key = RaceResult.key({ runnerName: 'Mel', raceID: 123 })
 expect(key.Cls).toBe(RaceResult)
-expect(key.compositeID._id).toBe('123\0Mel')
+expect(key.encodedKeys._id).toBe('123\0Mel')
 
 // the encoded sort key, if any, will be stored in the _sk attribute
 ```

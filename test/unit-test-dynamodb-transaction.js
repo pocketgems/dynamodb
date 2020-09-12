@@ -262,7 +262,7 @@ class TransactionGetTest extends QuickTransactionTest {
   async testEventualConsistentGet () {
     const msg = uuidv4()
     const params = { inconsistentRead: false, createIfMissing: true }
-    const originalFunc = TransactionModel.prototype.__getParams
+    const originalFunc = db.Model.__getParams
     const mock = jest.fn().mockImplementation((ignore, params) => {
       expect(params.inconsistentRead).toBe(false)
       // Hard to mock this properly,
@@ -270,7 +270,7 @@ class TransactionGetTest extends QuickTransactionTest {
       // and make sure it's caught outside
       throw new Error(msg)
     })
-    TransactionModel.prototype.__getParams = mock
+    db.Model.__getParams = mock
 
     const result = await db.Transaction.run(async (tx) => {
       const fut = tx.get(TransactionModel, 'c', params)
@@ -279,7 +279,7 @@ class TransactionGetTest extends QuickTransactionTest {
     })
     expect(result).toBe(123) // Prove the tx is ran
 
-    TransactionModel.prototype.__getParams = originalFunc
+    db.Model.__getParams = originalFunc
   }
 }
 
@@ -439,6 +439,44 @@ class TransactionWriteTest extends QuickTransactionTest {
     expect(updated.field2).toBe(finalVal[1])
   }
 
+  async testMismatchedKeysForCreateOrPut () {
+    const id = uuidv4()
+    const fut = db.Transaction.run(async tx => {
+      tx.createOrPut(TransactionModel,
+        { id },
+        { id: id + 'x', field1: 3, field2: 1 })
+    })
+    await expect(fut).rejects.toThrow(db.InvalidParameterError)
+
+    // can specify id in new data param (but it must match)
+    await db.Transaction.run(async tx => {
+      tx.createOrPut(TransactionModel,
+        { id },
+        { id, field1: 3, field2: 1, objField: { a: 1 } })
+    })
+    await db.Transaction.run(async tx => {
+      const item = await tx.get(TransactionModel, id)
+      expect(item.id).toBe(id)
+      expect(item.field1).toBe(3)
+      expect(item.field2).toBe(1)
+      expect(item.objField).toEqual({ a: 1 })
+    })
+
+    // can omit id in new data param (it's implied)
+    await db.Transaction.run(async tx => {
+      tx.createOrPut(TransactionModel,
+        { id, field1: 3 },
+        { field1: 33, field2: 11, objField: { a: 11 } })
+    })
+    await db.Transaction.run(async tx => {
+      const item = await tx.get(TransactionModel, id)
+      expect(item.id).toBe(id)
+      expect(item.field1).toBe(33)
+      expect(item.field2).toBe(11)
+      expect(item.objField).toEqual({ a: 11 })
+    })
+  }
+
   async testUpdateItemNonExisting () {
     const id = 'nonexist' + uuidv4()
     let fut = db.Transaction.run(async tx => {
@@ -448,11 +486,11 @@ class TransactionWriteTest extends QuickTransactionTest {
     await expect(fut).rejects.toThrow(Error)
 
     fut = db.Transaction.run(async tx => {
-      tx.createOrPut(TransactionModel,
+      tx.createOrPut(TransactionModelWithRequiredField,
         { id },
         { field1: 3, field2: 1 })
     })
-    await expect(fut).rejects.toThrow(db.InvalidParameterError)
+    await expect(fut).rejects.toThrow(/missing required value/)
 
     await db.Transaction.run(async tx => {
       tx.createOrPut(TransactionModel,
@@ -561,7 +599,7 @@ class TransactionWriteTest extends QuickTransactionTest {
         }
       )
     })
-    await expect(fut).rejects.toThrow(db.InvalidParameterError)
+    await expect(fut).rejects.toThrow(/missing required value/)
 
     fut = db.Transaction.run(async tx => {
       tx.createOrPut(
@@ -576,7 +614,7 @@ class TransactionWriteTest extends QuickTransactionTest {
         }
       )
     })
-    await expect(fut).rejects.toThrow(db.InvalidFieldError)
+    await expect(fut).rejects.toThrow(/missing required value/)
 
     await db.Transaction.run(async tx => {
       tx.createOrPut(
@@ -683,10 +721,8 @@ class TransactionWriteTest extends QuickTransactionTest {
     const fut = txGetRequired({ id: modelName })
     await expect(fut).rejects.toThrow() // Missing required field, should fail
 
-    const model = await txGetRequired({ id: modelName }, (m) => {
-      m.required = 1 // With required field, should work.
-      m.field1 = 1
-    })
+    const data = { id: modelName, required: 1, field1: 1 }
+    const model = await txGetRequired(data)
     const newVal = Math.floor(Math.random() * 99999999)
     await db.Transaction.run(async tx => {
       tx.update(

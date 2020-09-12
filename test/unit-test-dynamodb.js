@@ -121,11 +121,13 @@ class ModelWithFields extends db.Model {
   }
 }
 
-class ModelWithOptionalFields extends db.Model {
+class ModelWithComplexFields extends db.Model {
   static FIELDS = {
-    someNumber: S.integer().minimum(0),
-    someBool: S.boolean().optional(),
-    anotherNum: S.integer().readOnly().default(5)
+    aNonNegInt: S.integer().minimum(0),
+    anOptBool: S.boolean().optional(), // default value is undefined
+    // this field defaults to 5; once it is set, it cannot be changed (though
+    // it won't always be 5 since it can be created with a non-default value)
+    immutableInt: S.integer().readOnly().default(5)
   }
 }
 
@@ -135,7 +137,7 @@ class ReadmeTest extends BaseTest {
     await Order.createUnittestResource()
     await RaceResult.createUnittestResource()
     await ModelWithFields.createUnittestResource()
-    await ModelWithOptionalFields.createUnittestResource()
+    await ModelWithComplexFields.createUnittestResource()
   }
 
   async testMinimalExample () {
@@ -158,15 +160,87 @@ class ReadmeTest extends BaseTest {
     })
   }
 
+  async testKeys () {
+    await db.Transaction.run(async tx => {
+      const raceResult = await tx.get(
+        RaceResult,
+        { raceID: 99, runnerName: 'Bo' },
+        { createIfMissing: true })
+      expect(raceResult.raceID).toBe(99)
+      expect(raceResult.runnerName).toBe('Bo')
+    })
+  }
+
+  async testFields () {
+    async function _check (how, expErr, values) {
+      const id = uuidv4()
+      const expBool = values.anOptBool
+      const expNNInt = values.aNonNegInt
+      const givenImmInt = values.immutableInt
+      const expImmutableInt = (givenImmInt === undefined) ? 5 : givenImmInt
+
+      function checkItem (item) {
+        expect(item.id).toBe(id)
+        expect(item.anOptBool).toBe(expBool)
+        expect(item.aNonNegInt).toBe(expNNInt)
+        expect(item.immutableInt).toBe(expImmutableInt)
+      }
+
+      const ret = db.Transaction.run(async tx => {
+        const data = { id, ...values }
+        let item
+        if (how === 'create') {
+          item = tx.create(ModelWithComplexFields, data)
+        } else {
+          item = await tx.get(
+            ModelWithComplexFields, data, { createIfMissing: true })
+          expect(item.isNew).toBe(true)
+        }
+        checkItem(item)
+      })
+      if (expErr) {
+        await expect(ret).rejects.toThrow(expErr)
+      } else {
+        await ret
+        await db.Transaction.run(async tx => {
+          const item = await tx.get(ModelWithComplexFields, id)
+          checkItem(item)
+          expect(() => { item.immutableInt = 5 }).toThrow(/is immutable/)
+        })
+      }
+    }
+    async function check (values, expErr) {
+      await _check('create', expErr, values)
+      await _check('get', expErr, values)
+    }
+    // override the default value for the immutable int
+    await check({ anOptBool: true, aNonNegInt: 0, immutableInt: 0 })
+    // it's an error to try to set a required field to undefined (explicitly
+    // passing undefined overrides the default)
+    await check({ anOptBool: false, aNonNegInt: 1, immutableInt: undefined },
+      /immutableInt missing required value/)
+    // can omit a field with a default and it will be populated
+    await check({ anOptBool: false, aNonNegInt: 2 })
+    // can explicitly set an optional field to undefined
+    await check({ anOptBool: undefined, aNonNegInt: 3 })
+    // can also omit an optional field altogether
+    await check({ aNonNegInt: 4 })
+    // schemas still have to be met
+    await check({ aNonNegInt: -5 }, /aNonNegInt.*does not conform/)
+    await check({ aNonNegInt: 6, anOptBool: 'true' }, /anOptBool.*not conform/)
+    await check({ aNonNegInt: 7, immutableInt: '5' },
+      /immutableInt.*does not conform/)
+  }
+
   async testSchemaEnforcement () {
     const id = uuidv4()
     await db.Transaction.run(tx => {
       // fields are checked immediately when creating a new item; this throws
       // db.InvalidFieldError because someNumber should be an integer
       expect(() => {
-        tx.create(ModelWithOptionalFields, { id, someNumber: '1' })
+        tx.create(ModelWithComplexFields, { id, aNonNegInt: '1' })
       }).toThrow(db.InvalidFieldError)
-      tx.create(ModelWithOptionalFields, { id, someNumber: 1 })
+      tx.create(ModelWithComplexFields, { id, aNonNegInt: 1 })
 
       // fields are checked when set
       const x = tx.create(ModelWithFields, {
@@ -187,10 +261,10 @@ class ReadmeTest extends BaseTest {
 
     const badTx = db.Transaction.run(async tx => {
       const [opt, req] = await Promise.all([
-        tx.get(ModelWithOptionalFields.key(id)),
+        tx.get(ModelWithComplexFields.key(id)),
         tx.get(ModelWithFields.key(id))
       ])
-      expect(opt.someNumber).toBe(1)
+      expect(opt.aNonNegInt).toBe(1)
       expect(req.someNumber).toBe(1)
       expect(req.someBool).toBe(false)
       expect(req.someObj).toEqual({ arr: ['ok'] })
@@ -203,6 +277,12 @@ class ReadmeTest extends BaseTest {
       }).toThrow(db.InvalidFieldError)
     })
     await expect(badTx).rejects.toThrow(db.InvalidFieldError)
+  }
+
+  async testKeyEncoding () {
+    const key = RaceResult.key({ runnerName: 'Mel', raceID: 123 })
+    expect(key.Cls).toBe(RaceResult)
+    expect(key.encodedKeys._id).toBe('123\0Mel')
   }
 }
 

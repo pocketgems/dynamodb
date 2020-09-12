@@ -39,11 +39,13 @@ class CommonFieldTest extends BaseTest {
   }
 
   testImmutableFieldNoDefault () {
-    const field = db.__private.NumberField({ immutable: true, optional: true })
+    const field = db.__private.NumberField({
+      immutable: true,
+      optional: true,
+      val: 1
+    })
     field.validate()
-    field.set(1)
     expect(field.get()).toBe(1)
-    field.validate()
     expect(() => {
       field.set(2)
     }).toThrow(db.InvalidFieldError)
@@ -62,13 +64,14 @@ class CommonFieldTest extends BaseTest {
     }).toThrow(db.InvalidFieldError)
   }
 
-  testImmutableFieldWithUndefineDefault () {
+  testImmutableFieldWithUndefinedDefault () {
     const field = db.__private.NumberField({
       immutable: true,
-      optional: true
+      optional: true,
+      val: 2
     })
-    field.set(2)
     expect(field.get()).toBe(2)
+    // cannot remove it once set, even though it's optional
     expect(() => {
       field.set(undefined)
     }).toThrow(db.InvalidFieldError)
@@ -95,8 +98,7 @@ class CommonFieldTest extends BaseTest {
   }
 
   testFieldNotExtendable () {
-    const field = db.__private.NumberField()
-    field.__setupWithValueFromServer(1)
+    const field = db.__private.NumberField({ isForOldItem: true, val: 1 })
     expect(() => {
       field.invalidProperty = undefined
     }).toThrow(TypeError)
@@ -115,13 +117,13 @@ class CommonFieldTest extends BaseTest {
 
   testMutatedFlagWithUndefinedDefault () {
     // Undefined values, shouldn't be mutated
-    const field = db.__private.NumberField({ optional: true })
+    const field = db.__private.NumberField({ optional: true, val: undefined })
     expect(field.mutated).toBe(false)
   }
 
   testMutatedFlagNoDefault () {
     // Fields with no default aren't mutated after initialization
-    let field = db.__private.NumberField({ optional: true })
+    let field = db.__private.NumberField({ optional: true, val: undefined })
     expect(field.mutated).toBe(false)
 
     // Public methods don't affect mutated flag except for `set`
@@ -137,8 +139,7 @@ class CommonFieldTest extends BaseTest {
 
     // Setting up a field makes it mutated
     // So read values from server will not be sent back on update
-    field = db.__private.NumberField()
-    field.__setupWithValueFromServer(1)
+    field = db.__private.NumberField({ isForOldItem: true, val: 1 })
     expect(field.mutated).toBe(false)
   }
 
@@ -146,13 +147,11 @@ class CommonFieldTest extends BaseTest {
     // Array and Object fields detects nested mutation correctly
     const deepobj = {}
     const arr = [1, 2, 3, deepobj]
-    const arrayField = db.__private.ArrayField()
-    arrayField.__setupWithValueFromServer(arr)
+    const arrayField = db.__private.ArrayField({ isForOldItem: true, val: arr })
     expect(arrayField.mutated).toBe(false)
 
     const obj = { key: arr }
-    const objectField = db.__private.ObjectField()
-    objectField.__setupWithValueFromServer(obj)
+    const objectField = db.__private.ObjectField({ isForOldItem: true, val: obj })
     expect(objectField.mutated).toBe(false)
 
     deepobj.prop = 1
@@ -169,8 +168,8 @@ class CommonFieldTest extends BaseTest {
     expect(field.__initialValue).toBe(undefined)
 
     // Initial value is sync'd after setup
-    field.__setupWithValueFromServer(2)
-    expect(field.__initialValue).toBe(2)
+    const field2 = db.__private.NumberField({ isForOldItem: true, val: 2 })
+    expect(field2.__initialValue).toBe(2)
   }
 
   testHashKeyImmutable () {
@@ -239,11 +238,11 @@ class CommonFieldTest extends BaseTest {
 
   testRequiredFlag () {
     // Required w/o default
-    let field = db.__private.NumberField()
     expect(() => {
-      field.validate()
+      db.__private.NumberField({ val: undefined })
     }).toThrow(db.InvalidFieldError)
 
+    let field = db.__private.NumberField({ val: 0 })
     field.set(1)
     field.validate()
 
@@ -273,7 +272,7 @@ class CommonFieldTest extends BaseTest {
     field.mutated // eslint-disable-line no-unused-expressions
     expect(field.accessed).toBe(false)
 
-    field.__setupWithValueFromServer(1)
+    field = db.__private.NumberField({ isForOldItem: true, val: 1 })
     expect(field.accessed).toBe(false)
 
     field.get()
@@ -332,6 +331,7 @@ class FieldSchemaTest extends BaseTest {
   testStringValidation () {
     // Make sure string schema is checked
     const field = db.__private.StringField({
+      val: '123456789',
       schema: S.string().minLength(8).maxLength(9)
     })
     expect(() => {
@@ -348,6 +348,7 @@ class FieldSchemaTest extends BaseTest {
   testInvalidObject () {
     // Make sure object schema is checked
     const field = db.__private.ObjectField({
+      val: { abc: 'x' },
       schema: S.object().prop('abc', S.string())
     })
 
@@ -367,6 +368,10 @@ class FieldSchemaTest extends BaseTest {
 
 class RepeatedFieldTest extends BaseTest {
   get fieldFactory () {
+    throw new Error('Must be overridden')
+  }
+
+  get someGoodValue () {
     throw new Error('Must be overridden')
   }
 
@@ -393,7 +398,7 @@ class RepeatedFieldTest extends BaseTest {
   }
 
   testNoDefaultValue () {
-    const field = this.fieldFactory()
+    const field = this.fieldFactory(({ optional: true, val: undefined }))
     expect(field.get()).toBeUndefined()
   }
 
@@ -423,6 +428,8 @@ class NumberFieldTest extends RepeatedFieldTest {
   get fieldFactory () {
     return db.__private.NumberField
   }
+
+  get someGoodValue () { return 0 }
 
   get valueType () {
     return Number
@@ -475,8 +482,7 @@ class NumberFieldTest extends RepeatedFieldTest {
   }
 
   testIncrementByNoConditionExpression () {
-    const field = db.__private.NumberField()
-    field.__setupWithValueFromServer(0)
+    const field = db.__private.NumberField({ isForOldItem: true, val: 0 })
     field.incrementBy(1)
     expect(field.accessed).toBe(true)
     expect(field.mutated).toBe(true)
@@ -484,15 +490,14 @@ class NumberFieldTest extends RepeatedFieldTest {
   }
 
   testIncrementByImmutable () {
-    const field = db.__private.NumberField({ immutable: true })
-    field.incrementBy(1) // Fine
+    const field = db.__private.NumberField({ immutable: true, val: 1 })
     expect(() => {
       field.incrementBy(2)
     }).toThrow()
   }
 
   testReadThenIncrementBy () {
-    const field = db.__private.NumberField({ immutable: true })
+    const field = db.__private.NumberField({ val: 0 })
     field.get()
     expect(() => {
       field.incrementBy(788)
@@ -503,7 +508,7 @@ class NumberFieldTest extends RepeatedFieldTest {
   testIncrementByLockInitialUndefined () {
     // Make sure when a field's initial value is undefined (doesn't exists on
     // server), optimistic locking is still performed.
-    const field = db.__private.NumberField({ immutable: true })
+    const field = db.__private.NumberField({ optional: true, val: undefined })
     field.incrementBy(788)
     expect(field.shouldLock).toBe(true)
   }
@@ -513,6 +518,8 @@ class StringFieldTest extends RepeatedFieldTest {
   get fieldFactory () {
     return db.__private.StringField
   }
+
+  get someGoodValue () { return 'ok' }
 
   get valueType () {
     return String
@@ -535,6 +542,10 @@ class ObjectFieldTest extends RepeatedFieldTest {
     return db.__private.ObjectField
   }
 
+  get someGoodValue () {
+    return { a: 123 }
+  }
+
   get valueType () {
     return Object
   }
@@ -551,6 +562,8 @@ class BooleanFieldTest extends RepeatedFieldTest {
   get fieldFactory () {
     return db.__private.BooleanField
   }
+
+  get someGoodValue () { return true }
 
   get valueType () {
     return Boolean
@@ -572,6 +585,8 @@ class ArrayFieldTest extends RepeatedFieldTest {
   get fieldFactory () {
     return db.__private.ArrayField
   }
+
+  get someGoodValue () { return [] }
 
   get valueType () {
     return Array

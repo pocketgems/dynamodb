@@ -144,9 +144,8 @@ class SimpleModelTest extends BaseTest {
   }
 
   testInvalidSetup () {
-    const model = new SimpleModel()
     expect(() => {
-      model.__setupModel({ _id: uuidv4() }, true, 'abc')
+      return new SimpleModel('invalidMethod', true, { id: uuidv4() })
     }).toThrow(/must be one of CREATE or GET/)
   }
 
@@ -188,8 +187,7 @@ class SimpleModelTest extends BaseTest {
   }
 
   async testEventualConsistentGetParams () {
-    const model = new SimpleModel()
-    const getParams = model.__getParams(
+    const getParams = SimpleModel.__getParams(
       { id: '123' },
       { inconsistentRead: false })
     expect(getParams.ConsistentRead).toBe(true)
@@ -197,7 +195,7 @@ class SimpleModelTest extends BaseTest {
 
   async testEventualConsistentGet () {
     const msg = uuidv4()
-    const originalFunc = SimpleModel.prototype.__getParams
+    const originalFunc = db.Model.__getParams
     const mock = jest.fn().mockImplementation((ignore, params) => {
       expect(params.inconsistentRead).toBe(false)
       // Hard to mock this properly,
@@ -205,13 +203,13 @@ class SimpleModelTest extends BaseTest {
       // and make sure it's caught outside
       throw new Error(msg)
     })
-    SimpleModel.prototype.__getParams = mock
+    db.Model.__getParams = mock
     const getParams = { inconsistentRead: false, createIfMissing: true }
     const fut = db.Transaction.run(async tx => {
       await tx.get(SimpleModel, uuidv4(), getParams)
     })
     await expect(fut).rejects.toThrow(Error)
-    SimpleModel.prototype.__getParams = originalFunc
+    db.Model.__getParams = originalFunc
   }
 }
 
@@ -291,7 +289,7 @@ class IDSchemaTest extends BaseTest {
     const keyOrder = cls.__KEY_ORDER.partition
     expect(() => cls.__encodeCompoundValueToString(keyOrder, { id: 'X' }))
       .toThrow(db.InvalidFieldError)
-    expect(cls.key('xyz').compositeID).toEqual({ _id: 'xyz' })
+    expect(cls.key('xyz').encodedKeys).toEqual({ _id: 'xyz' })
     expect(cls.__encodeCompoundValueToString(keyOrder, { id: 'xyz' }))
       .toEqual('xyz')
   }
@@ -527,13 +525,23 @@ class KeyTest extends BaseTest {
     ])
   }
 
+  async testGetNoCreateIfMissingWithExcessFields () {
+    const fut = db.Transaction.run(async tx => {
+      // can't specify field like "n" when reading unless we're doing a
+      // createIfMissing=true
+      await tx.get(RangeKeyModel, { id: uuidv4(), rangeKey: 3, n: 3 })
+    })
+    await expect(fut).rejects.toThrow(
+      /may only pass non-key fields.* when createIfMissing is true/)
+  }
+
   async testSortKey () {
     async function check (id, rangeKey, n, create = true) {
-      const compositeID = { id, rangeKey }
+      const encodedKeys = { id, rangeKey }
       if (create) {
-        await txCreate(RangeKeyModel, { ...compositeID, n })
+        await txCreate(RangeKeyModel, { ...encodedKeys, n })
       }
-      const model = await txGet(RangeKeyModel, compositeID)
+      const model = await txGet(RangeKeyModel, encodedKeys)
       expect(model.id).toBe(id)
       expect(model.rangeKey).toBe(rangeKey)
       expect(model._sk).toBe(rangeKey.toString())
@@ -660,42 +668,49 @@ class JSONModelTest extends BaseTest {
   async testRequiredFields () {
     const obj = { ab: 2 }
     const arr = [2, 1]
+    async function check (input) {
+      input.id = uuidv4()
+      await expect(txGet(JSONModel, input)).rejects.toThrow(
+        /missing required value/)
+    }
+    await check({})
+    await check({ objNoDefaultRequired: obj })
+    await check({ arrNoDefaultRequired: arr })
+
     const id = uuidv4()
-    await expect(txGet(JSONModel, id))
-      .rejects.toThrow(db.InvalidFieldError)
-
-    await expect(txGet(JSONModel, id, model => {
-      model.objNoDefaultRequired = obj
-    })).rejects.toThrow(db.InvalidFieldError)
-
-    await txGet(JSONModel, id, model => {
-      model.objNoDefaultRequired = obj
-      model.arrNoDefaultRequired = arr
-    })
-
-    const model = await txGet(JSONModel, id)
-    expect(model.arrNoDefaultRequired).toStrictEqual(arr)
-    expect(model.objNoDefaultRequired).toStrictEqual(obj)
+    async function checkOk (input) {
+      const model = await txGet(JSONModel, input)
+      expect(model.id).toBe(id)
+      expect(model.objNoDefaultRequired).toEqual(obj)
+      expect(model.arrNoDefaultRequired).toEqual(arr)
+      expect(model.objNoDefaultNoRequired).toBe(undefined)
+      expect(model.arrNoDefaultNoRequired).toBe(undefined)
+      expect(model.objDefaultNoRequired).toEqual({ a: 1 })
+      expect(model.arrDefaultNoRequired).toEqual([1, 2])
+      expect(model.objDefaultRequired).toEqual({})
+      expect(model.arrDefaultRequired).toEqual([])
+    }
+    await checkOk({ id, objNoDefaultRequired: obj, arrNoDefaultRequired: arr })
+    await checkOk({ id }) // just getting, not creating
   }
 
   async testDeepUpdate () {
     const obj = { ab: [] }
     const arr = [{}]
-    const name = uuidv4()
-    await txGet(JSONModel, name, model => {
+    const id = uuidv4()
+    const data = { id, objNoDefaultRequired: obj, arrNoDefaultRequired: arr }
+    await txGet(JSONModel, data, model => {
       expect(model.isNew).toBe(true)
-      model.objNoDefaultRequired = obj
-      model.arrNoDefaultRequired = arr
     })
 
-    await txGet(JSONModel, name, model => {
+    await txGet(JSONModel, id, model => {
       obj.ab.push(1)
       model.objNoDefaultRequired.ab.push(1)
       arr[0].bc = 32
       model.arrNoDefaultRequired[0].bc = 32
     })
 
-    await txGet(JSONModel, name, model => {
+    await txGet(JSONModel, id, model => {
       expect(model.objNoDefaultRequired).toStrictEqual(obj)
       expect(model.arrNoDefaultRequired).toStrictEqual(arr)
     })
@@ -773,7 +788,7 @@ class GetArgsParserTest extends BaseTest {
     keys.push(SimpleModel.key(id1), SimpleModel.key(id2))
     expect(async () => {
       const result = await db.__private.getWithArgs(params,
-        (key) => key.compositeID)
+        (key) => key.encodedKeys)
       expect(result).toStrictEqual([{ _id: id1 }, { _id: id2 }])
     }).not.toThrow()
 
@@ -785,7 +800,7 @@ class GetArgsParserTest extends BaseTest {
     params.push({})
     expect(async () => {
       const result = await db.__private.getWithArgs(params,
-        (key) => key.compositeID)
+        (key) => key.encodedKeys)
       expect(result).toStrictEqual([{ _id: id1 }, { _id: id2 }])
     }).not.toThrow()
 
