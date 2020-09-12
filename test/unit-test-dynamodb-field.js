@@ -1,8 +1,7 @@
 const S = require('fluent-schema')
 
-const db = require('../src/dynamodb')
-
 const { BaseTest, runTests } = require('./base-unit-test')
+const db = require('./field-helper')
 
 class CommonFieldTest extends BaseTest {
   makeSureMutableFieldWorks (field) {

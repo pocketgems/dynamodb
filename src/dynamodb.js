@@ -2095,79 +2095,16 @@ function setup (config) {
     toExport.__private = {
       __Field,
       __WriteBatcher,
-      getWithArgs
+      getWithArgs,
+      fields: [
+        ArrayField,
+        BooleanField,
+        NumberField,
+        ObjectField,
+        StringField
+      ]
     }
-    const exportAsFactory = [
-      ArrayField,
-      BooleanField,
-      NumberField,
-      ObjectField,
-      StringField
-    ]
-    exportAsFactory.forEach(Cls => {
-      toExport.__private[Cls.name] = opts => fieldFromFieldOptions(Cls, opts)
-    })
   }
   return toExport
 }
-
-function fieldFromFieldOptions (Cls, options) {
-  options = options || {}
-  let schema
-  function processOption (key, func) {
-    if (Object.hasOwnProperty.call(options, key)) {
-      const val = options[key]
-      if (func) {
-        schema = func(val)
-      }
-      delete options[key]
-      return val
-    }
-  }
-  // schema is required; fill in the default if none is provided
-  processOption('schema', schema => schema)
-  if (!schema) {
-    if (Cls === ArrayField) {
-      schema = S.array()
-    } else if (Cls === BooleanField) {
-      schema = S.boolean()
-    } else if (Cls === NumberField) {
-      schema = S.number()
-    } else if (Cls === ObjectField) {
-      schema = S.object()
-    } else {
-      assert.ok(Cls === StringField, 'unexpected class: ' + Cls.name)
-      schema = S.string()
-    }
-  }
-  let mayUseDefault = true
-  let initVal
-  if (Object.hasOwnProperty.call(options, 'val')) {
-    initVal = options.val
-    delete options.val
-    mayUseDefault = false
-  } else if (options.default) {
-    initVal = options.default
-  } else {
-    initVal = {
-      ArrayField: [],
-      BooleanField: false,
-      NumberField: 0,
-      ObjectField: {},
-      StringField: ''
-    }[Cls.name]
-  }
-  const isForNewItem = !processOption('isForOldItem')
-  const keyType = processOption('keyType')
-  processOption('optional', isOpt => isOpt ? schema.optional() : schema)
-  processOption('immutable', isReadOnly => schema.readOnly(isReadOnly))
-  processOption('default', val => schema.default(val))
-  const optionKeysLeft = Object.keys(options)
-  assert.ok(optionKeysLeft.length === 0,
-      `unexpected option(s): ${optionKeysLeft}`)
-  const name = 'someName'
-  options = __Field.__validateFieldOptions(keyType, name, schema)
-  return new Cls(name, options, initVal, isForNewItem, mayUseDefault)
-}
-
 module.exports = setup()
