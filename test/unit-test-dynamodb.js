@@ -53,7 +53,7 @@ class DynamodbLibTest extends BaseServiceTest {
 
   async testClientErrorAPIWorking () {
     return this.app.post(getURI('/clienterrors'))
-      .send('{}')
+      .send('{"json": {"anything": ["goes"]}}')
       .set('Content-Type', 'application/json')
       .expect(200)
   }
@@ -70,6 +70,14 @@ class DynamodbLibTest extends BaseServiceTest {
       .set('Content-Type', 'application/json')
       .expect(400)
     expect(result.body.error.name).toBe('Body Parse Failure')
+  }
+
+  async testMissingRequiredPropFail () {
+    const result = await this.app.post(getURI('/clienterrors'))
+      .send('{}')
+      .set('Content-Type', 'application/json')
+      .expect(400)
+    expect(result.body.error.name).toBe('Body Validation Failure')
   }
 
   async testBodyContentTypeFail () {

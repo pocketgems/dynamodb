@@ -158,12 +158,9 @@ class __Field {
     const options = {
       keyType,
       schema,
-      optional: schema.required === undefined,
+      optional: schema.optional === true,
       immutable: isKey || schema.readOnly === true,
       default: schema.default
-    }
-    if (options.schema.type !== 'object' && options.schema.required) {
-      delete options.schema.required
     }
     const FieldCls = schemaTypeToFieldClassMap[options.schema.type]
     if (!FieldCls) {
