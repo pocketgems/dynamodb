@@ -1,9 +1,10 @@
 const S = require('fluent-schema')
 const uuidv4 = require('uuid').v4
 
-const { BaseServiceTest, BaseTest, runTests } = require('./base-unit-test')
 const db = require('../src/dynamodb')
 const { PropDataModels } = require('../src/sharedlib-apis-dynamodb')
+
+const { BaseServiceTest, BaseTest, runTests } = require('./base-unit-test')
 
 function getURI (postfix) {
   return '/internal/sharedlib' + postfix

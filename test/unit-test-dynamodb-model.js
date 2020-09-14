@@ -1,8 +1,9 @@
 const S = require('fluent-schema')
 const uuidv4 = require('uuid').v4
 
-const { BaseTest, runTests } = require('./base-unit-test')
 const db = require('../src/dynamodb')
+
+const { BaseTest, runTests } = require('./base-unit-test')
 
 const CONDITION_EXPRESSION_STR = 'ConditionExpression'
 const UPDATE_EXPRESSION_STR = 'UpdateExpression'

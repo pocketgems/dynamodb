@@ -1,11 +1,13 @@
+const assert = require('assert')
+const EventEmitter = require('events')
+
 const ajv = new (require('ajv'))({
   allErrors: true,
   removeAdditional: 'failing'
 })
-const assert = require('assert')
 const deepeq = require('deep-equal')
-const deepcopy = require('rfdc')()
 const S = require('fluent-schema')
+const deepcopy = require('rfdc')()
 
 /**
  * @namespace Errors
@@ -821,6 +823,7 @@ class Model {
       Key: compositeID
     }
   }
+
   /**
    * Parameters for fetching a model and options to control how a model is
    * fetched from database.
@@ -1390,7 +1393,7 @@ async function getWithArgs (args, callback) {
     }
 
     const params = args1.length === 1 ? args1[0] : undefined
-    return Promise.all(first.map(key => callback(key, params)))
+    return callback(first, params)
   } else {
     throw new InvalidParameterError('args',
       'Expecting Model or Key or [Key] as the first argument')
@@ -1514,12 +1517,19 @@ class __WriteBatcher {
     return true
   }
 
-  __getModelWithKeys (it) {
-    const id = Object.values(it._id)[0]
-    const sk = it._sk ? Object.values(it._sk)[0] : undefined
+  /**
+   * Find a model with the same TableName and Key from a list of models
+   * @param {String} tableName
+   * @param {Object} key { _id: '', _sk: '' }
+   */
+  __getModel (tableName, key) {
+    const id = Object.values(key._id)[0]
+    const sk = key._sk ? Object.values(key._sk)[0] : undefined
     let ret
     for (const model of this.__allModels) {
-      if (model._id === id && model._sk === sk) {
+      if (model.__fullTableName === tableName &&
+          model._id === id &&
+          model._sk === sk) {
         ret = model
         break
       }
@@ -1542,10 +1552,16 @@ class __WriteBatcher {
         switch (method) {
           case 'Update':
           case 'ConditionCheck':
-            model = this.__getModelWithKeys(trasact[method].Key)
+            model = this.__getModel(
+              trasact[method].TableName,
+              trasact[method].Key
+            )
             break
           case 'Put':
-            model = this.__getModelWithKeys(trasact[method].Item)
+            model = this.__getModel(
+              trasact[method].TableName,
+              trasact[method].Item
+            )
             break
         }
         if (model.__initMethod === Model.__INIT_METHOD.CREATE) {
@@ -1590,6 +1606,7 @@ class Transaction {
   constructor (options) {
     const defaults = this.defaultOptions
     this.options = loadOptionDefaults(options, defaults)
+    this.emitter = new EventEmitter()
 
     if (this.options.retries < 0) {
       throw new InvalidOptionsError('retries',
@@ -1608,11 +1625,183 @@ class Transaction {
   }
 
   /**
+   * All events transactions may emit.
+   *
+   * POST_COMMIT: When a transaction is commited. Do clean up,
+   *              summery, post process here. Handler has the signature of
+   *              (error) => {}. When error is undefined, the transaction
+   *              commited successfully, else the transaction failed.
+   */
+  static EVENTS = {
+    POST_COMMIT: 'postCommit'
+  }
+
+  /**
+   * Add a handler to a specific event. See {@link EVENTS} for valid events.
+   *
+   * @param {Event} event A event to trigger the handler.
+   * @param {Function} handler A handler for the event.
+   */
+  addHandler (event, handler) {
+    if (!Object.values(Transaction.EVENTS).includes(event)) {
+      throw new InvalidParameterError(event,
+        `must be one of ${Object.values(Transaction.EVENTS)}`)
+    }
+    return this.emitter.once(event, handler)
+  }
+
+  /**
+   * Get an item using DynamodDB's getItem API.
+   *
+   * @param {Key} key A key for the item
+   * @param {GetParams} params Params for how to get the item
+   */
+  async __getItem (key, params) {
+    const model = new key.Cls(params)
+    const getParams = model.__getParams(key.compositeID, params)
+    const data = await this.documentClient.get(getParams).promise()
+    if ((!params || !params.createIfMissing) && !data.Item) {
+      return undefined
+    }
+    model.__setupModel(data.Item || { ...key.compositeID }, !data.Item,
+      Model.__INIT_METHOD.GET)
+    this.__writeBatcher.track(model)
+    return model
+  }
+
+  /**
+   * Gets multiple items using DynamoDB's transactGetItems API.
+   * @param {Array<Key>} keys A list of keys to get.
+   * @param {GetParams} params Params used to get items, all items will be
+   *   fetched using the same params.
+   */
+  async __trasactGetItems (keys, params) {
+    const txItems = []
+    const models = []
+    for (const key of keys) {
+      const model = new key.Cls(params)
+      models.push(model)
+      const param = model.__getParams(key.compositeID, params)
+      delete param.ConsistentRead // Omit for transactGetItems.
+      txItems.push({
+        Get: param
+      })
+    }
+    const data = await this.documentClient.transactGet({
+      TransactItems: txItems
+    }).promise()
+    const resps = data.Responses
+    for (let idx = 0; idx < models.length; idx++) {
+      const data = resps[idx]
+      if ((!params || !params.createIfMissing) && !data.Item) {
+        models[idx] = undefined
+        continue
+      }
+      const model = models[idx]
+      model.__setupModel(
+        data.Item || { ...keys[idx].compositeID },
+        !data.Item,
+        Model.__INIT_METHOD.GET)
+      this.__writeBatcher.track(model)
+    }
+    return models
+  }
+
+  /**
+   * Gets multiple items using DynamoDB's batchGetItems API.
+   * @param {Array<Key>} keys A list of keys to get.
+   * @param {GetParams} params Params used to get items, all items will be
+   *   fetched using the same params.
+   */
+  async __batchGetItems (keys, params) {
+    let reqItems = {}
+    const models = []
+    for (const key of keys) {
+      const model = new key.Cls(params)
+      models.push(model)
+      const param = model.__getParams(key.compositeID, params)
+      const getsPerTable = reqItems[param.TableName] || { Keys: [] }
+      getsPerTable.Keys.push(param.Key)
+      getsPerTable.ConsistentRead = param.ConsistentRead
+      reqItems[param.TableName] = getsPerTable
+    }
+
+    let reqCnt = 0
+    while (Object.keys(reqItems).length !== 0) {
+      if (reqCnt > 10) {
+        throw new Error(`Failed to get all items ${
+          keys.map(k => {
+            return `${k.Cls.name} ${JSON.stringify(k.compositeID)}`
+          })}`)
+      }
+      if (reqCnt !== 0) {
+        // Backoff
+        const millisBackOff = Math.min(100 * reqCnt, 1000)
+        const offset = Math.floor(Math.random() * millisBackOff * 0.2) -
+        millisBackOff * 0.1 // +-0.1 backoff as jitter to spread out conflicts
+        await sleep(millisBackOff + offset)
+      }
+      reqCnt++
+
+      const data = await this.documentClient.batchGet({
+        RequestItems: reqItems
+      }).promise()
+
+      // Merge results
+      const resps = data.Responses
+      for (let idx = 0; idx < keys.length; idx++) {
+        const key = keys[idx].compositeID
+        const model = models[idx]
+        const items = resps[model.__fullTableName] || []
+        for (const item of items) {
+          if (item._id === key._id && item._sk === key._sk) {
+            model.__setupModel(item, false, Model.__INIT_METHOD.GET)
+            this.__writeBatcher.track(model)
+            break
+          }
+        }
+      }
+
+      // Chain into next batch
+      reqItems = data.UnprocessedKeys
+    }
+
+    // Handle models still not setup.
+    for (let idx = 0; idx < models.length; idx++) {
+      const model = models[idx]
+      if (model.__initMethod === undefined) {
+        // Model hasn't been setup
+        if (!params || !params.createIfMissing) {
+          models[idx] = undefined
+        } else {
+          model.__setupModel(
+            { ...keys[idx].compositeID },
+            true,
+            Model.__INIT_METHOD.GET)
+          this.__writeBatcher.track(model)
+        }
+      }
+    }
+    return models
+  }
+
+  /**
    * Fetches model(s) from database.
    * This method supports 3 different signatures.
    *   get(Cls, keyValues, params)
    *   get(Key, params)
    *   get([Key], params)
+   *
+   * When only one items is fetched, DynamoDB's getItem API is called.
+   *
+   * When a list of items is fetched:
+   *   If inconsistentRead is false (the default), DynamoDB's transactGetItems
+   *     API is called for a strongly consistent read. Trasactional reads will
+   *     be slower than batched reads.
+   *   If inconsistentRead is true, DynamoDB's batchGetItems API is called.
+   *     Batched fetches are more efficient than calling get with 1 key many
+   *     times, since there is less HTTP request overhead. Batched fetches is
+   *     faster than transactional fetches, but provides a weaker consistency.
    *
    * @param {Model} Cls a Model class.
    * @param {String|CompositeID} key Key or keyValues
@@ -1620,17 +1809,16 @@ class Transaction {
    * @returns Model(s) associated with provided key
    */
   async get (...args) {
-    return getWithArgs(args, async (key, params) => {
-      const model = new key.Cls()
-      const getParams = model.__getParams(key.compositeID, params)
-      const data = await this.documentClient.get(getParams).promise()
-      if ((!params || !params.createIfMissing) && !data.Item) {
-        return undefined
+    return getWithArgs(args, async (arg, params) => {
+      if (arg instanceof Array) {
+        if (!params || !params.inconsistentRead) {
+          return this.__trasactGetItems(arg, params)
+        } else {
+          return this.__batchGetItems(arg, params)
+        }
+      } else {
+        return this.__getItem(arg, params)
       }
-      model.__setupModel(data.Item || { ...key.compositeID }, !data.Item,
-        model.constructor.__INIT_METHOD.GET)
-      this.__writeBatcher.track(model)
-      return model
     })
   }
 
@@ -1791,6 +1979,20 @@ class Transaction {
     }
   }
 
+  /*
+   * Runs a function in trasaction, emits events based on the execution outcome
+   */
+  async run (...args) {
+    try {
+      const ret = await this.__run(...args)
+      this.emitter.emit(this.constructor.EVENTS.POST_COMMIT)
+      return ret
+    } catch (e) {
+      this.emitter.emit(this.constructor.EVENTS.POST_COMMIT, e)
+      throw e
+    }
+  }
+
   /**
    * Runs a function in transaction, using specified parameters.
    *
@@ -1811,9 +2013,9 @@ class Transaction {
   static async run (...args) {
     switch (args.length) {
       case 1:
-        return new Transaction({}).__run(args[0])
+        return new Transaction({}).run(args[0])
       case 2:
-        return new Transaction(args[0]).__run(args[1])
+        return new Transaction(args[0]).run(args[1])
       default:
         throw new InvalidParameterError('args',
           'should be (options, func) or (func)')
@@ -1932,6 +2134,7 @@ function setup (config) {
   }
   return toExport
 }
+
 function fieldFromFieldOptions (Cls, options) {
   options = options || {}
   let schema
@@ -1969,4 +2172,5 @@ function fieldFromFieldOptions (Cls, options) {
   options = __Field.__validateFieldOptions(keyType, 'someName', schema)
   return new Cls(options)
 }
+
 module.exports = setup()

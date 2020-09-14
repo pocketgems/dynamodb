@@ -1,8 +1,9 @@
 const S = require('fluent-schema')
 const uuidv4 = require('uuid').v4
 
-const { BaseTest, runTests } = require('./base-unit-test')
 const db = require('../src/dynamodb')
+
+const { BaseTest, runTests } = require('./base-unit-test')
 
 async function txGetGeneric (cls, keyValues, func) {
   return db.Transaction.run(async tx => {
@@ -107,6 +108,12 @@ class ParameterTest extends BaseTest {
 }
 
 class TransactionGetTest extends QuickTransactionTest {
+  async setUp () {
+    await super.setUp()
+    this.modelName = uuidv4()
+    await txGet(this.modelName)
+  }
+
   async testGetItemTwice () {
     await db.Transaction.run(async (tx) => {
       await tx.get(TransactionModel, 'a',
@@ -142,6 +149,74 @@ class TransactionGetTest extends QuickTransactionTest {
       expect(m1.id).toBe('a')
       expect(m2.id).toBe('b')
     })
+  }
+
+  async _testMultipleGet (inconsistentRead) {
+    const newName = uuidv4()
+    const [m1, m2] = await db.Transaction.run(async (tx) => {
+      return tx.get([
+        TransactionModel.key(this.modelName),
+        TransactionModel.key(newName)
+      ], { inconsistentRead })
+    })
+    expect(m1.id).toBe(this.modelName)
+    expect(m2).toBe(undefined)
+
+    const [m3, m4] = await db.Transaction.run(async (tx) => {
+      return tx.get([
+        TransactionModel.key(this.modelName),
+        TransactionModel.key(newName)
+      ], { inconsistentRead, createIfMissing: true })
+    })
+    expect(m3.id).toBe(this.modelName)
+    expect(m4.id).toBe(newName)
+  }
+
+  testTrasactGet () {
+    return this._testMultipleGet(false)
+  }
+
+  testBatchGet () {
+    return this._testMultipleGet(true)
+  }
+
+  async testBatchGetUnprocessed () {
+    const timeoutMock = jest.fn().mockImplementation((callback, after) => {
+      callback()
+    })
+    const originalSetTimeout = setTimeout
+    global.setTimeout = timeoutMock.bind(global)
+
+    const batchGetMock = jest.fn().mockImplementation(() => {
+      const ret = {
+        Responses: {},
+        UnprocessedKeys: {
+          [TransactionModel.fullTableName]: { Keys: [{ _id: '456' }] }
+        }
+      }
+      return {
+        promise: async () => {
+          return ret
+        }
+      }
+    })
+    const originalFunc = db.Transaction.prototype.documentClient.batchGet
+    batchGetMock.bind(db.Transaction.prototype.documentClient)
+    db.Transaction.prototype.documentClient.batchGet = batchGetMock
+
+    const result = await db.Transaction.run(async tx => {
+      const fut = tx.get([
+        TransactionModel.key('123'),
+        TransactionModel.key('456')
+      ], { inconsistentRead: true })
+      await expect(fut).rejects.toThrow('Failed to get all items')
+      expect(batchGetMock).toHaveBeenCalledTimes(11)
+      return 112233
+    })
+    expect(result).toBe(112233)
+
+    db.Transaction.prototype.documentClient.batchGet = originalFunc
+    global.setTimeout = originalSetTimeout
   }
 
   async testMultipleGet () {
@@ -769,11 +844,40 @@ class TransactionConditionCheckTest extends QuickTransactionTest {
   }
 }
 
+class TransactionEventTest extends QuickTransactionTest {
+  async testCommitHook () {
+    let mock = jest.fn()
+    await db.Transaction.run(async tx => {
+      tx.addHandler(db.Transaction.EVENTS.POST_COMMIT, mock)
+    })
+    expect(mock).toHaveBeenCalledTimes(1)
+    expect(mock).toHaveBeenLastCalledWith()
+
+    mock = jest.fn()
+    const e = new Error()
+    const fut = db.Transaction.run(async tx => {
+      tx.addHandler(db.Transaction.EVENTS.POST_COMMIT, mock)
+      throw e
+    })
+    await expect(fut).rejects.toThrow(e)
+    expect(mock).toHaveBeenCalledTimes(1)
+    expect(mock).toHaveBeenLastCalledWith(e)
+  }
+
+  async testInvalidHook () {
+    const fut = db.Transaction.run(async tx => {
+      tx.addHandler('xyz', () => {})
+    })
+    await expect(fut).rejects.toThrow(/must be one of /)
+  }
+}
+
 runTests(
   ParameterTest,
   TransactionGetTest,
   TransactionWriteTest,
   TransactionRetryTest,
   TransactionBackoffTest,
-  TransactionConditionCheckTest
+  TransactionConditionCheckTest,
+  TransactionEventTest
 )

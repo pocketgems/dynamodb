@@ -12,6 +12,7 @@ This library is used to interact with the DynamoDB NoSQL database. It provides h
     - [ACID Properties](#acid-properties)
     - [Automatic Optimistic Locking (AOL)](#automatic-optimistic-locking-aol)
     - [Retries](#retries)
+    - [Events](#events)
     - [Warning: Race Conditions](#warning-race-conditions)
     - [Warning: Side Effects](#warning-side-effects)
     - [Per-request transaction](#per-request-transaction)
@@ -165,41 +166,43 @@ still be missing the value.
 The schema is checked as follows:
   1. When a field's value is changed, it is validated. If a value is a
      reference (e.g., an object or array), then changing a value inside the reference does _not_ trigger a validation check.
-```javascript
-     // fields are checked immediately when creating a new item; this throws
-     // db.InvalidFieldError because someNumber should be an integer
-     tx.create(ModelWithComplexFields, { id: uuidv4(), aNonNegativeInt: '1' })
+    ```javascript
+         // fields are checked immediately when creating a new item; this throws
+         // db.InvalidFieldError because someNumber should be an integer
+         tx.create(ModelWithComplexFields, { id: uuidv4(), aNonNegativeInt: '1' })
 
-     // fields are checked when set
-     const x = tx.get(ModelWithFields, ...)
-     x.someBool = 1 // throws because the type should be boolean not int
-     x.someObj = {} // throws because the required "arr" key is missing
-     x.someObj = { arr: [5] } // throws b/c arr is supposed to contain strings
-     x.someObj = { arr: ['ok'] } // ok!
+         // fields are checked when set
+         const x = tx.get(ModelWithFields, ...)
+         x.someBool = 1 // throws because the type should be boolean not int
+         x.someObj = {} // throws because the required "arr" key is missing
+         x.someObj = { arr: [5] } // throws b/c arr is supposed to contain strings
+         x.someObj = { arr: ['ok'] } // ok!
 
-     // changes within a non-primitive type aren't detected or validated until
-     // we try to write the change so this next line won't throw!
-     x.someObj.arr.push(5)
-```
+         // changes within a non-primitive type aren't detected or validated until
+         // we try to write the change so this next line won't throw!
+         x.someObj.arr.push(5)
+    ```
+
   2. Any fields that will be written to the database are validated prior to
      writing them. This occurs when a [transaction](#transactions) commit
      starts. This catches schema validation errors like the one on the last
      line of the previous example.
 
   3. Keys are validated whenever they are created or read, like these examples:
-```javascript
-     const compoundID = { raceID: 1, runnerName: 'Alice' }
-     // each of these three trigger a validation check (to verify that
-     // compoundID contains every key component and that each of them meet
-     // their respective schema's requirements)
-     RaceResult.key(compoundID)
-     tx.create(RaceResult, compoundID)
-     await tx.get(RaceResult, compoundID)
-```
+    ```javascript
+         const compoundID = { raceID: 1, runnerName: 'Alice' }
+         // each of these three trigger a validation check (to verify that
+         // compoundID contains every key component and that each of them meet
+         // their respective schema's requirements)
+         RaceResult.key(compoundID)
+         tx.create(RaceResult, compoundID)
+         await tx.get(RaceResult, compoundID)
+    ```
+
   4. Fields validation can also be manually triggered:
-```javascript
-     x.getField('someObj').validate()
-```
+    ```javascript
+         x.getField('someObj').validate()
+    ```
 
 ### Custom Methods
 As you've noticed, key components and fields are simply accessed by their names
@@ -260,9 +263,10 @@ _Contention_ occurs when a transaction's inputs change before the transaction
 is completed. When this happens, a transaction will fail (if our inputs
 changed, then AOL assumes any updates we requested may no longer be valid). If
 a transaction fails, the default behavior is to automatically retry it up to
-three times. If all the retries fail, or if there is some permanent error (e.g,
+three times. If all the retries fail due to contention, the transaction will
+throw a `db.TransactionFailedError` exception. If there is some permanent error (e.g,
 you tried to create a new item but it already exists) then the transaction will
-throw a `db.TransactionFailedError` exception.
+throw a `db.ModelAlreadyExistsError` exception without additional retries.
 
 Consider this guestbook model:
 ```javascript
@@ -319,6 +323,20 @@ await db.Transaction.run(retryOptions, async tx => {
 // fail
 ```
 
+### Events
+Transaction supports event handlers by calling `tx.addHandler` for any work after transaction commits.
+```javascript
+  db.Transaction.run(async tx => {
+    tx.addHandler(Transaction.EVENTS.POST_COMMIT, (error) => {
+      // ...
+    })
+  })
+```
+
+The following events are available:
+- POST_COMMIT - Triggered after a transaction commits. If error is undefined,
+                the trasaction commited successfully, else handle the error
+                accordingly.
 
 ### Warning: Race Conditions
 Race conditions are still possible! Consider a ski resort which records some
@@ -352,9 +370,8 @@ async function liftRideTaken(resort, isNewSkier) {
 
 However, if we try to read them we can't guarantee a consistent snapshot:
 ```javascript
-const [skierStats, liftStats] =  await tx.get(
-  SkierStats.key(resort),
-  LiftStats.key(resort))
+const skierStats = await tx.get(SkierStats.key(resort))
+const liftStats = await tx.get(LiftStats.key(resort))
 ```
 
 This sequence is possible:
@@ -366,8 +383,19 @@ This sequence is possible:
   1. The request to read lift stats complete: `numLiftRides=1` _!!!_
   1. Our application code thinks there was one lift ride taken, but no skiers.
 
-To ensure this does not occur, use DynamoDB's `transactGet()` functionality.
-This is not yet supported by this library (future work!).
+To ensure this does not occur, use `db.get()` to fetch both items in a single request:
+```javascript
+const [skierStats, liftStats] = await tx.get([
+  SkierStats.key(resort),
+  LiftStats.key(resort)
+], {
+  // inconsisitentRead defaults to false, this option may be omitted.
+  // However, this option is important to get a consistent snapshot
+  inconsistentRead: false
+})
+```
+
+Under the hood, when multiple items are fetched with strong consistency, DynamoDB's `transactGetItems` API is called to prevent races mentioned above.
 
 
 ### Warning: Side Effects
@@ -390,6 +418,24 @@ multiple times (if your transaction retries).
 In this example, the HTTP request might be completed one or more times, even if
 the transaction never completes successfully!
 
+To avoid triggering side effects more than once, transaction `postCommit` event hook can be used:
+```javascript
+  await db.Transaction.run(async tx => {
+    const item = await tx.get(...)
+    item.someNumber += 1
+    if (item.someNumber > 10) {
+      tx.addHandler(
+        // A POST_COMMIT event only triggers after the transaction commits successfully.
+        db.Transaction.EVENTS.POST_COMMIT,
+        async () => {
+          await got('https://example.com/theItemHasSomeNumberBiggerThan10')
+        }
+      )
+    }
+  })
+```
+
+While this feature avoids more than once execution of side effects, in **rare** occasions where the hosting machine dies after transaction commits and before the side effect takes place, the side effect is never executed.
 
 ### Per-request transaction
 Each request handled by our [API Definition library](api.md) is wrapped in a transaction. Read more about it [here](api.md#database-transactions).
@@ -446,6 +492,25 @@ tx.create(Order, { id, product: 'coffee', quantity: 1 })
 **asynchronous**. Network traffic is generated to ask the database for the data
 as soon as the method is call, but other work can be done while waiting.
 
+`tx.get()` accepts an additional options to configure its behavior:
+  * `createIfMissing` - if the item does not exist and this is `false` (the
+    default) then `undefined` is returned. Otherwise, the item is created when
+    the transaction commits.
+  * `inconsistentRead` - see [Read Consistency](#read-consistency)
+
+    ```javascript
+    const order = await tx.get(Order, id, { createIfMissing: true })
+    if (order.isNew) {
+      // populate the fields or whatnot
+    }
+    ```
+
+The `isNew` property is set when the model is instantiated (after receiving the
+database's response to our data request). When the transaction commits, it will
+ensure that the item is still being created if `isNew=true` (i.e., the item
+wasn't created by someone else in the meantime) or still exists if
+`isNew=false` (i.e., the item hasn't been deleted in the meantime).
+
 In addition to the earlier examples for `tx.get()`, it is also possible to pass
 an array of `db.Key`s in order to fetch many things at once:
 ```javascript
@@ -455,32 +520,16 @@ const [order1, order2, raceResult] = await tx.get([
   RaceResult.key({ raceID, runnerName })
 ])
 ```
-Currently, this is equivalent to making multiple `tx.get()` calls and then
-using `Promise.all()` with them (i.e., this still generates one network request
-for _each_ item being requested; the fetch is _not_ batched). In the future, we
-plan for this syntax to support making a single request in this case (either a
-transactional or batch get, depending on the options specified).
 
-`tx.get()` also accepts an additional options to configure its behavior:
-  * `createIfMissing` - if the item does not exist and this is `false` (the
-    default) then `undefined` is returned. Otherwise, the item is created when
-    the transaction commits.
-  * `inconsistentRead` - see [Read Consistency](#read-consistency)
-```javascript
-const order = await tx.get(Order, id, { createIfMissing: true })
-if (order.isNew) {
-  // populate the fields or whatnot
-}
-```
+* By default (with `inconsistentRead` being **false**), a single request to DynamoDB's `transactGetItems` API is sent. Getting multiple items transactionally provides strong consistency than calling `get` multiple times for individual items. As a trade-off, transactional get is slower than getting individual items in a batch.
 
-The `isNew` property is set when the model is instantiated (after receiving the
-database's response to our data request). When the transaction commits, it will
-ensure that the item is still being created if `isNew=true` (i.e., the item
-wasn't created by someone else in the meantime) or still exists if
-`isNew=false` (i.e., the item hasn't been deleted in the meantime).
+* When `inconsistentRead` is true, a single request to DynamoDB's `batchGetItems` API is send. It is very fast to get items in a batch this way:
+    1. It eliminates HTTP overheads associated with individual requests.
+    2. Data is read from [DAX](#DAX) (when enabled), instead of directly from the DB.
+
+    But this operation provides eventual consistency.
 
 Note: Any given item can only be fetched once during a transaction. It is an error to try to fetch the same data twice.
-
 
 ### Write
 To modify data in the database, simply modify fields on an item created by
