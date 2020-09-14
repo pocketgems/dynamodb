@@ -214,8 +214,10 @@ class __Field {
   /**
    * @param {FieldOptions} [options]
    * @param {boolean} mayUseDefault only used if isForNewItem is true
+   * @param {boolean} valIsFromDB whether the value is from the database (or is
+   *   expected to be the value in the database)
    */
-  constructor (name, options, val, isForNewItem, mayUseDefault, isPartial,
+  constructor (name, options, val, valIsFromDB, mayUseDefault, isPartial,
     noSeal) {
     for (const [key, value] of Object.entries(options)) {
       Object.defineProperty(this, key, { value, writable: false })
@@ -237,7 +239,7 @@ class __Field {
       Object.seal(this)
     }
 
-    if (isForNewItem) {
+    if (!valIsFromDB) {
       // use the default if no value is provided (if undefined is
       // explicitly provided as a value, then it is used as the value
       // [that is only valid for optional fields, as an undefined value
@@ -247,7 +249,7 @@ class __Field {
       this.__value = val
       this.validate()
     } else {
-      // make a copy of the value we got from the server
+      // make a copy of the value we got from the database
       this.__initialValue = deepcopy(val)
       this.__value = val
       // keys already validated by Model's __setupKey()
@@ -624,7 +626,7 @@ class Model {
     const Cls = schemaTypeToFieldClassMap[opts.schema.type]
     const isPartial = this.__src.isUpdate
     const field = new Cls(
-      name, opts, val, this.isNew, mayUseDefault, isPartial)
+      name, opts, val, !this.isNew, mayUseDefault, isPartial)
     this[name] = field
     if (!opts.keyType || name === '_id' || name === '_sk') {
       // key fields are implicitly included in the "_id" or "_sk" field;

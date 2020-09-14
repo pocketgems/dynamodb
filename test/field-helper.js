@@ -53,7 +53,7 @@ function fieldFromFieldOptions (Cls, options) {
       StringField: ''
     }[Cls.name]
   }
-  const isForNewItem = !processOption('isForOldItem')
+  const valIsFromDB = processOption('valIsFromDB')
   const keyType = processOption('keyType')
   processOption('optional', isOpt => isOpt ? schema.optional() : schema)
   processOption('immutable', isReadOnly => schema.readOnly(isReadOnly))
@@ -63,7 +63,7 @@ function fieldFromFieldOptions (Cls, options) {
       `unexpected option(s): ${optionKeysLeft}`)
   const name = 'someName'
   options = db.__private.__Field.__validateFieldOptions(keyType, name, schema)
-  return new Cls(name, options, initVal, isForNewItem, mayUseDefault)
+  return new Cls(name, options, initVal, valIsFromDB, mayUseDefault)
 }
 
 module.exports = db
