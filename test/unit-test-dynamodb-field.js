@@ -1,7 +1,7 @@
 const S = require('fluent-schema')
 
 const { BaseTest, runTests } = require('./base-unit-test')
-const db = require('./field-helper')
+const db = require('./db-with-field-maker')
 
 class CommonFieldTest extends BaseTest {
   makeSureMutableFieldWorks (field) {

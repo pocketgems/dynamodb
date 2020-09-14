@@ -2,7 +2,7 @@ const S = require('fluent-schema')
 const uuidv4 = require('uuid').v4
 
 const { BaseTest, runTests } = require('./base-unit-test')
-const db = require('./field-helper')
+const db = require('./db-with-field-maker')
 
 const CONDITION_EXPRESSION_STR = 'ConditionExpression'
 const UPDATE_EXPRESSION_STR = 'UpdateExpression'
