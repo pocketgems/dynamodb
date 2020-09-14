@@ -63,7 +63,7 @@ function fieldFromFieldOptions (Cls, options) {
       `unexpected option(s): ${optionKeysLeft}`)
   const name = 'someName'
   options = db.__private.__Field.__validateFieldOptions(keyType, name, schema)
-  return new Cls(name, options, initVal, valIsFromDB, mayUseDefault)
+  return new Cls(name, options, initVal, valIsFromDB, mayUseDefault, true)
 }
 
 module.exports = db

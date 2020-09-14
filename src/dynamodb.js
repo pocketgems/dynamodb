@@ -215,18 +215,17 @@ class __Field {
    * @param {String} name the field's name (also the name of the underyling
    *   attribute in the database where this field is stored [except key
    *   components which are not stored in the db in their own attribute])
-   * @param {FieldOptions} options
+   * @param {FieldOptions} opts
    * @param {*} val the initial value of the field
    * @param {boolean} valIsFromDB whether the value is from the database (or is
    *   expected to be the value in the database)
    * @param {boolean} mayUseDefault whether to use the default instead of an
    *   undefined val (only applies if !valIsFromDB)
-   * @param {boolean} isPartial if true, non-key fields with undefined values
-   *   will not be checked against their schema (used for partial, blind
-   *   writes where not all fields are known)
+   * @param {boolean} forceValidation whether to validate undefined values from
+   *   the database
    */
-  constructor (name, options, val, valIsFromDB, mayUseDefault, isPartial) {
-    for (const [key, value] of Object.entries(options)) {
+  constructor (name, opts, val, valIsFromDB, mayUseDefault, forceValidation) {
+    for (const [key, value] of Object.entries(opts)) {
       Object.defineProperty(this, key, { value, writable: false })
     }
 
@@ -241,7 +240,7 @@ class __Field {
     this.__value = undefined
     this.__read = false // If get is called
     this.__written = false // If set is called
-    this.__default = options.default // only used for new items!
+    this.__default = opts.default // only used for new items!
 
     if (!valIsFromDB) {
       // use the default if no value is provided (if undefined is
@@ -256,9 +255,9 @@ class __Field {
       // make a copy of the value we got from the database
       this.__initialValue = deepcopy(val)
       this.__value = val
-      // keys already validated by Model's __setupKey()
-      // if the object is partial, don't validate missing values
-      if (!options.keyType && (!isPartial || val !== undefined)) {
+      // don't validate undefined values unless asked to (blind updates will
+      // omit some values)
+      if (forceValidation || val !== undefined) {
         this.validate()
       }
     }
@@ -409,8 +408,8 @@ function validateValue (fieldName, opts, val) {
  * @private
  */
 class NumberField extends __Field {
-  constructor (name, options, val, isForNewItem, mayUseDefault, isPartial) {
-    super(name, options, val, isForNewItem, mayUseDefault, isPartial)
+  constructor (...args) {
+    super(...args)
     this.__diff = undefined
   }
 
@@ -627,9 +626,12 @@ class Model {
     const val = vals[name]
     const mayUseDefault = !Object.hasOwnProperty.call(vals, name)
     const Cls = schemaTypeToFieldClassMap[opts.schema.type]
-    const isPartial = this.__src.isUpdate
+    // don't need to validate keys because we've already done that
+    // can't need to force validation of undefined values for blind updates
+    //   because they are permitted to omit fields
+    const forceValidation = !opts.keyType && !this.__src.isUpdate
     const field = new Cls(
-      name, opts, val, !this.isNew, mayUseDefault, isPartial)
+      name, opts, val, !this.isNew, mayUseDefault, forceValidation)
     Object.seal(field)
     this[name] = field
     if (!opts.keyType || name === '_id' || name === '_sk') {
