@@ -1657,11 +1657,8 @@ class Transaction {
    */
   async __trasactGetItems (keys, params) {
     const txItems = []
-    const models = []
     for (const key of keys) {
-      const model = new key.Cls(params)
-      models.push(model)
-      const param = model.__getParams(key.compositeID, params)
+      const param = key.Cls.__getParams(key.encodedKeys, params)
       delete param.ConsistentRead // Omit for transactGetItems.
       txItems.push({
         Get: param
@@ -1671,17 +1668,19 @@ class Transaction {
       TransactItems: txItems
     }).promise()
     const resps = data.Responses
-    for (let idx = 0; idx < models.length; idx++) {
+    const models = []
+    for (let idx = 0; idx < keys.length; idx++) {
       const data = resps[idx]
       if ((!params || !params.createIfMissing) && !data.Item) {
         models[idx] = undefined
         continue
       }
-      const model = models[idx]
-      model.__setupModel(
-        data.Item || { ...keys[idx].compositeID },
+      const key = keys[idx]
+      const model = new key.Cls(
+        Model.__INIT_METHOD.GET,
         !data.Item,
-        Model.__INIT_METHOD.GET)
+        data.Item || key.vals)
+      models[idx] = model
       this.__writeBatcher.track(model)
     }
     return models
@@ -1695,11 +1694,11 @@ class Transaction {
    */
   async __batchGetItems (keys, params) {
     let reqItems = {}
-    const models = []
+    const unorderedModels = []
+    const modelClsLookup = {}
     for (const key of keys) {
-      const model = new key.Cls(params)
-      models.push(model)
-      const param = model.__getParams(key.compositeID, params)
+      modelClsLookup[key.Cls.fullTableName] = key.Cls
+      const param = key.Cls.__getParams(key.encodedKeys, params)
       const getsPerTable = reqItems[param.TableName] || { Keys: [] }
       getsPerTable.Keys.push(param.Key)
       getsPerTable.ConsistentRead = param.ConsistentRead
@@ -1729,16 +1728,10 @@ class Transaction {
 
       // Merge results
       const resps = data.Responses
-      for (let idx = 0; idx < keys.length; idx++) {
-        const key = keys[idx].compositeID
-        const model = models[idx]
-        const items = resps[model.__fullTableName] || []
+      for (const [modelClsName, items] of Object.entries(resps)) {
+        const Cls = modelClsLookup[modelClsName]
         for (const item of items) {
-          if (item._id === key._id && item._sk === key._sk) {
-            model.__setupModel(item, false, Model.__INIT_METHOD.GET)
-            this.__writeBatcher.track(model)
-            break
-          }
+          unorderedModels.push(new Cls(Model.__INIT_METHOD.GET, false, item))
         }
       }
 
@@ -1746,22 +1739,38 @@ class Transaction {
       reqItems = data.UnprocessedKeys
     }
 
-    // Handle models still not setup.
-    for (let idx = 0; idx < models.length; idx++) {
-      const model = models[idx]
-      if (model.__initMethod === undefined) {
-        // Model hasn't been setup
-        if (!params || !params.createIfMissing) {
-          models[idx] = undefined
-        } else {
-          model.__setupModel(
-            { ...keys[idx].compositeID },
-            true,
-            Model.__INIT_METHOD.GET)
-          this.__writeBatcher.track(model)
+    // Restore ordering, creat models that are not on server.
+    const models = []
+    for (let idx = 0; idx < keys.length; idx++) {
+      const key = keys[idx]
+      const addModel = () => {
+        for (const model of unorderedModels) {
+          if (model.__fullTableName === key.Cls.fullTableName &&
+              model._id === key.encodedKeys._id &&
+              model._sk === key.encodedKeys._sk) {
+            models.push(model)
+            return true
+          }
         }
+        return false
+      }
+      if (addModel()) {
+        continue
+      }
+      // If we reach here, no model is found for the key.
+      if (params.createIfMissing) {
+        models.push(new key.Cls(Model.__INIT_METHOD.GET, true, key.vals))
+      } else {
+        models.push(undefined)
       }
     }
+
+    // Now track models, so everything is in expected order.
+    models.forEach(model => {
+      if (model) {
+        this.__writeBatcher.track(model)
+      }
+    })
     return models
   }
 
