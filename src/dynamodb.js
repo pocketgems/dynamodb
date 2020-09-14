@@ -540,7 +540,7 @@ class Key {
    * @param {Model} Cls a Model class
    * @param {Object} encodedKeys map of encoded partition and sort key
    * @param {Object} keyComponents key component values
-   * @param {Object} fields field (non-key) values (optional)
+   * @param {Object} [fields] field (non-key) values
    * @private
    */
   constructor (Cls, encodedKeys, keyComponents, fields) {
@@ -592,12 +592,12 @@ class Model {
     // track whether this item has been written to the db yet
     this.__written = false
 
-    // __db_attrs will contain a __Field
-    // subclass object which for each attribute to be written to the database.
-    // There is one entry for each entry in FIELDS, plus an _id field (the
-    // partition key) and optionally an _sk field (the optional sort key).
+    // __db_attrs has a __Field subclass object for each attribute to be
+    // written to the database. There is one attribute for each entry in
+    // FIELDS, plus an _id field (the partition key) and optionally an _sk
+    // field (the optional sort key).
     this.__db_attrs = {}
-    // one entry for each key component
+    // __non_db_attrs has a __Field subclass object for each key component
     this.__nondb_attrs = {}
 
     // make sure val is populated with both the encoded keys (_id and _sk) as
@@ -1877,9 +1877,19 @@ class Transaction {
         newData[key] = original[key]
       }
     }
+    // We create the item we intend to write (with newData), and the update its
+    // __initialValue for any preconditions requested (with `original`).
+    // Creating the model with newData validates that newData specifies a
+    // complete, valid item all on its own.
     const model = new Cls(ITEM_SOURCE.CREATE_OR_PUT, true, newData)
     Object.keys(original).forEach(key => {
-      model.getField(key).__initialValue = original[key]
+      const field = model.getField(key)
+      // we set the initial value and then mark it as read so that the write
+      // batcher later generates a database update which is conditioned on the
+      // the item's current value in the database for this field being
+      // original[key] (if the item existed)
+      field.__initialValue = original[key]
+      field.get()
     })
     this.__writeBatcher.track(model)
 
