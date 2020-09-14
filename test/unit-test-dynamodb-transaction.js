@@ -5,13 +5,14 @@ const db = require('../src/dynamodb')
 
 const { BaseTest, runTests } = require('./base-unit-test')
 
-async function txGetGeneric (cls, keyValues, func) {
+async function txGetGeneric (cls, values, func) {
   return db.Transaction.run(async tx => {
     let model
-    if (keyValues.constructor.name === 'Key') {
-      model = await tx.get(keyValues, { createIfMissing: true })
+    const valuesType = values.constructor.name
+    if (valuesType === 'Key' || valuesType === 'Data') {
+      model = await tx.get(values, { createIfMissing: true })
     } else {
-      model = await tx.get(cls, keyValues, { createIfMissing: true })
+      model = await tx.get(cls, values, { createIfMissing: true })
     }
     if (func) {
       func(model)
@@ -134,7 +135,7 @@ class TransactionGetTest extends QuickTransactionTest {
 
   async testGetModelByKey () {
     await db.Transaction.run(async (tx) => {
-      const model = await tx.get(TransactionModel.key('a'),
+      const model = await tx.get(TransactionModel.data('a'),
         { createIfMissing: true })
       expect(model.id).toBe('a')
     })
@@ -143,8 +144,8 @@ class TransactionGetTest extends QuickTransactionTest {
   async testGetModelByKeys () {
     await db.Transaction.run(async (tx) => {
       const [m1, m2] = await tx.get([
-        TransactionModel.key('a'),
-        TransactionModel.key('b')
+        TransactionModel.data('a'),
+        TransactionModel.data('b')
       ], { createIfMissing: true })
       expect(m1.id).toBe('a')
       expect(m2.id).toBe('b')
@@ -164,8 +165,8 @@ class TransactionGetTest extends QuickTransactionTest {
 
     const [m3, m4] = await db.Transaction.run(async (tx) => {
       return tx.get([
-        TransactionModel.key(this.modelName),
-        TransactionModel.key(newName)
+        TransactionModel.data(this.modelName),
+        TransactionModel.data(newName)
       ], { inconsistentRead, createIfMissing: true })
     })
     expect(m3.id).toBe(this.modelName)
@@ -222,11 +223,11 @@ class TransactionGetTest extends QuickTransactionTest {
   async testMultipleGet () {
     await db.Transaction.run(async (tx) => {
       const [m1, m2] = await tx.get([
-        TransactionModel.key('a'),
-        TransactionModel.key('b')
+        TransactionModel.data('a'),
+        TransactionModel.data('b')
       ], { createIfMissing: true })
       const m3 = await tx.get(TransactionModel, 'c', { createIfMissing: true })
-      const m4 = await tx.get(TransactionModel.key('d'),
+      const m4 = await tx.get(TransactionModel.data('d'),
         { createIfMissing: true })
       expect(m1.id).toBe('a')
       expect(m2.id).toBe('b')
@@ -239,11 +240,11 @@ class TransactionGetTest extends QuickTransactionTest {
     const params = { createIfMissing: true }
     await db.Transaction.run(async (tx) => {
       const [m1, m2] = await tx.get([
-        TransactionModel.key('a'),
-        TransactionModel.key('b')
+        TransactionModel.data('a'),
+        TransactionModel.data('b')
       ], params)
       const m3 = await tx.get(TransactionModel, 'c', params)
-      const m4 = await tx.get(TransactionModel.key('d'), params)
+      const m4 = await tx.get(TransactionModel.data('d'), params)
       const m5 = await tx.get(TransactionModel.key('e'))
       expect(m1.id).toBe('a')
       expect(m2.id).toBe('b')
@@ -295,25 +296,25 @@ class TransactionWriteTest extends QuickTransactionTest {
 
   async testWriteExisting () {
     const val = Math.floor(Math.random() * 999999)
-    const key = TransactionModel.key(this.modelName)
+    const data = TransactionModel.data(this.modelName)
     await db.Transaction.run(async (tx) => {
-      const txModel = await tx.get(key, { createIfMissing: true })
+      const txModel = await tx.get(data, { createIfMissing: true })
       txModel.field1 = val
     })
-    const model = await txGet(key)
+    const model = await txGet(data)
     expect(model.field1).toBe(val)
   }
 
   async testWriteNew () {
     const modelName = uuidv4()
-    const key = TransactionModel.key(modelName)
+    const data = TransactionModel.data(modelName)
     const val = Math.floor(Math.random() * 999999)
     await db.Transaction.run(async (tx) => {
-      const txModel = await tx.get(key, { createIfMissing: true })
+      const txModel = await tx.get(data, { createIfMissing: true })
       expect(txModel.isNew).toBe(true)
       txModel.field1 = val
     })
-    const model = await txGet(key)
+    const model = await txGet(data)
     expect(model.isNew).toBe(false)
     expect(model.field1).toBe(val)
   }
@@ -343,10 +344,10 @@ class TransactionWriteTest extends QuickTransactionTest {
   async testReadContention () {
     // When updating, if properties read in a transaction was updated outside,
     // contention!
-    const key = TransactionModel.key(uuidv4())
+    const data = TransactionModel.data(uuidv4())
     const fut = db.Transaction.run({ retries: 0 }, async (tx) => {
-      const txModel = await tx.get(key, { createIfMissing: true })
-      await txGet(key, model => {
+      const txModel = await tx.get(data, { createIfMissing: true })
+      await txGet(data, model => {
         model.field2 = 321
       })
 
@@ -356,7 +357,7 @@ class TransactionWriteTest extends QuickTransactionTest {
       txModel.field1 = 123
     })
     await expect(fut).rejects.toThrow(db.TransactionFailedError)
-    const result = await txGet(key)
+    const result = await txGet(data)
     expect(result.field2).toBe(321)
   }
 
@@ -364,10 +365,10 @@ class TransactionWriteTest extends QuickTransactionTest {
     // When updating, if properties change in a transaction was also updated
     // outside, contention!
     let result
-    const key = TransactionModel.key(this.modelName)
+    const data = TransactionModel.data(this.modelName)
     const fut = db.Transaction.run({ retries: 0 }, async (tx) => {
-      const txModel = await tx.get(key, { createIfMissing: true })
-      await txGet(key, model => {
+      const txModel = await tx.get(data, { createIfMissing: true })
+      await txGet(data, model => {
         model.field2 += 1
         result = model.field2
       })
@@ -376,7 +377,7 @@ class TransactionWriteTest extends QuickTransactionTest {
       txModel.field1 = 123
     })
     await expect(fut).rejects.toThrow(db.TransactionFailedError)
-    const m = await txGet(key)
+    const m = await txGet(data)
     expect(m.field2).toBe(result)
   }
 
@@ -404,37 +405,37 @@ class TransactionWriteTest extends QuickTransactionTest {
 
   async testWriteSnapshot () {
     // Additional changes to model after call to update should not be reflected
-    const key = TransactionModel.key(uuidv4())
+    const data = TransactionModel.data(uuidv4())
     const deepObj = { a: 12 }
     await db.Transaction.run(async tx => {
-      const model = await tx.get(key, { createIfMissing: true })
+      const model = await tx.get(data, { createIfMissing: true })
       expect(model.isNew).toBe(true)
 
       model.arrField = [deepObj]
       model.objField = { a: deepObj }
     })
     deepObj.a = 32
-    const updated = await txGet(key)
+    const updated = await txGet(data)
     expect(updated.objField.a.a).toBe(12)
     expect(updated.arrField[0].a).toBe(12)
   }
 
   async testNoContention () {
     // When using update to write data, a weaker condition is used to check for
-    // contention: If properties relavant to the transaction are modified,
+    // contention: If properties relevant to the transaction are modified,
     // there shouldn't be contention
     let finalVal
-    const key = TransactionModel.key(this.modelName)
+    const data = TransactionModel.data(this.modelName)
     await db.Transaction.run(async (tx) => {
-      const txModel = await tx.get(key, { createIfMissing: true })
-      const model = await txGet(key, model => {
+      const txModel = await tx.get(data, { createIfMissing: true })
+      const model = await txGet(data, model => {
         model.field2 += 1
       })
 
       txModel.field1 += 1
       finalVal = [txModel.field1, model.field2]
     })
-    const updated = await txGet(key)
+    const updated = await txGet(data)
     expect(updated.field1).toBe(finalVal[0])
     expect(updated.field2).toBe(finalVal[1])
   }
@@ -547,8 +548,8 @@ class TransactionWriteTest extends QuickTransactionTest {
   }
 
   async testUpdateItem () {
-    const key = TransactionModel.key(this.modelName)
-    const origModel = await txGet(key)
+    const data = TransactionModel.data(this.modelName)
+    const origModel = await txGet(data)
     const newVal = Math.floor(Math.random() * 9999999)
     await db.Transaction.run(async tx => {
       const original = {}
@@ -558,9 +559,9 @@ class TransactionWriteTest extends QuickTransactionTest {
           original[fieldName] = val
         }
       })
-      tx.update(key.Cls, original, { field1: newVal })
+      tx.update(data.Cls, original, { field1: newVal })
     })
-    const updated = await txGet(key)
+    const updated = await txGet(data)
     expect(updated.field1).toBe(newVal)
   }
 
@@ -844,11 +845,11 @@ class TransactionConditionCheckTest extends QuickTransactionTest {
       const model1 = await tx.get(TransactionModel, uuidv4(),
         { createIfMissing: true })
       models.push(model1)
-      models.push(await tx.get(TransactionModel.key(uuidv4()),
+      models.push(await tx.get(TransactionModel.data(uuidv4()),
         { createIfMissing: true }))
       const [model2, model3] = await tx.get([
-        TransactionModel.key(uuidv4()),
-        TransactionModel.key(uuidv4())
+        TransactionModel.data(uuidv4()),
+        TransactionModel.data(uuidv4())
       ],
       { createIfMissing: true })
       models.push(model2)

@@ -317,7 +317,7 @@ class IDSchemaTest extends BaseTest {
     }
 
     check(await txCreate(CompoundIDModel, compoundID))
-    check(await txGetByKey(CompoundIDModel.key(compoundID)))
+    check(await txGetByKey(CompoundIDModel.data(compoundID)))
     check(await txGet(CompoundIDModel, compoundID))
 
     expect(() => CompoundIDModel.key({})).toThrow(db.InvalidFieldError)
@@ -541,8 +541,28 @@ class KeyTest extends BaseTest {
       // createIfMissing=true
       await tx.get(RangeKeyModel, { id: uuidv4(), rangeKey: 3, n: 3 })
     })
-    await expect(fut).rejects.toThrow(
-      /may only pass non-key fields.* when createIfMissing is true/)
+    await expect(fut).rejects.toThrow(/received non-key fields/)
+  }
+
+  testDataKey () {
+    const id = uuidv4()
+    const data = RangeKeyModel.data({ id, rangeKey: 1, n: 5 })
+    const key = data.key
+    expect(key.keyComponents.id).toBe(id)
+    expect(key.keyComponents.rangeKey).toBe(1)
+    expect(data.data.n).toBe(5)
+  }
+
+  async testGetWithWrongType () {
+    await expect(db.Transaction.run(async tx => {
+      await tx.get(RangeKeyModel.key({ id: uuidv4(), rangeKey: 2 }), {
+        createIfMissing: true
+      })
+    })).rejects.toThrow(/must pass a Data/)
+
+    await expect(db.Transaction.run(async tx => {
+      await tx.get(RangeKeyModel.data({ id: uuidv4(), rangeKey: 2, n: 3 }))
+    })).rejects.toThrow(/must pass a Key/)
   }
 
   async testSortKey () {

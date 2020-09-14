@@ -564,21 +564,34 @@ const schemaTypeToJSTypeMap = {
 }
 
 /**
- * Key object to identify models.
+ * Key uniquely identifies a model.
  */
 class Key {
   /**
    * @param {Model} Cls a Model class
    * @param {Object} encodedKeys map of encoded partition and sort key
    * @param {Object} keyComponents key component values
-   * @param {Object} [fields] field (non-key) values
    * @private
    */
-  constructor (Cls, encodedKeys, keyComponents, fields) {
+  constructor (Cls, encodedKeys, keyComponents) {
     this.Cls = Cls
     this.encodedKeys = encodedKeys
     this.keyComponents = keyComponents
+  }
+}
+
+/**
+ * Data includes a model's key and non-key fields.
+ * @param {Object} [fields] field (non-key) values
+ */
+class Data extends Key {
+  constructor (Cls, encodedKeys, keyComponents, fields) {
+    super(Cls, encodedKeys, keyComponents)
     this.data = fields
+  }
+
+  get key () {
+    return new Key(this.Cls, this.encodedKeys, this.keyComponents)
   }
 
   get vals () {
@@ -878,7 +891,7 @@ class Model {
 
   /**
    * Given a mapping, split compositeKeys from other model fields. Return a
-   * 3-tuple, [keyComponents, modelData, encodedKeys].
+   * 3-tuple, [encodedKeys, keyComponents, modelData].
    *
    * @param {Object} data data to be split
    */
@@ -1275,18 +1288,37 @@ class Model {
   }
 
   /**
-   * Create a Key for a unique row in the DB table associated with this model.
+   * Returns a Key identifying a unique row in this model's DB table.
    * @param {*} vals map of key component names to values; if there is
    *   only one partition key field (whose type is not object), then this MAY
-   *   instead be just that field's value. If the key is to be used to create
-   *   a new item, it must also include at least any required data fields.
+   *   instead be just that field's value.
    * @returns {Key} a Key object.
    */
   static key (vals) {
-    if (!vals) {
-      throw new InvalidParameterError('values', 'missing')
-    }
+    const processedVals = this.__splitKeysAndDataWithPreprocessing(vals)
+    const [encodedKeys, keyComponents, data] = processedVals
 
+    // ensure that vals only contained key components (no data components)
+    const dataKeys = Object.keys(data)
+    if (dataKeys.length) {
+      dataKeys.sort()
+      throw new InvalidParameterError('vals',
+        `received non-key fields: ${dataKeys.join(', ')}`)
+    }
+    return new Key(this, encodedKeys, keyComponents)
+  }
+
+  /**
+   * Returns a Data fully describing a unique row in this model's DB table.
+   * @param {*} vals like the argument to key() but also includes non-key data
+   * @returns {Data} a Data object for use with tx.create() or
+   *   tx.get(..., { createIfMissing: true })
+   */
+  static data (vals) {
+    return new Data(this, ...this.__splitKeysAndDataWithPreprocessing(vals))
+  }
+
+  static __splitKeysAndDataWithPreprocessing (vals) {
     // if we only have one key component, then the `_id` **MAY** just be the
     // value rather than a map of key component names to values
     assert.ok(this.__KEY_ORDER,
@@ -1303,10 +1335,7 @@ class Model {
       throw new InvalidParameterError('values',
         'should be an object mapping key component names to values')
     }
-
-    // check if we were given too many keys (if too few, then the validation
-    // will fail, so we don't need to handle that case here)
-    return new Key(this, ...this.__splitKeysAndData(vals))
+    return this.__splitKeysAndData(vals)
   }
 
   /**
@@ -1370,11 +1399,16 @@ async function getWithArgs (args, callback) {
   const [first, ...args1] = args
   if (first && first.prototype instanceof Model) {
     if (args1.length === 1 || args1.length === 2) {
-      const key = first.key(args1[0])
-      return getWithArgs([key, ...args1.slice(1)], callback)
+      let handle
+      if (args1.length === 2 && args1[1].createIfMissing) {
+        handle = first.data(args1[0])
+      } else {
+        handle = first.key(args1[0])
+      }
+      return getWithArgs([handle, ...args1.slice(1)], callback)
     } else {
       throw new InvalidParameterError('args',
-        'Expecting args to have a tuple of (Model, keyValues, optionalOpt).')
+        'Expecting args to have a tuple of (Model, values, optionalOpt).')
     }
   } else if (first && first instanceof Key) {
     if (args1.length > 1) {
@@ -1658,11 +1692,6 @@ class Transaction {
    * @param {GetParams} params Params for how to get the item
    */
   async __getItem (key, params) {
-    params = params || {}
-    if (!params.createIfMissing && Object.keys(key.data).length) {
-      throw new InvalidParameterError('key()',
-        'may only pass non-key fields to key() when createIfMissing is true')
-    }
     const getParams = key.Cls.__getParams(key.encodedKeys, params)
     const data = await this.documentClient.get(getParams).promise()
     if (!params.createIfMissing && !data.Item) {
@@ -1803,11 +1832,12 @@ class Transaction {
   /**
    * Fetches model(s) from database.
    * This method supports 3 different signatures.
-   *   get(Cls, keyValues, params)
-   *   get(Key, params)
-   *   get([Key], params)
+   *   get(Cls, keyOrDataValues, params)
+   *   get(Key|Data, params)
+   *   get([Key|Data], params)
    *
-   * When only one items is fetched, DynamoDB's getItem API is called.
+   * When only one items is fetched, DynamoDB's getItem API is called. Must use
+   * a Key when createIfMissing is not true, and Data otherwise.
    *
    * When a list of items is fetched:
    *   If inconsistentRead is false (the default), DynamoDB's transactGetItems
@@ -1825,13 +1855,30 @@ class Transaction {
    */
   async get (...args) {
     return getWithArgs(args, async (arg, params) => {
-      if (arg instanceof Array) {
-        if (!params || !params.inconsistentRead) {
+      // make sure we have a Key or Data depending on createIfMissing
+      params = params || {}
+      const argIsArray = arg instanceof Array
+      const arr = argIsArray ? arg : [arg]
+      for (let i = 0; i < arr.length; i++) {
+        if (params.createIfMissing) {
+          if (!(arr[i] instanceof Data)) {
+            throw new InvalidParameterError('args',
+              'must pass a Data to tx.get() when createIfMissing is true')
+          }
+        } else if (arr[i] instanceof Data) {
+          throw new InvalidParameterError('args',
+            'must pass a Key to tx.get() when createIfMissing is not true')
+        }
+      }
+      // fetch the data in bulk if more than 1 item was requested
+      if (argIsArray) {
+        if (!params.inconsistentRead) {
           return this.__transactGetItems(arg, params)
         } else {
           return this.__batchGetItems(arg, params)
         }
       } else {
+        // just fetch the one item that was requested
         return this.__getItem(arg, params)
       }
     })
