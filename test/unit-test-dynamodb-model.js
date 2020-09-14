@@ -152,6 +152,13 @@ class SimpleModelTest extends BaseTest {
     check({ isCreate: true })
   }
 
+  async testFieldNotExtendable () {
+    await expect(db.Transaction.run(tx => {
+      const item = tx.create(SimpleModel, { id: uuidv4() })
+      item.id.weCannotAddProperitesToFieldsOnModels = undefined
+    })).rejects.toThrow(TypeError)
+  }
+
   async testRecreatingTable () {
     // Re-creating the same table shouldn't error out
     await SimpleModel.createUnittestResource()

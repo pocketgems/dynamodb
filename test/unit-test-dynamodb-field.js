@@ -96,13 +96,6 @@ class CommonFieldTest extends BaseTest {
     })
   }
 
-  testFieldNotExtendable () {
-    const field = db.__private.NumberField({ valIsFromDB: true, val: 1 })
-    expect(() => {
-      field.invalidProperty = undefined
-    }).toThrow(TypeError)
-  }
-
   testMutatedFlagWithDefault () {
     // Fields with default are mutated by default also
     // so this field will be tranmitted to server on update

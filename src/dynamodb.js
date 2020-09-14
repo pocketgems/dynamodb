@@ -217,8 +217,7 @@ class __Field {
    * @param {boolean} valIsFromDB whether the value is from the database (or is
    *   expected to be the value in the database)
    */
-  constructor (name, options, val, valIsFromDB, mayUseDefault, isPartial,
-    noSeal) {
+  constructor (name, options, val, valIsFromDB, mayUseDefault, isPartial) {
     for (const [key, value] of Object.entries(options)) {
       Object.defineProperty(this, key, { value, writable: false })
     }
@@ -235,9 +234,6 @@ class __Field {
     this.__read = false // If get is called
     this.__written = false // If set is called
     this.__default = options.default // only used for new items!
-    if (!noSeal) { // subclasses may need to add properties
-      Object.seal(this)
-    }
 
     if (!valIsFromDB) {
       // use the default if no value is provided (if undefined is
@@ -406,9 +402,8 @@ function validateValue (fieldName, opts, val) {
  */
 class NumberField extends __Field {
   constructor (name, options, val, isForNewItem, mayUseDefault, isPartial) {
-    super(name, options, val, isForNewItem, mayUseDefault, isPartial, true)
+    super(name, options, val, isForNewItem, mayUseDefault, isPartial)
     this.__diff = undefined
-    Object.seal(this)
   }
 
   set (val) {
@@ -627,6 +622,7 @@ class Model {
     const isPartial = this.__src.isUpdate
     const field = new Cls(
       name, opts, val, !this.isNew, mayUseDefault, isPartial)
+    Object.seal(field)
     this[name] = field
     if (!opts.keyType || name === '_id' || name === '_sk') {
       // key fields are implicitly included in the "_id" or "_sk" field;
