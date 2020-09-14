@@ -212,10 +212,18 @@ class __Field {
    */
 
   /**
-   * @param {FieldOptions} [options]
-   * @param {boolean} mayUseDefault only used if isForNewItem is true
+   * @param {String} name the field's name (also the name of the underyling
+   *   attribute in the database where this field is stored [except key
+   *   components which are not stored in the db in their own attribute])
+   * @param {FieldOptions} options
+   * @param {*} val the initial value of the field
    * @param {boolean} valIsFromDB whether the value is from the database (or is
    *   expected to be the value in the database)
+   * @param {boolean} mayUseDefault whether to use the default instead of an
+   *   undefined val (only applies if !valIsFromDB)
+   * @param {boolean} isPartial if true, non-key fields with undefined values
+   *   will not be checked against their schema (used for partial, blind
+   *   writes where not all fields are known)
    */
   constructor (name, options, val, valIsFromDB, mayUseDefault, isPartial) {
     for (const [key, value] of Object.entries(options)) {
