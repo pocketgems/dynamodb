@@ -1097,11 +1097,38 @@ class OptDefaultModelTest extends BaseTest {
   }
 }
 
+class OptionalFieldConditionTest extends BaseTest {
+  async testOptFieldCondition () {
+    class OptNumModel extends db.Model {
+      static get FIELDS () {
+        return {
+          n: S.integer().optional()
+        }
+      }
+    }
+    await OptNumModel.createUnittestResource()
+
+    const id = uuidv4()
+    await db.Transaction.run(tx => {
+      tx.create(OptNumModel, { id })
+    })
+    await db.Transaction.run(async tx => {
+      const item = await tx.get(OptNumModel, id)
+      item.n = 5
+      const field = item.getField('n')
+      const [condition, vals] = field.__conditionExpression(':_1')
+      expect(condition).toBe('attribute_not_exists(n)')
+      expect(vals).toEqual({})
+    })
+  }
+}
+
 runTests(
   BadModelTest,
   ErrorTest,
   KeyTest,
   OptDefaultModelTest,
+  OptionalFieldConditionTest,
   SimpleModelTest,
   JSONModelTest,
   NewModelTest,
