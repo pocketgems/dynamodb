@@ -143,9 +143,13 @@ class SimpleModelTest extends BaseTest {
   }
 
   testInvalidSetup () {
-    expect(() => {
-      return new SimpleModel('invalidMethod', true, { id: uuidv4() })
-    }).toThrow(/must be one of CREATE or GET/)
+    function check (badSrc) {
+      expect(() => {
+        return new SimpleModel(badSrc, true, { id: uuidv4() })
+      }).toThrow(/invalid item source type/)
+    }
+    check('nope')
+    check({ isCreate: true })
   }
 
   async testRecreatingTable () {
@@ -862,7 +866,7 @@ class WriteBatcherTest extends BaseTest {
     batcher.documentClient.transactWrite = originalFunc
   }
 
-  testExceptionParser () {
+  async testExceptionParser () {
     const reasons = []
     const response = {
       httpResponse: {
@@ -876,10 +880,16 @@ class WriteBatcherTest extends BaseTest {
       }
     }
 
+    let itemSourceCreate
+    await db.Transaction.run(tx => {
+      const item = tx.create(IDWithSchemaModel, { id: 'xyz' + uuidv4() })
+      itemSourceCreate = item.__src
+    })
+
     const batcher = new db.__private.__WriteBatcher()
     batcher.track({
       _id: '123',
-      __initMethod: db.Model.__INIT_METHOD.CREATE
+      __src: itemSourceCreate
     })
     batcher.__extractError({}, response)
     expect(response.error).toBe(undefined)
@@ -911,7 +921,7 @@ class WriteBatcherTest extends BaseTest {
       .toBe('Tried to recreate an existing model: _id=123 _sk=456')
 
     response.error = undefined
-    batcher.__allModels[0].__initMethod = 'something else'
+    batcher.__allModels[0].__src = 'something else'
     batcher.__extractError(request, response)
     expect(response.error).toBe(undefined)
 

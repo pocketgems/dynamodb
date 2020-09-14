@@ -560,6 +560,15 @@ const _ID_FIELD_OPTS = __Field.__validateFieldOptions(
 const _SK_FIELD_OPTS = __Field.__validateFieldOptions(
   'RANGE', '_sk', S.string().minLength(1))
 
+// sentinel values for different item creation methods
+const ITEM_SOURCE = {
+  CREATE: { isCreate: true },
+  GET: { isGet: true },
+  UPDATE: { isUpdate: true },
+  CREATE_OR_PUT: { isCreateOrPut: true }
+}
+const ITEM_SOURCES = new Set(Object.values(ITEM_SOURCE))
+
 /**
  * The base class for modeling data.
  * @public
@@ -568,18 +577,17 @@ const _SK_FIELD_OPTS = __Field.__validateFieldOptions(
  */
 class Model {
   /**
-   * Constructs a model. Model has one `id` field. Subclasses should add
-   * additional fields by overriding the constructor.
+   * Create a representation of a database Item. Should only be used by the
+   * library.
+   * @private
    */
-  constructor (method, isNew, vals) {
+  constructor (src, isNew, vals) {
     this.isNew = !!isNew
 
-    const methods = Model.__INIT_METHOD
-    if (!Object.values(methods).includes(method)) {
-      throw new InvalidParameterError('method',
-        'must be one of CREATE or GET.')
+    if (!ITEM_SOURCES.has(src)) {
+      throw new InvalidParameterError('src', 'invalid item source type')
     }
-    this.__initMethod = method
+    this.__src = src
 
     // track whether this item has been written to the db yet
     this.__written = false
@@ -614,7 +622,7 @@ class Model {
     const val = vals[name]
     const mayUseDefault = !Object.hasOwnProperty.call(vals, name)
     const Cls = schemaTypeToFieldClassMap[opts.schema.type]
-    const isPartial = (this.__initMethod === Model.__INIT_METHOD.UPDATE)
+    const isPartial = this.__src.isUpdate
     const field = new Cls(
       name, opts, val, this.isNew, mayUseDefault, isPartial)
     this[name] = field
@@ -899,7 +907,7 @@ class Model {
    */
   __putParams () {
     // istanbul ignore next
-    if (this.__initMethod === Model.__INIT_METHOD.UPDATE) {
+    if (this.__src.isUpdate) {
       // This is really unreachable code.
       // The only way to get here is when the model is mutated (to complete a
       // write) and has no field mutated (so PUT is used instead of UPDATE).
@@ -934,8 +942,7 @@ class Model {
 
     let conditionExpr
     let hasExistsCheck = false
-    const isCreateOrPut =
-      this.__initMethod === Model.__INIT_METHOD.CREATE_OR_PUT
+    const isCreateOrPut = this.__src.isCreateOrPut
     const exprValues = {}
     if (this.isNew) {
       if (isCreateOrPut) {
@@ -1015,9 +1022,7 @@ class Model {
     const accessedFields = []
     let exprCount = 0
 
-    const isUpdate =
-      this.__initMethod === Model.__INIT_METHOD.UPDATE
-
+    const isUpdate = this.__src.isUpdate
     Object.keys(this.__db_attrs).forEach(key => {
       const field = this.__db_attrs[key]
       const omitInUpdate = isUpdate && field.get() === undefined
@@ -1141,15 +1146,6 @@ class Model {
       return ret
     }
     return undefined
-  }
-
-  static get __INIT_METHOD () {
-    return {
-      CREATE: 1,
-      GET: 2,
-      UPDATE: 3,
-      CREATE_OR_PUT: 4
-    }
   }
 
   static __setupKey (isPartitionKey, vals) {
@@ -1288,8 +1284,7 @@ class Model {
     assert.ok(!this.__written, 'May write once')
     this.__written = true
 
-    const usePut =
-      this.__initMethod === Model.__INIT_METHOD.CREATE_OR_PUT
+    const usePut = this.__src.isCreateOrPut
     const method = usePut ? 'put' : 'update'
     const params = this[`__${method}Params`]()
     const retries = 3
@@ -1302,11 +1297,9 @@ class Model {
         if (!error.retryable) {
           const isConditionalCheckFailure =
             error.code === 'ConditionalCheckFailedException'
-          if (isConditionalCheckFailure &&
-            this.__initMethod === Model.__INIT_METHOD.CREATE) {
+          if (isConditionalCheckFailure && this.__src.isCreate) {
             throw new ModelAlreadyExistsError(this._id, this._sk)
-          } else if (isConditionalCheckFailure &&
-                     this.__initMethod === Model.__INIT_METHOD.UPDATE) {
+          } else if (isConditionalCheckFailure && this.__src.isUpdate) {
             throw new InvalidModelUpdateError(this.id, this._sk)
           } else {
             throw error
@@ -1539,9 +1532,9 @@ class __WriteBatcher {
             )
             break
         }
-        if (model.__initMethod === Model.__INIT_METHOD.CREATE) {
+        if (model.__src.isCreate) {
           response.error = new ModelAlreadyExistsError(model._id, model._sk)
-        } else if (model.__initMethod === Model.__INIT_METHOD.UPDATE) {
+        } else if (model.__src.isUpdate) {
           response.error = new InvalidModelUpdateError(model._id, model._sk)
         }
       }
@@ -1644,7 +1637,7 @@ class Transaction {
     }
     const isNew = !data.Item
     const vals = data.Item || key.vals
-    const model = new key.Cls(Model.__INIT_METHOD.GET, isNew, vals)
+    const model = new key.Cls(ITEM_SOURCE.GET, isNew, vals)
     this.__writeBatcher.track(model)
     return model
   }
@@ -1677,7 +1670,7 @@ class Transaction {
       }
       const key = keys[idx]
       const model = new key.Cls(
-        Model.__INIT_METHOD.GET,
+        ITEM_SOURCE.GET,
         !data.Item,
         data.Item || key.vals)
       models[idx] = model
@@ -1731,7 +1724,7 @@ class Transaction {
       for (const [modelClsName, items] of Object.entries(resps)) {
         const Cls = modelClsLookup[modelClsName]
         for (const item of items) {
-          unorderedModels.push(new Cls(Model.__INIT_METHOD.GET, false, item))
+          unorderedModels.push(new Cls(ITEM_SOURCE.GET, false, item))
         }
       }
 
@@ -1759,7 +1752,7 @@ class Transaction {
       }
       // If we reach here, no model is found for the key.
       if (params.createIfMissing) {
-        models.push(new key.Cls(Model.__INIT_METHOD.GET, true, key.vals))
+        models.push(new key.Cls(ITEM_SOURCE.GET, true, key.vals))
       } else {
         models.push(undefined)
       }
@@ -1835,7 +1828,7 @@ class Transaction {
     }
 
     const data = Cls.__splitKeysAndData(original)[2] // this also checks keys
-    const model = new Cls(Model.__INIT_METHOD.UPDATE, false, original)
+    const model = new Cls(ITEM_SOURCE.UPDATE, false, original)
     Object.keys(data).forEach(k => {
       model.getField(k).get() // Read to show in ConditionExpression
     })
@@ -1884,7 +1877,7 @@ class Transaction {
         newData[key] = original[key]
       }
     }
-    const model = new Cls(Model.__INIT_METHOD.CREATE_OR_PUT, true, newData)
+    const model = new Cls(ITEM_SOURCE.CREATE_OR_PUT, true, newData)
     Object.keys(original).forEach(key => {
       model.getField(key).__initialValue = original[key]
     })
@@ -1903,7 +1896,7 @@ class Transaction {
    *   plus any data for Fields on the Model.
    */
   create (Cls, data) {
-    const model = new Cls(Model.__INIT_METHOD.CREATE, true, { ...data })
+    const model = new Cls(ITEM_SOURCE.CREATE, true, { ...data })
     this.__writeBatcher.track(model)
     return model
   }
