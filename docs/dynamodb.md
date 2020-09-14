@@ -199,7 +199,7 @@ The schema is checked as follows:
          const compoundID = { raceID: 1, runnerName: 'Alice' }
          // each of these three trigger a validation check (to verify that
          // compoundID contains every key component and that each of them meet
-         // their respective schema's requirements)
+         // their respective schemas requirements)
          RaceResult.key(compoundID)
          tx.create(RaceResult, compoundID)
          await tx.get(RaceResult, compoundID)
@@ -341,7 +341,7 @@ Transaction supports event handlers by calling `tx.addHandler` for any work afte
 
 The following events are available:
 - POST_COMMIT - Triggered after a transaction commits. If error is undefined,
-                the trasaction commited successfully, else handle the error
+                the transaction committed successfully, else handle the error
                 accordingly.
 
 ### Warning: Race Conditions
@@ -395,7 +395,7 @@ const [skierStats, liftStats] = await tx.get([
   SkierStats.key(resort),
   LiftStats.key(resort)
 ], {
-  // inconsisitentRead defaults to false, this option may be omitted.
+  // inconsistentRead defaults to false, this option may be omitted.
   // However, this option is important to get a consistent snapshot
   inconsistentRead: false
 })

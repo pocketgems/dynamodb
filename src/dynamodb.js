@@ -215,7 +215,7 @@ class __Field {
    */
 
   /**
-   * @param {String} name the field's name (also the name of the underyling
+   * @param {String} name the field's name (also the name of the underlying
    *   attribute in the database where this field is stored [except key
    *   components which are not stored in the db in their own attribute])
    * @param {FieldOptions} opts
@@ -270,7 +270,7 @@ class __Field {
     this.__value = useDefault ? deepcopy(this.__default) : val
 
     if (valIsFromDB) {
-      // The field's current value is the value stored in the databse. Track
+      // The field's current value is the value stored in the database. Track
       // that value so that we can detect if it changes, and write that
       // change to the database.
       // Note: val is undefined whenever useDefault is true
@@ -1546,22 +1546,22 @@ class __WriteBatcher {
       if (reason.Code === 'ConditionalCheckFailed') {
         // Items in reasons maps 1to1 to items in request, here we do a reverse
         // lookup to find the original model that triggered the error.
-        const trasact = request.params.TransactItems[idx]
-        const method = Object.keys(trasact)[0]
+        const transact = request.params.TransactItems[idx]
+        const method = Object.keys(transact)[0]
         let model
 
         switch (method) {
           case 'Update':
           case 'ConditionCheck':
             model = this.__getModel(
-              trasact[method].TableName,
-              trasact[method].Key
+              transact[method].TableName,
+              transact[method].Key
             )
             break
           case 'Put':
             model = this.__getModel(
-              trasact[method].TableName,
-              trasact[method].Item
+              transact[method].TableName,
+              transact[method].Item
             )
             break
         }
@@ -1628,10 +1628,10 @@ class Transaction {
   /**
    * All events transactions may emit.
    *
-   * POST_COMMIT: When a transaction is commited. Do clean up,
+   * POST_COMMIT: When a transaction is committed. Do clean up,
    *              summery, post process here. Handler has the signature of
    *              (error) => {}. When error is undefined, the transaction
-   *              commited successfully, else the transaction failed.
+   *              committed successfully, else the transaction failed.
    */
   static EVENTS = {
     POST_COMMIT: 'postCommit'
@@ -1652,7 +1652,7 @@ class Transaction {
   }
 
   /**
-   * Get an item using DynamodDB's getItem API.
+   * Get an item using DynamoDB's getItem API.
    *
    * @param {Key} key A key for the item
    * @param {GetParams} params Params for how to get the item
@@ -1681,7 +1681,7 @@ class Transaction {
    * @param {GetParams} params Params used to get items, all items will be
    *   fetched using the same params.
    */
-  async __trasactGetItems (keys, params) {
+  async __transactGetItems (keys, params) {
     const txItems = []
     for (const key of keys) {
       const param = key.Cls.__getParams(key.encodedKeys, params)
@@ -1811,7 +1811,7 @@ class Transaction {
    *
    * When a list of items is fetched:
    *   If inconsistentRead is false (the default), DynamoDB's transactGetItems
-   *     API is called for a strongly consistent read. Trasactional reads will
+   *     API is called for a strongly consistent read. Transactional reads will
    *     be slower than batched reads.
    *   If inconsistentRead is true, DynamoDB's batchGetItems API is called.
    *     Batched fetches are more efficient than calling get with 1 key many
@@ -1827,7 +1827,7 @@ class Transaction {
     return getWithArgs(args, async (arg, params) => {
       if (arg instanceof Array) {
         if (!params || !params.inconsistentRead) {
-          return this.__trasactGetItems(arg, params)
+          return this.__transactGetItems(arg, params)
         } else {
           return this.__batchGetItems(arg, params)
         }
@@ -2001,7 +2001,8 @@ class Transaction {
   }
 
   /*
-   * Runs a function in trasaction, emits events based on the execution outcome
+   * Runs a function in transaction, and then emits events based on the
+   * execution outcome.
    */
   async run (...args) {
     try {
