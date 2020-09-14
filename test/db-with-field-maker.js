@@ -36,14 +36,14 @@ function fieldFromFieldOptions (Cls, options) {
       schema = S.string()
     }
   }
-  let mayUseDefault = true
   let initVal
+  let valSpecified = true
   if (Object.hasOwnProperty.call(options, 'val')) {
     initVal = options.val
     delete options.val
-    mayUseDefault = false
   } else if (options.default) {
-    initVal = options.default
+    initVal = undefined
+    valSpecified = false
   } else {
     initVal = {
       ArrayField: [],
@@ -63,7 +63,7 @@ function fieldFromFieldOptions (Cls, options) {
       `unexpected option(s): ${optionKeysLeft}`)
   const name = 'someName'
   options = db.__private.__Field.__validateFieldOptions(keyType, name, schema)
-  return new Cls(name, options, initVal, valIsFromDB, mayUseDefault, true)
+  return new Cls(name, options, initVal, valIsFromDB, valSpecified, false)
 }
 
 module.exports = db

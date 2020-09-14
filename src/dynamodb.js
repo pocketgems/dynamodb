@@ -190,6 +190,9 @@ class __Field {
       }
     }
     options.schemaValidator = ajv.compile(options.schema)
+    if (hasDefault) {
+      validateValue(this.name, options, options.default)
+    }
     return options
   }
 
@@ -217,14 +220,13 @@ class __Field {
    *   components which are not stored in the db in their own attribute])
    * @param {FieldOptions} opts
    * @param {*} val the initial value of the field
-   * @param {boolean} valIsFromDB whether the value is from the database (or is
-   *   expected to be the value in the database)
-   * @param {boolean} mayUseDefault whether to use the default instead of an
-   *   undefined val (only applies if !valIsFromDB)
-   * @param {boolean} forceValidation whether to validate undefined values from
-   *   the database
+   * @param {boolean} valIsFromDB whether val is from (or is expected to be
+   *   from) the database
+   * @param {boolean} valSpecified whether val was specified (if this is
+   *   true, then the field was present)
+   * @param {boolean} isForUpdate whether this field is part of an update
    */
-  constructor (name, opts, val, valIsFromDB, mayUseDefault, forceValidation) {
+  constructor (name, opts, val, valIsFromDB, valSpecified, isForUpdate) {
     for (const [key, value] of Object.entries(opts)) {
       Object.defineProperty(this, key, { value, writable: false })
     }
@@ -236,29 +238,54 @@ class __Field {
      * @member {String} name The name of the owning property.
      */
     this.name = name // Will be set after params for model are setup
-    this.__initialValue = undefined
     this.__value = undefined
     this.__read = false // If get is called
     this.__written = false // If set is called
     this.__default = opts.default // only used for new items!
 
-    if (!valIsFromDB) {
-      // use the default if no value is provided (if undefined is
-      // explicitly provided as a value, then it is used as the value
-      // [that is only valid for optional fields, as an undefined value
-      // means the field will not be stored on the server])
-      mayUseDefault = mayUseDefault && this.__default !== undefined
-      val = mayUseDefault ? deepcopy(this.__default) : val
-      this.__value = val
-      this.validate()
+    // determine whether to use the default value, or the given val
+    let useDefault
+    if (valSpecified) {
+      // if val was specified, then use it
+      useDefault = false
     } else {
-      // make a copy of the value we got from the database
+      assert.ok(val === undefined,
+        'valSpecified can only be false if val is undefined')
+      if (this.__default === undefined) {
+        // can't use the default if there is no default value
+        useDefault = false
+      } else if (valIsFromDB && this.optional) {
+        // if the field is optional and the value is not in the db then we
+        // can't use the default (we have to assume the field was omitted)
+        useDefault = false
+      } else if (isForUpdate) {
+        // when creating an item as the base of an update, we don't implicitly
+        // create defaults; our preconditions are ONLY what is explicitly given
+        useDefault = false
+      } else {
+        useDefault = true
+      }
+    }
+
+    this.__value = useDefault ? deepcopy(this.__default) : val
+
+    if (valIsFromDB) {
+      // The field's current value is the value stored in the databse. Track
+      // that value so that we can detect if it changes, and write that
+      // change to the database.
+      // Note: val is undefined whenever useDefault is true
       this.__initialValue = deepcopy(val)
-      this.__value = val
-      // don't validate undefined values unless asked to (blind updates will
-      // omit some values)
-      if (forceValidation || val !== undefined) {
-        this.validate()
+    } else {
+      this.__initialValue = undefined
+    }
+
+    // validate the value, if needed
+    if (!this.keyType) { // keys are validated elsewhere; don't re-validate
+      if (!useDefault) { // default was validated by __validateFieldOptions
+        // validate everything except values omitted from an update() call
+        if (valSpecified || !isForUpdate) {
+          this.validate()
+        }
       }
     }
   }
@@ -624,14 +651,12 @@ class Model {
 
   __addField (name, opts, vals) {
     const val = vals[name]
-    const mayUseDefault = !Object.hasOwnProperty.call(vals, name)
+    const valSpecified = Object.hasOwnProperty.call(vals, name)
     const Cls = schemaTypeToFieldClassMap[opts.schema.type]
-    // don't need to validate keys because we've already done that
-    // can't need to force validation of undefined values for blind updates
-    //   because they are permitted to omit fields
-    const forceValidation = !opts.keyType && !this.__src.isUpdate
+    // can't force validation of undefined values for blind updates because
+    //   they are permitted to omit fields
     const field = new Cls(
-      name, opts, val, !this.isNew, mayUseDefault, forceValidation)
+      name, opts, val, !this.isNew, valSpecified, !!this.__src.isUpdate)
     Object.seal(field)
     this[name] = field
     if (!opts.keyType || name === '_id' || name === '_sk') {

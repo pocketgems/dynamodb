@@ -968,10 +968,140 @@ class WriteBatcherTest extends BaseTest {
   }
 }
 
+class OptDefaultModelTest extends BaseTest {
+  async testFieldWhichIsBothOptionalAndDefault () {
+    class OptDefaultModel extends db.Model {
+      static get FIELDS () {
+        return {
+          def: S.integer().default(7),
+          opt: S.integer().optional(),
+          defOpt: S.integer().default(7).optional()
+        }
+      }
+    }
+    await OptDefaultModel.createUnittestResource()
+
+    function check (obj, def, opt, defOpt, def2, opt2, defOpt2) {
+      expect(obj.def).toBe(def)
+      expect(obj.opt).toBe(opt)
+      expect(obj.defOpt).toBe(defOpt)
+      if (def2) {
+        expect(obj.def2).toBe(def2)
+        expect(obj.opt2).toBe(opt2)
+        expect(obj.defOpt2).toBe(defOpt2)
+      }
+    }
+
+    const idSpecifyNothing = uuidv4()
+    const idSpecifyAll = uuidv4()
+    const idUndef = uuidv4()
+    await db.Transaction.run(tx => {
+      // can just use the defaults (specificy no field values)
+      check(tx.create(OptDefaultModel, { id: idSpecifyNothing }),
+        7, undefined, 7)
+
+      // can use our own values (specify all field values)
+      check(tx.create(OptDefaultModel, {
+        id: idSpecifyAll,
+        def: 1,
+        opt: 2,
+        defOpt: 3
+      }), 1, 2, 3)
+
+      // optional fields with a default can still be omitted from the db (i.e.,
+      // assigned a value of undefined)
+      check(tx.create(OptDefaultModel, {
+        id: idUndef,
+        defOpt: undefined
+      }), 7, undefined, undefined)
+    })
+
+    // verify that these are all properly stored to the database
+    await db.Transaction.run(async tx => {
+      check(await tx.get(OptDefaultModel, idSpecifyNothing), 7, undefined, 7)
+      check(await tx.get(OptDefaultModel, idSpecifyAll), 1, 2, 3)
+      check(await tx.get(OptDefaultModel, idUndef), 7, undefined, undefined)
+    })
+
+    // add a new set of fields (normally we'd do this on the same model, but
+    // for the test we do it in a new model (but SAME TABLE) because one-time
+    // setup is already done for the other model)
+    class OptDefaultModel2 extends db.Model {
+      static tableName = OptDefaultModel.name
+      static FIELDS = {
+        ...OptDefaultModel.FIELDS,
+        def2: S.integer().default(8),
+        opt2: S.integer().optional(),
+        defOpt2: S.integer().default(8).optional()
+      }
+    }
+    await OptDefaultModel2.createUnittestResource()
+
+    // the default value for new fields isn't stored in the db yet (old items
+    // have not been changed yet)
+    let fut = db.Transaction.run(async tx => {
+      await tx.update(OptDefaultModel2,
+        { id: idSpecifyNothing, def2: 8 }, { def: 1 })
+    })
+    await expect(fut).rejects.toThrow(/outdated \/ invalid conditions/)
+
+    // we can (ONLY) use update() on defaults that have been written to the db
+    await db.Transaction.run(async tx => {
+      await tx.update(OptDefaultModel2,
+        { id: idSpecifyNothing, def: 7 }, { opt2: 11 })
+    })
+
+    // blind updates are only partial, so they won't populate a new default
+    // field unless explicitly given a value for it
+    fut = db.Transaction.run(async tx => {
+      await tx.update(OptDefaultModel2,
+        { id: idSpecifyNothing, def2: 8 }, { def: 2 })
+    })
+    await expect(fut).rejects.toThrow(/outdated \/ invalid conditions/)
+
+    // verify that these are all in the proper state when accessing old items;
+    // also, accessing the item populates the default value for the new field
+    // which triggers a database write!
+    await db.Transaction.run(async tx => {
+      check(await tx.get(OptDefaultModel2, idSpecifyNothing),
+        7, undefined, 7,
+        8, 11, undefined)
+    })
+    await db.Transaction.run(async tx => {
+      // verify the db was updated by doing a blind update dependednt on it
+      await tx.update(OptDefaultModel2,
+        { id: idSpecifyNothing, def2: 8 }, { def: 100 })
+    })
+    await db.Transaction.run(async tx => {
+      check(await tx.get(OptDefaultModel2, idSpecifyNothing),
+        100, undefined, 7, 8, 11, undefined)
+    })
+
+    // accessing and modifying an old item will also write the new defaults to
+    // the db
+    await db.Transaction.run(async tx => {
+      const item = await tx.get(OptDefaultModel2, idUndef)
+      check(item, 7, undefined, undefined,
+        8, undefined, undefined)
+      item.def = 3
+    })
+    await db.Transaction.run(async tx => {
+      // verify the db was updated by doing a blind update dependednt on it
+      await tx.update(OptDefaultModel2,
+        { id: idUndef, def: 3, def2: 8 }, { opt2: 101 })
+    })
+    await db.Transaction.run(async tx => {
+      check(await tx.get(OptDefaultModel2, idUndef),
+        3, undefined, undefined, 8, 101, undefined)
+    })
+  }
+}
+
 runTests(
   BadModelTest,
   ErrorTest,
   KeyTest,
+  OptDefaultModelTest,
   SimpleModelTest,
   JSONModelTest,
   NewModelTest,

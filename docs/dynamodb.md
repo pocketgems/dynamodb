@@ -134,9 +134,15 @@ Fields can be configured to be optional, immutable and/or have default values:
    provided (i.e., it cannot be omitted or set to `undefined`)
  * `readOnly()` - if a field is marked as read only, it cannot be changed once
    the item has been created
- * `default()` - a field will be assigned its default value if one isn't given
-   when the item is created (this value gets deep copied so you can safely use
-   a non-primitive type like an object as a default value).
+ * `default()` - the default value for a field
+    * This value gets deep copied so you can safely use non-primitive type like
+      an object as a default value.
+    * The default value is assigned to a field when:
+       * An item is created and no value is specified for the value.
+       * An item is fetched and is is missing the specified field _AND_ the
+         field is required.
+    * The default value is _not_ assigned to an optional field that is missing
+      when it is fetched from the database.
 ```javascript
 class ModelWithComplexFields extends db.Model {
   static FIELDS = {
