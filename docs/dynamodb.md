@@ -19,9 +19,11 @@ This library is used to interact with the DynamoDB NoSQL database. It provides h
     - [Addressing Items](#addressing-items)
     - [Create](#create)
     - [Read](#read)
+      - [Create if Missing](#create-if-missing)
+      - [Read Consistency](#read-consistency)
+      - [Batch Read](#batch-read)
     - [Write](#write)
   - [Performance](#performance)
-    - [Read Consistency](#read-consistency)
     - [DAX](#dax)
     - [Blind Writes](#blind-writes)
     - [Updating Item Without AOL](#updating-item-without-aol)
@@ -459,23 +461,34 @@ creating) and a map of its initial values:
 tx.create(Order, { id, product: 'coffee', quantity: 1 })
 ```
 
+
 ### Read
-`tx.get()` retrieves one or more models from the database. This method is
-**asynchronous**. Network traffic is generated to ask the database for the data
-as soon as the method is call, but other work can be done while waiting.
+`tx.get()` **asynchronously** retrieves data from the database. Network traffic
+is generated to ask the database for the data as soon as the method is call,
+but other work can be done while waiting.
+```javascript
+const orderPromise = tx.get(Order, id)
+// do some other work
+const order = await orderPromise // block until the data has been retrieved
+```
 
 `tx.get()` accepts an additional options to configure its behavior:
-  * `createIfMissing` - if the item does not exist and this is `false` (the
-    default) then `undefined` is returned. Otherwise, the item is created when
-    the transaction commits.
+  * `createIfMissing` - see [Create if Missing](#create-if-missing)
   * `inconsistentRead` - see [Read Consistency](#read-consistency)
 
-    ```javascript
-    const order = await tx.get(Order, id, { createIfMissing: true })
-    if (order.isNew) {
-      // populate the fields or whatnot
-    }
-    ```
+
+#### Create if Missing
+If the item does not exist in the database, then by default the returned value
+will be `undefined`. You may ask for it to instead be created if it does not
+exist. To do this, you need to supply not only the item's key, but also the
+data you want it to have _if_ it does not yet exist:
+```javascript
+const dataIfOrderIsNew = { id, product: 'coffee', quantity: 1 }
+const order = await tx.get(Order, dataIfOrderIsNew, { createIfMissing: true })
+if (order.isNew) { // you can check if the item already existed or not
+  // ...
+}
+```
 
 The `isNew` property is set when the model is instantiated (after receiving the
 database's response to our data request). When the transaction commits, it will
@@ -483,8 +496,19 @@ ensure that the item is still being created if `isNew=true` (i.e., the item
 wasn't created by someone else in the meantime) or still exists if
 `isNew=false` (i.e., the item hasn't been deleted in the meantime).
 
-In addition to the earlier examples for `tx.get()`, it is also possible to pass
-an array of `db.Key`s in order to fetch many things at once:
+
+#### Read Consistency
+Inconsistent reads provide eventual consistency. This allows reading data from
+our [DAX](#dax) cache or any database node (even if they _may_ be out of sync).
+This differs from consistent reads (the default) which provide strong
+consistency but are less efficient (and twice as costly) as inconsistent reads.
+```javascript
+await tx.get(SomeModel, someID, { inconsistentRead: true })
+```
+
+#### Batch Read
+It is also possible to call `tx.get()` with an array of keys in order to fetch
+many things at once:
 ```javascript
 const [order1, order2, raceResult] = await tx.get([
   Order.key(id),
@@ -493,15 +517,27 @@ const [order1, order2, raceResult] = await tx.get([
 ])
 ```
 
-* By default (with `inconsistentRead` being **false**), a single request to DynamoDB's `transactGetItems` API is sent. Getting multiple items transactionally provides strong consistency than calling `get` multiple times for individual items. As a trade-off, transactional get is slower than getting individual items in a batch.
+This can also be combined with `createIfMissing`:
+```javascript
+const [order1, order2, raceResult] = await tx.get([
+  Order.data({ id, product: 'coffee', quantity: 1 }),
+  Order.data({ id: anotherID, product: 'spoon', quantity: 10 }),
+  RaceResult.data({ raceID, runnerName })
+])
+```
 
-* When `inconsistentRead` is true, a single request to DynamoDB's `batchGetItems` API is send. It is very fast to get items in a batch this way:
-    1. It eliminates HTTP overheads associated with individual requests.
-    2. Data is read from [DAX](#DAX) (when enabled), instead of directly from the DB.
+* When (`inconsistentRead=`**`false`**), the items are fetched transactionally
+  in a single network request that guarantees we receive a consistent snapshot
+  (see [race conditions](#warning-race-conditions) for more about this).
+* When `inconsistentRead=`**`true`** the items are fetched (usually) with one
+  network request. This is faster than making many separate `tx.get()`
+  requests, especially when data can be read from [DAX](#DAX). This operation
+  is faster than a consistent batch read, but it does not guarantee a
+  consistent snapshot and only provides eventual consistency.
 
-    But this operation provides eventual consistency.
+Note: Any given item can only be fetched once during a transaction. It is an
+error to try to fetch the same data twice.
 
-Note: Any given item can only be fetched once during a transaction. It is an error to try to fetch the same data twice.
 
 ### Write
 To modify data in the database, simply modify fields on an item created by
@@ -510,16 +546,6 @@ changes will be written to the database automatically.
 
 
 ## Performance
-
-### Read Consistency
-Inconsistent reads provide eventual consistency, which allows reading data from
-[DAX](#dax) or any database nodes (even if they _may_ be out of sync). This
-differs from consistent reads (the default) which provide strong consistency
-but are less efficient (and twice as costly) as inconsistent reads.
-```javascript
-await tx.get(SomeModel, someID, { inconsistentRead: true })
-```
-
 
 ### DAX
 With [DAX](https://aws.amazon.com/dynamodb/dax/) enabled (the default),
