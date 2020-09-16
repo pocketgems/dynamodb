@@ -645,6 +645,66 @@ class DBReadmeTest extends BaseTest {
     })
   }
 
+  async testCreateViaGetAndIncrement () {
+    const id = uuidv4()
+    await db.Transaction.run(async tx => {
+      const x = await tx.get(
+        Order.data({ id, product: 'coffee', quantity: 9 }),
+        { createIfMissing: true })
+      x.getField('quantity').incrementBy(1)
+      // access value through field so we don't mess with the __Field's state
+      expect(x.getField('quantity').__value).toBe(10)
+    })
+    await db.Transaction.run(async tx => {
+      const order = await tx.get(Order, id)
+      expect(order.quantity).toBe(10)
+    })
+  }
+
+  async testCreateAndIncrement () {
+    const id = uuidv4()
+    await db.Transaction.run(async tx => {
+      const x = tx.create(Order, { id, product: 'coffee', quantity: 9 })
+      x.getField('quantity').incrementBy(1)
+      // access value through field so we don't mess with the __Field's state
+      expect(x.getField('quantity').__value).toBe(10)
+    })
+    await db.Transaction.run(async tx => {
+      const order = await tx.get(Order, id)
+      expect(order.quantity).toBe(10)
+    })
+  }
+
+  async testUpdatingItemWithoutAOL () {
+    const id = uuidv4()
+    await db.Transaction.run(async tx => {
+      tx.create(Order, { id, product: 'coffee', quantity: 8 })
+    })
+    async function incrUpToButNotBeyondTen (origValue) {
+      await db.Transaction.run(async tx => {
+        const x = await tx.get(Order, id)
+        if (x.quantity < 10) {
+          x.getField('quantity').incrementBy(1)
+          // trying to modify the quantity directly would generate a condition
+          // on the old value (e.e.g, "set quantity to 9 if it was 8") which is
+          // less scalable than "increment quantity by 1".
+          // x.quantity += 1
+        }
+        const [cond, vals] = x.getField('quantity').__conditionExpression(':_1')
+        expect(vals).toEqual({ ':_1': origValue })
+        expect(cond).toBe('quantity=:_1')
+      })
+      await db.Transaction.run(async tx => {
+        const order = await tx.get(Order, id)
+        expect(order.quantity).toBe(Math.min(origValue + 1, 10))
+      })
+    }
+    await incrUpToButNotBeyondTen(8) // goes up by one
+    await incrUpToButNotBeyondTen(9) // goes up again
+    await incrUpToButNotBeyondTen(10) // but not any further
+    await incrUpToButNotBeyondTen(10) // no matter how many times we use it
+  }
+
   async testKeyEncoding () {
     const err = new Error('do not want to save this')
     await expect(db.Transaction.run(tx => {
