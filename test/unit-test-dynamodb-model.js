@@ -893,6 +893,17 @@ class WriteBatcherTest extends BaseTest {
     batcher.documentClient.transactWrite = originalFunc
   }
 
+  async testReservedAttributeName () {
+    // TODO: this should work, but we need to use ExpressionAttributeNames
+    class BadAttrName extends db.Model {
+      static FIELDS = { items: S.object() }
+    }
+    await BadAttrName.createUnittestResource()
+    await expect(db.Transaction.run(tx => {
+      tx.create(BadAttrName, { id: uuidv4(), items: {} })
+    })).rejects.toThrow('Attribute name is a reserved keyword')
+  }
+
   async testExceptionParser () {
     const reasons = []
     const response = {
