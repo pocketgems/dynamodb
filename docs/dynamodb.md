@@ -94,7 +94,7 @@ class RaceResult extends db.Model {
 }
 ```
 
-We can access each component of a key just like any other field:
+Access each component of a key just like any other field:
 ```javascript
 const raceResult = await tx.get(RaceResult, { raceID: 99, runnerName: 'Bo' })
 expect(raceResult.raceID).toBe(99)
@@ -123,7 +123,7 @@ Fields are pieces of data attached to an item. They are defined similar to
 ```javascript
 class ModelWithFields extends db.Model {
   static FIELDS = {
-    someNumber: S.integer().minimum(0),
+    someInt: S.integer().minimum(0),
     someBool: S.boolean(),
     someObj: S.object().prop('arr', S.array().items(S.string()))
   }
@@ -154,6 +154,29 @@ class ModelWithComplexFields extends db.Model {
     immutableInt: S.integer().readOnly().default(5)
   }
 }
+
+// can omit the optional field
+const item = tx.create(ModelWithComplexFields, {
+  id: uuidv4(),
+  aNonNegInt: 0,
+  immutableInt: 3
+})
+expect(item.aNonNegInt).toBe(0)
+expect(item.anOptBool).toBe(undefined) // omitted optional field => undefined
+expect(item.immutableInt).toBe(3)
+
+// can override the default value
+const item2 = tx.create(ModelWithComplexFields, {
+  id: uuidv4(),
+  aNonNegInt: 1,
+  anOptBool: true
+})
+expect(item2.aNonNegInt).toBe(1)
+expect(item2.anOptBool).toBe(true)
+expect(item2.immutableInt).toBe(5) // the default value
+// can't change read only fields:
+expect(() => { item2.immutableInt = 3 }).toThrow(
+  'immutableInt is immutable so value cannot be changed')
 ```
 
 
@@ -173,22 +196,30 @@ still be missing the value.
 The schema is checked as follows:
   1. When a field's value is changed, it is validated. If a value is a
      reference (e.g., an object or array), then changing a value inside the reference does _not_ trigger a validation check.
-    ```javascript
+```javascript
          // fields are checked immediately when creating a new item; this throws
-         // db.InvalidFieldError because someNumber should be an integer
-         tx.create(ModelWithComplexFields, { id: uuidv4(), aNonNegInt: '1' })
+         // db.InvalidFieldError because someInt should be an integer
+         const data = {
+           id: uuidv4(),
+           someInt: '1', // does not match the schema S.integer())!
+           someBool: true,
+           someObj: { arr: [] }
+         }
+         tx.create(ModelWithFields, data) // throws because someInt is invalid
 
-         // fields are checked when set
-         const x = tx.get(ModelWithFields, ...)
+         data.someInt = 1
+         const x = tx.create(ModelWithFields, data)
+
+         // fields are checked when set too
          x.someBool = 1 // throws because the type should be boolean not int
          x.someObj = {} // throws because the required "arr" key is missing
-         x.someObj = { arr: [5] } // throws b/c arr is supposed to contain strings
+         x.someObj = { arr: [5] } // throws b/c this arr must contain strings
          x.someObj = { arr: ['ok'] } // ok!
 
-         // changes within a non-primitive type aren't detected or validated until
-         // we try to write the change so this next line won't throw!
+         // changes within a non-primitive type aren't detected or validated
+         // until we try to write the change so this next line won't throw!
          x.someObj.arr.push(5)
-    ```
+```
 
   2. Any fields that will be written to the database are validated prior to
      writing them. This occurs when a [transaction](#transactions) commit
@@ -196,7 +227,7 @@ The schema is checked as follows:
      line of the previous example.
 
   3. Keys are validated whenever they are created or read, like these examples:
-    ```javascript
+```javascript
          const compoundID = { raceID: 1, runnerName: 'Alice' }
          // each of these three trigger a validation check (to verify that
          // compoundID contains every key component and that each of them meet
@@ -204,25 +235,24 @@ The schema is checked as follows:
          RaceResult.key(compoundID)
          tx.create(RaceResult, compoundID)
          await tx.get(RaceResult, compoundID)
-    ```
+```
 
-  4. Fields validation can also be manually triggered:
-    ```javascript
+  4. Fields validation can be manually triggered:
+```javascript
          x.getField('someObj').validate()
-    ```
+```
 
 ### Custom Methods
 As you've noticed, key components and fields are simply accessed by their names
 (e.g., `raceResult.runnerName` or `order.product`). You can also define
 instance methods on your models to provide additional functionality:
 ```javascript
-class Order extends db.Model {
+class OrderWithPrice extends db.Model {
   static FIELDS = {
-    product: S.string(),
     quantity: S.integer(),
     unitPrice: S.integer().description('price per unit in cents')
   }
-  totalPrice (salesTax = 0.085) {
+  totalPrice (salesTax = 0.1) {
     const subTotal = this.quantity * this.unitPrice
     return subTotal * (1 + salesTax)
   }
@@ -230,8 +260,8 @@ class Order extends db.Model {
 ```
 And use them like you'd expect:
 ```javascript
-const order = tx.create(Order, { id, quantity: 2 , unitPrice: 200 })
-expect(order.totalPrice(0.1)).toBe(220)
+const order = tx.create(OrderWithPrice, { id, quantity: 2 , unitPrice: 200 })
+expect(order.totalPrice(0.1)).toBeCloseTo(440)
 ```
 
 
@@ -278,7 +308,7 @@ throw a `db.ModelAlreadyExistsError` exception without additional retries.
 Consider this guestbook model:
 ```javascript
 class Guestbook extends db.Model {
-  FIELDS = { names: S.array().items(S.string()) }
+  static FIELDS = { names: S.array().items(S.string()) }
 }
 ```
 
@@ -336,12 +366,12 @@ Race conditions are still possible! Consider a ski resort which records some
 stats about skiers and lifts:
 ```javascript
 class SkierStats extends db.Model {
-  KEY = { resort: S.string() }
-  FIELDS = { numSkiers: S.integer().minimum(0).default(0) }
+  static KEY = { resort: S.string() }
+  static FIELDS = { numSkiers: S.integer().minimum(0).default(0) }
 }
 class LiftStats extends db.Model {
-  KEY = { resort: S.string() }
-  FIELDS = { numLiftRides: S.integer().minimum(0).default(0) }
+  static KEY = { resort: S.string() }
+  static FIELDS = { numLiftRides: S.integer().minimum(0).default(0) }
 }
 ```
 
@@ -352,7 +382,7 @@ async function liftRideTaken(resort, isNewSkier) {
     const opts = { createIfMissing: true }
     const [skierStats, liftStats] = await Promise.all([
       !isNewSkier ? Promise.resolve() : tx.get(SkierStats, resort, opts),
-      tx.get(LiftStats, resort, opts))
+      tx.get(LiftStats, resort, opts)])
     if (isNewSkier) {
       skierStats.numSkiers += 1
     }
@@ -363,8 +393,8 @@ async function liftRideTaken(resort, isNewSkier) {
 
 However, if we try to read them we can't guarantee a consistent snapshot:
 ```javascript
-const skierStats = await tx.get(SkierStats.key(resort))
-const liftStats = await tx.get(LiftStats.key(resort))
+const skierStats = await tx.get(SkierStats, resort)
+const liftStats = await tx.get(LiftStats, resort)
 ```
 
 This sequence is possible:
@@ -381,11 +411,8 @@ To ensure this does not occur, use `db.get()` to fetch both items in a single re
 const [skierStats, liftStats] = await tx.get([
   SkierStats.key(resort),
   LiftStats.key(resort)
-], {
-  // inconsistentRead defaults to false, this option may be omitted.
-  // However, this option is important to get a consistent snapshot
-  inconsistentRead: false
-})
+])
+// Caution: Don't pass inconsistentRead=true if you need a consistent snapshot!
 ```
 
 Under the hood, when multiple items are fetched with strong consistency, DynamoDB's `transactGetItems` API is called to prevent races mentioned above.
@@ -400,16 +427,17 @@ multiple times (if your transaction retries).
 ```javascript
   await db.Transaction.run(async tx => {
     const item = await tx.get(...)
-    item.someNumber += 1
-    if (item.someNumber > 10) {
+    item.someInt += 1
+    if (item.someInt > 10) {
       // making an HTTP request is a side effect!
-      await got('https://example.com/theItemHasSomeNumberBiggerThan10')
+      await got('https://example.com/theItemHassomeIntBiggerThan10')
     }
   })
 ```
 
 In this example, the HTTP request might be completed one or more times, even if
 the transaction never completes successfully!
+
 
 ### Per-request transaction
 Each request handled by our [API Definition library](api.md) is wrapped in a transaction. Read more about it [here](api.md#database-transactions).
@@ -503,7 +531,7 @@ our [DAX](#dax) cache or any database node (even if they _may_ be out of sync).
 This differs from consistent reads (the default) which provide strong
 consistency but are less efficient (and twice as costly) as inconsistent reads.
 ```javascript
-await tx.get(SomeModel, someID, { inconsistentRead: true })
+await tx.get(Order, id, { inconsistentRead: true })
 ```
 
 #### Batch Read
@@ -523,7 +551,7 @@ const [order1, order2, raceResult] = await tx.get([
   Order.data({ id, product: 'coffee', quantity: 1 }),
   Order.data({ id: anotherID, product: 'spoon', quantity: 10 }),
   RaceResult.data({ raceID, runnerName })
-])
+], { createIfMissing: true })
 ```
 
 * When (`inconsistentRead=`**`false`**), the items are fetched transactionally
@@ -571,39 +599,45 @@ method. This is useful when we don't care about the previous value (if any).
 For example, maybe we're tracking whether a customer has used a particular feature or not. When they use it, we may just want to blindly record it:
 ```javascript
 class LastUsedFeature extends db.Model {
-  KEY = {
+  static KEY = {
     user: S.string(),
     feature: S.string()
   }
-  FIELDS = { epoch: S.integer() }
+  static FIELDS = { epoch: S.integer() }
 }
 // ...
 tx.createOrPut(HasTriedFeature,
-  // these are the values we expect (must include all key components); this
-  // call will fail if the data exists AND it doesn't match these values
+  // these are the values we expect (must include all key components);
+  // this call fails if the data exists AND it doesn't match these values
   { user: 'Bob', feature: 'refer a friend' },
-  // this contains the new value(s); if a new value is undefined then the field
-  // will be deleted (it must be optional for this to be allowed, of course)
-  { epoch })
+  // this contains the new value(s); if a value is undefined then the
+  // field will be deleted (it must be optional for this to be allowed)
+  { epoch: 123 })
 ```
+
+Both of these methods are synchronous, local methods like `tx.create()`. They
+return immediately and do not perform any network traffic. All network traffic
+related to these are generated as part of any writes processed when the
+transaction commits.
 
 
 ### Updating Item Without AOL
 For a higher write throughput and less contention, avoiding AOL might be desirable sometimes. This can be done with access directly to model's fields:
 ```javascript
-const p = await tx.get(Player, 'id')
-// p.level += 1  results in:
-//   UpdateExpression: 'level=2'
-//   ConditionExpression: 'level=1'
+const x = await tx.get(Order, id)
+// x.quantity += 1  results in:
+//   UpdateExpression: 'quantity=2'
+//   ConditionExpression: 'quantity=1'
 
-if (p.level > 10) {
-  p.getField('level').incrementBy(1) // results in:
-  //   UpdateExpression: 'level=level+1'
+if (x.quantity < 10) {
+  x.getField('quantity').incrementBy(1) // results in:
+  //   UpdateExpression: 'quantity=quantity+1'
   //   No ConditionExpression
-  // Notice the read `p.level>10` didn't trigger AOL since the subsequent
+  // Notice the read `x.quantity>10` didn't trigger AOL since the subsequent
   // update happened through `incrementBy()`.
 }
 ```
+
 
 # Niche Concepts
 
@@ -632,9 +666,13 @@ to store a string with this value, your best option is to probably nest it
 inside of an object:
 ```javascript
 class StringKeyWithNullBytes extends db.Model {
-  KEY = { id: S.object().prop('raw', S.string()) }
+  static KEY = { id: S.object().prop('raw', S.string()) }
 }
-tx.create(StringKeyWithNullBytes, { raw: 'I can contain \0, no pr\0blem!' })
+tx.create(StringKeyWithNullBytes, {
+  id: {
+    raw: 'I can contain \0, no pr\0blem!'
+  }
+})
 ```
 
 
@@ -654,7 +692,6 @@ transaction is retried, the inner transaction _will be run additional times_.
 
 ## Unsupported DynamoDB Features
 This library does not yet support:
-   - Consistent multi-item read (i.e., `transactGet()`)
    - Query
    - Scan
    - Indexing
@@ -665,6 +702,13 @@ When the localhost server runs, it generates `config/init-resources.yml` based
 on the models you've defined (make sure to export them from your service!).
 On localhost, the data persists until you shut down the service. If you add new
 models or change a model (particularly its key structure), you will need to restart your service to incorporate the changes.
+
+Along the same lines, keep in mind that the localhost database is _not_ cleared
+in between test runs. Any data added to the localhost database will remain
+until the service is restarted. This can help you debug issues, but it also
+means you should not create items with a fixed ID as part of a unit test (use
+`uuidv4()` to get a random ID value so it won't clash with a future run of the
+unit tests.)
 
 Whenever a service is deployed to test or prod, any table which did not
 previously exist is created. _If a table is removed, its data will still be
@@ -698,11 +742,11 @@ across multiple nodes instead of just one.
 
 When using sort keys, be careful not to overload an single database node. For example, it'd be awful to have a model like this:
 ```javascript
-class CustomerData {
-  KEY = { store: S.string() }
-  SORT_KEY = { customer: S.string() }
+class CustomerData extends db.Model {
+  static KEY = { store: S.string() }
+  static SORT_KEY = { customer: S.string() }
 }
-tx.create(CustomerData, { store: 'Wallymart', customer: 'Alice' })
+tx.create(CustomerData, { store: 'Wallymart', customer: uuidv4() })
 ```
 
 In this case, every customer for a store would be on the same database node.
@@ -726,12 +770,15 @@ class Inventory extends db.Model {
   // table name
   static tableName = 'Inventory'
   static KEY = { userID: S.string() }
+
   static get SORT_KEY () {
     return { typeKey: S.string().default(this.INVENTORY_ITEM_TYPE) }
   }
+
   static get FIELDS () {
-    return { items: S.object().default({}) }
+    return { stuff: S.object().default({}) }
   }
+
   static INVENTORY_ITEM_TYPE () { throw new Error('To be overwritten') }
 }
 class Currency extends Inventory {
@@ -741,14 +788,23 @@ class Weapon extends Inventory {
   static INVENTORY_ITEM_TYPE = 'weapon'
   static FIELDS = {
     ...super.FIELDS,
-    weaponSkillLevel: S.object()
+    weaponSkillLevel: S.integer()
   }
 }
 
-// both items will be stored in the Inventory; both will also be stored on the
-// same database node since they share the same partition key (userID)
-tx.create(Currency, { userID, items: { 'usd': 123, 'rmb': 456 } })
-tx.create(Weapon, { userID, items: { 'ax': {/*...*/}, weaponSkillLevel: 13 } })
+// both items will be stored in the Inventory; both will also be stored on
+// the same database node since they share the same partition key (userID)
+tx.create(Currency, {
+  userID,
+  typeKey: Currency.INVENTORY_ITEM_TYPE,
+  stuff: { usd: 123, rmb: 456 }
+})
+tx.create(Weapon, {
+  userID,
+  typeKey: Weapon.INVENTORY_ITEM_TYPE,
+  stuff: { ax: {/* ... */} },
+  weaponSkillLevel: 13
+})
 ```
 
 
@@ -812,4 +868,4 @@ provide.
 # Appendix
 The samples in this readme can be found in the APIs defined for unit testing
 this library in `services/sharedlib/test/unit-test-dynamodb.js` in the
-`ReadmeTest` class.
+`DBReadmeTest` class.

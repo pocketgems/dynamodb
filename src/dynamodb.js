@@ -793,11 +793,11 @@ class Model {
    * partition key is a UUIDv4.
    *
    * A key can simply be some scalar value:
-   *   KEY = { id: S.string() }
+   *   static KEY = { id: S.string() }
    *
    * A key may can be "compound key", i.e., a key with one or components, each
    * with their own name and schema:
-   *   KEY = {
+   *   static KEY = {
    *     email: S.string().format(S.FORMATS.EMAIL),
    *     birthYear: S.integer().minimum(1900)
    *   }
@@ -812,7 +812,7 @@ class Model {
    *
    * Properties are defined as a map from field names to a fluent-schema:
    * @example
-   *   FIELDS = {
+   *   static FIELDS = {
    *     someNumber: S.number(),
    *     someNumberWithOptions: S.number().optional().default(0).readOnly()
    *   }
