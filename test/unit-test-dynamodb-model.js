@@ -921,6 +921,16 @@ class WriteBatcherTest extends BaseTest {
     batcher.__extractError({}, response)
     expect(response.error).toBe(undefined)
 
+    try {
+      batcher.__extractError({}, {
+        httpResponse: {
+          body: JSON.stringify({ oops: 'unexpected response structure' })
+        }
+      })
+    } catch (e) {
+      expect(e.message).toContain('error body missing reasons')
+    }
+
     const item = { _id: { S: '123' } }
     reasons.push({
       Code: 'ConditionalCheckFailed',

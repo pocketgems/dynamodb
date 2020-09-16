@@ -1574,6 +1574,7 @@ class __WriteBatcher {
   __extractError (request, response) {
     const responseBody = response.httpResponse.body.toString()
     const reasons = JSON.parse(responseBody).CancellationReasons
+    assert(reasons, 'error body missing reasons: ' + responseBody)
     for (let idx = 0; idx < reasons.length; idx++) {
       const reason = reasons[idx]
       if (reason.Code === 'ConditionalCheckFailed') {
