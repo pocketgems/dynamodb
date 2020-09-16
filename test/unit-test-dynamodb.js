@@ -97,6 +97,42 @@ class DynamodbLibTest extends BaseServiceTest {
       })
       .expect(200)
   }
+
+  async testTxAPIommit () {
+    const maxRetriesToSucceed = 3
+    const nValues = {}
+    const app = this.app
+    async function check (id, delta, numTimesToRetry, failInPostCompute) {
+      const shouldSucceed = numTimesToRetry <= maxRetriesToSucceed
+      const resp = await app.post(getURI('/dbWithTxAPI'))
+        .set('Content-Type', 'application/json')
+        .send({ id, delta, numTimesToRetry, failInPostCompute })
+        .expect(shouldSucceed ? 200 : 500)
+
+      if (!shouldSucceed) {
+        expect(resp.body.error.name).toBe('TransactionFailedError')
+        return
+      }
+
+      if (!nValues[id]) {
+        nValues[id] = 0
+      }
+      nValues[id] += 5 + delta
+      expect(resp.body).toEqual({
+        computeCalls: numTimesToRetry + 1,
+        postComputeCalls: failInPostCompute ? (numTimesToRetry + 1) : 1,
+        n: nValues[id],
+        postCommitMsg: 'commit succeeded'
+      })
+    }
+    const id1 = uuidv4()
+    await check(id1, 3, 2, false) // try failing in computeResponse()
+    await check(id1, 4, 3, true) // try failing in postOkResponse()
+    await check(id1, 7, 0, true) // can add more
+    await check(uuidv4(), -1, 0, true) // can work on other items too
+    await check(id1, 2, 4, false) // can fail all retries => no postCommit()
+    await check(id1, 1, 0, false) // check value is okay after failure
+  }
 }
 
 class Order extends db.Model {
@@ -132,7 +168,7 @@ class ModelWithComplexFields extends db.Model {
 }
 
 // code from the readme
-class ReadmeTest extends BaseTest {
+class DBReadmeTest extends BaseTest {
   async setUp () {
     await Order.createUnittestResource()
     await RaceResult.createUnittestResource()
@@ -286,4 +322,4 @@ class ReadmeTest extends BaseTest {
   }
 }
 
-runTests(DynamodbLibTest, ReadmeTest)
+runTests(DynamodbLibTest, DBReadmeTest)
