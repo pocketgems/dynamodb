@@ -1,5 +1,4 @@
 const assert = require('assert')
-const EventEmitter = require('events')
 
 const ajv = new (require('ajv'))({
   allErrors: true,
@@ -1641,7 +1640,6 @@ class Transaction {
   constructor (options) {
     const defaults = this.defaultOptions
     this.options = loadOptionDefaults(options, defaults)
-    this.emitter = new EventEmitter()
 
     if (this.options.retries < 0) {
       throw new InvalidOptionsError('retries',
@@ -1669,20 +1667,6 @@ class Transaction {
    */
   static EVENTS = {
     POST_COMMIT: 'postCommit'
-  }
-
-  /**
-   * Add a handler to a specific event. See {@link EVENTS} for valid events.
-   *
-   * @param {Event} event A event to trigger the handler.
-   * @param {Function} handler A handler for the event.
-   */
-  __addHandler (event, handler) {
-    if (!Object.values(Transaction.EVENTS).includes(event)) {
-      throw new InvalidParameterError(event,
-        `must be one of ${Object.values(Transaction.EVENTS)}`)
-    }
-    this.emitter.once(event, handler)
   }
 
   /**
@@ -2047,21 +2031,6 @@ class Transaction {
     }
   }
 
-  /*
-   * Runs a function in transaction, and then emits events based on the
-   * execution outcome.
-   */
-  async run (...args) {
-    try {
-      const ret = await this.__run(...args)
-      this.emitter.emit(this.constructor.EVENTS.POST_COMMIT)
-      return ret
-    } catch (e) {
-      this.emitter.emit(this.constructor.EVENTS.POST_COMMIT, e)
-      throw e
-    }
-  }
-
   /**
    * Runs a function in transaction, using specified parameters.
    *
@@ -2080,29 +2049,12 @@ class Transaction {
    * })
    */
   static async run (...args) {
-    if (args.length > 3 || !args.length) {
-      throw new InvalidParameterError('args',
-        'should be ([options,] func [, handlers])')
+    const opts = (args.length === 1) ? {} : args[0]
+    const func = args[args.length - 1]
+    if (args.length <= 0 || args.length > 2) {
+      throw new InvalidParameterError('args', 'should be ([options,] func)')
     }
-    let opts = {}
-    let offset = 0
-    if (typeof args[0] === 'object') {
-      opts = args[0]
-      offset = 1
-    }
-    const tx = new Transaction(opts)
-
-    let handlers = args[offset + 1]
-    if (handlers) {
-      if (typeof handlers === 'function') {
-        // default handler is post commit
-        handlers = { [this.EVENTS.POST_COMMIT]: handlers }
-      }
-      for (const [k, v] of Object.entries(handlers)) {
-        tx.__addHandler(k, v)
-      }
-    }
-    return tx.run(args[offset])
+    return new Transaction(opts).__run(func)
   }
 }
 
