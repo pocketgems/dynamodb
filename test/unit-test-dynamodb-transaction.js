@@ -884,18 +884,15 @@ class TransactionConditionCheckTest extends QuickTransactionTest {
 class TransactionEventTest extends QuickTransactionTest {
   async testCommitHook () {
     let mock = jest.fn()
-    await db.Transaction.run(async tx => {
-      tx.addHandler(db.Transaction.EVENTS.POST_COMMIT, mock)
-    })
+    await db.Transaction.run(async tx => {}, mock)
     expect(mock).toHaveBeenCalledTimes(1)
     expect(mock).toHaveBeenLastCalledWith()
 
     mock = jest.fn()
     const e = new Error()
     const fut = db.Transaction.run(async tx => {
-      tx.addHandler(db.Transaction.EVENTS.POST_COMMIT, mock)
       throw e
-    })
+    }, mock)
     await expect(fut).rejects.toThrow(e)
     expect(mock).toHaveBeenCalledTimes(1)
     expect(mock).toHaveBeenLastCalledWith(e)
@@ -903,7 +900,7 @@ class TransactionEventTest extends QuickTransactionTest {
 
   async testInvalidHook () {
     const fut = db.Transaction.run(async tx => {
-      tx.addHandler('xyz', () => {})
+      tx.__addHandler('xyz', () => {})
     })
     await expect(fut).rejects.toThrow(/must be one of /)
   }

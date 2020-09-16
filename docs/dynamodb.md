@@ -12,7 +12,7 @@ This library is used to interact with the DynamoDB NoSQL database. It provides h
     - [ACID Properties](#acid-properties)
     - [Automatic Optimistic Locking (AOL)](#automatic-optimistic-locking-aol)
     - [Retries](#retries)
-    - [Events](#events)
+    - [Post-Commit Handler](#post-commit-handler)
     - [Warning: Race Conditions](#warning-race-conditions)
     - [Warning: Side Effects](#warning-side-effects)
     - [Per-request transaction](#per-request-transaction)
@@ -329,20 +329,27 @@ await db.Transaction.run(retryOptions, async tx => {
 // fail
 ```
 
-### Events
-Transaction supports event handlers by calling `tx.addHandler` for any work after transaction commits.
+
+### Post-Commit Handler
+A post-commit handler runs after a transaction completes (successfully or not).
+`db.Transaction.run()` takes an optional final argument to define a post-commit
+handler:
 ```javascript
-  db.Transaction.run(async tx => {
-    tx.addHandler(Transaction.EVENTS.POST_COMMIT, (error) => {
-      // ...
-    })
-  })
+db.Transaction.run(async tx => {
+  // the transaction logic...
+}, err => {
+  // post-commit hook
+  if (err) {
+    // the transaction failed
+  } else {
+    // the transaction succeeeded
+  }
+})
+```
+```diff
+--WARNING-- In rare cases, the post-commit handler **MAY NOT RUN** after a transaction runs (e.g., the machine processing the request loses power after the database commits the transaction but before the post-commit handler runs). Take care not to only use the post-commit handler for logic is okay to not run sometimes.
 ```
 
-The following events are available:
-- POST_COMMIT - Triggered after a transaction commits. If error is undefined,
-                the transaction committed successfully, else handle the error
-                accordingly.
 
 ### Warning: Race Conditions
 Race conditions are still possible! Consider a ski resort which records some

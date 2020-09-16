@@ -1677,12 +1677,12 @@ class Transaction {
    * @param {Event} event A event to trigger the handler.
    * @param {Function} handler A handler for the event.
    */
-  addHandler (event, handler) {
+  __addHandler (event, handler) {
     if (!Object.values(Transaction.EVENTS).includes(event)) {
       throw new InvalidParameterError(event,
         `must be one of ${Object.values(Transaction.EVENTS)}`)
     }
-    return this.emitter.once(event, handler)
+    this.emitter.once(event, handler)
   }
 
   /**
@@ -2080,15 +2080,29 @@ class Transaction {
    * })
    */
   static async run (...args) {
-    switch (args.length) {
-      case 1:
-        return new Transaction({}).run(args[0])
-      case 2:
-        return new Transaction(args[0]).run(args[1])
-      default:
-        throw new InvalidParameterError('args',
-          'should be (options, func) or (func)')
+    if (args.length > 3 || !args.length) {
+      throw new InvalidParameterError('args',
+        'should be ([options,] func [, handlers])')
     }
+    let opts = {}
+    let offset = 0
+    if (typeof args[0] === 'object') {
+      opts = args[0]
+      offset = 1
+    }
+    const tx = new Transaction(opts)
+
+    let handlers = args[offset + 1]
+    if (handlers) {
+      if (typeof handlers === 'function') {
+        // default handler is post commit
+        handlers = { [this.EVENTS.POST_COMMIT]: handlers }
+      }
+      for (const [k, v] of Object.entries(handlers)) {
+        tx.__addHandler(k, v)
+      }
+    }
+    return tx.run(args[offset])
   }
 }
 
