@@ -880,7 +880,9 @@ class WriteBatcherTest extends BaseTest {
     const msg = uuidv4()
     const mock = jest.fn().mockImplementation(data => {
       const update = data.TransactItems[0].Update
-      expect(update.ConditionExpression).toBe('noRequiredNoDefault=:_1')
+      // we never read the old value on model1, so our update should NOT be
+      // conditioned on the old value
+      expect(update.ConditionExpression).toBe(undefined)
       expect(update.UpdateExpression).toBe('SET noRequiredNoDefault=:_0')
       const condition = data.TransactItems[1].ConditionCheck
       expect(condition.ConditionExpression).toBe('noRequiredNoDefault=:_1')
@@ -1155,7 +1157,9 @@ class OptionalFieldConditionTest extends BaseTest {
     })
     await db.Transaction.run(async tx => {
       const item = await tx.get(OptNumModel, id)
-      item.n = 5
+      if (item.n === undefined) {
+        item.n = 5
+      }
       const field = item.getField('n')
       const [condition, vals] = field.__conditionExpression(':_1')
       expect(condition).toBe('attribute_not_exists(n)')

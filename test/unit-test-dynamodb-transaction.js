@@ -368,6 +368,11 @@ class TransactionWriteTest extends QuickTransactionTest {
     const data = TransactionModel.data(this.modelName)
     const fut = db.Transaction.run({ retries: 0 }, async (tx) => {
       const txModel = await tx.get(data, { createIfMissing: true })
+      if (txModel.field1 && txModel.field2) {
+        // no-op: just accessing the fields so we're conditioned on their
+        // original values
+      }
+
       await txGet(data, model => {
         model.field2 += 1
         result = model.field2

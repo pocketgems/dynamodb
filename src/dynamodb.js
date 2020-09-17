@@ -238,7 +238,7 @@ class __Field {
      */
     this.name = name // Will be set after params for model are setup
     this.__value = undefined
-    this.__read = false // If get is called
+    this.__readInitialValue = false // If get is called
     this.__written = false // If set is called
     this.__default = opts.default // only used for new items!
 
@@ -314,6 +314,18 @@ class __Field {
   }
 
   /**
+   * Whether to condition the transaction on this field's initial value.
+   */
+  get canUpdateWithoutCondition () {
+    return (
+      // keys uniquely identify an item; all keys generate a condition check
+      this.keyType === undefined &&
+      // if an item's value is read before it is modified, then we must verify
+      // that it's value doesn't change
+      !this.__readInitialValue)
+  }
+
+  /**
    * Generates a [ConditionExpression, ExpressionAttributeValues] pair.
    *
    * @access package
@@ -322,6 +334,9 @@ class __Field {
    * @returns {Array} [ConditionExpression, ExpressionAttributeValues]
    */
   __conditionExpression (exprKey) {
+    if (this.canUpdateWithoutCondition) { // TODO: is this optimization correct?
+      return []
+    }
     if (this.__initialValue === undefined) {
       return [
         `attribute_not_exists(${this.name})`,
@@ -349,7 +364,7 @@ class __Field {
    *   this library
    */
   get accessed () {
-    return this.__read || this.__written
+    return this.__readInitialValue || this.__written
   }
 
   /**
@@ -361,7 +376,9 @@ class __Field {
    * @access public
    */
   get () {
-    this.__read = true
+    if (!this.__written) {
+      this.__readInitialValue = true
+    }
     return this.__value
   }
 
@@ -475,7 +492,7 @@ class NumberField extends __Field {
 
     // if we've already read the value, there's no point in generating an
     // increment update expression as we must lock on the original value anyway
-    if (this.__read || this.__mustUseSet) {
+    if (this.__readInitialValue || this.__mustUseSet) {
       this.set(this.__sumIfValid(false, newDiff))
       // this.__diff isn't set because we can't not using diff updates now
       return
@@ -502,23 +519,18 @@ class NumberField extends __Field {
   }
 
   /**
-   * Whether to condition the transaction on this field's initial value.
-   */
-  get canUpdateWithoutCondition () {
-    return (
-      // if there's no diff, we cannot use increment
-      this.__diff !== undefined &&
-      // if the field was read, then we must condition on its old value
-      !this.__read)
-  }
-
-  /**
    * Whether this field can be updated with an increment expression.
    */
   get canUpdateWithIncrement () {
-    // if the field didn't have an old value, we can't increment it (DynamoDB
-    // will throw an error if we try to do X=X+1 when X has no value)
-    return this.canUpdateWithoutCondition && this.__initialValue !== undefined
+    return (
+      // if there's no diff, we cannot use increment
+      this.__diff !== undefined &&
+      // if the field didn't have an old value, we can't increment it (DynamoDB
+      // will throw an error if we try to do X=X+1 when X has no value)
+      this.__initialValue !== undefined &&
+      // if we're generating a condition on the initial value, there's no
+      // benefit to do an increment so we can just do a standard set
+      this.canUpdateWithoutCondition)
   }
 
   __updateExpression (exprKey) {
@@ -531,15 +543,6 @@ class NumberField extends __Field {
       ]
     }
     return super.__updateExpression(exprKey)
-  }
-
-  __conditionExpression (exprKey) {
-    // if we used incrementBy() and never read the field, then we don't care
-    // what the initial value was
-    if (this.canUpdateWithoutCondition) {
-      return []
-    }
-    return super.__conditionExpression(exprKey)
   }
 }
 

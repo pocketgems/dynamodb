@@ -408,9 +408,20 @@ class RepeatedFieldTest extends BaseTest {
   }
 
   testNonExistAttributeConditionValue () {
-    // Make sure attribute_not_exist() is generated
-    const field = this.fieldFactory()
+    // Make sure attribute_not_exist() is generated for keys even if they are
+    // not read
+    let field = this.fieldFactory({ keyType: 'HASH' })
     field.name = 'myField'
+    expect(field.__conditionExpression('')).toStrictEqual(
+      ['attribute_not_exists(myField)', {}])
+
+    // non-key and unread means no condition
+    field = this.fieldFactory()
+    field.name = 'myField'
+    expect(field.__conditionExpression('')).toEqual([])
+
+    // once it is read, it will generate a condition though
+    field.get()
     expect(field.__conditionExpression('')).toStrictEqual(
       ['attribute_not_exists(myField)', {}])
   }
@@ -469,18 +480,22 @@ class NumberFieldTest extends RepeatedFieldTest {
     expect(() => {
       field.set(2)
     }).not.toThrow()
-    expect(field.canUpdateWithoutCondition).toBe(false)
+    expect(field.canUpdateWithoutCondition).toBe(true)
     expect(field.canUpdateWithIncrement).toBe(false)
     expect(field.get()).toBe(2)
+    // we set the field without ever reading it, so we aren't conditioned on
+    // its value
+    expect(field.canUpdateWithoutCondition).toBe(true)
 
     field = db.__private.NumberField()
     field.set(1)
     expect(() => {
       field.incrementBy(1)
     }).not.toThrow()
-    expect(field.canUpdateWithoutCondition).toBe(false)
+    expect(field.canUpdateWithoutCondition).toBe(true)
     expect(field.canUpdateWithIncrement).toBe(false)
     expect(field.get()).toBe(2)
+    expect(field.canUpdateWithoutCondition).toBe(true)
   }
 
   testDefaultThenIncrementBy () {
