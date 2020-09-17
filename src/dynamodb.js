@@ -334,7 +334,7 @@ class __Field {
    * @returns {Array} [ConditionExpression, ExpressionAttributeValues]
    */
   __conditionExpression (exprKey) {
-    if (this.canUpdateWithoutCondition) { // TODO: is this optimization correct?
+    if (this.canUpdateWithoutCondition) {
       return []
     }
     if (this.__initialValue === undefined) {
@@ -2197,12 +2197,12 @@ function setup (config) {
     Transaction,
 
     // Errors
+    InvalidFieldError,
+    InvalidModelUpdateError,
     InvalidOptionsError,
     InvalidParameterError,
-    InvalidFieldError,
-    TransactionFailedError,
     ModelAlreadyExistsError,
-    InvalidModelUpdateError
+    TransactionFailedError
   }
 
   const toExport = Object.assign({}, exportAsClass)
