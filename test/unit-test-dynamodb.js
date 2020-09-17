@@ -98,15 +98,15 @@ class DynamodbLibTest extends BaseServiceTest {
       .expect(200)
   }
 
-  async testTxAPIommit () {
+  async testTxAPICommit () {
     const maxRetriesToSucceed = 3
     const nValues = {}
     const app = this.app
-    async function check (id, delta, numTimesToRetry, failInPostCompute) {
+    async function check (id, delta, numTimesToRetry, failInPreCommit) {
       const shouldSucceed = numTimesToRetry <= maxRetriesToSucceed
       const resp = await app.post(getURI('/dbWithTxAPI'))
         .set('Content-Type', 'application/json')
-        .send({ id, delta, numTimesToRetry, failInPostCompute })
+        .send({ id, delta, numTimesToRetry, failInPreCommit })
         .expect(shouldSucceed ? 200 : 500)
 
       if (!shouldSucceed) {
@@ -120,7 +120,7 @@ class DynamodbLibTest extends BaseServiceTest {
       nValues[id] += 5 + delta
       expect(resp.body).toEqual({
         computeCalls: numTimesToRetry + 1,
-        postComputeCalls: failInPostCompute ? (numTimesToRetry + 1) : 1,
+        postComputeCalls: failInPreCommit ? (numTimesToRetry + 1) : 1,
         n: nValues[id],
         postCommitMsg: 'commit succeeded'
       })
