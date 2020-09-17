@@ -133,6 +133,26 @@ class DynamodbLibTest extends BaseServiceTest {
     await check(id1, 2, 4, false) // can fail all retries => no postCommit()
     await check(id1, 1, 0, false) // check value is okay after failure
   }
+
+  async testRememberTooMuch () {
+    const app = this.app
+    let lifetimeTries = 0
+    async function check (numTries) {
+      const resp = await app.post(getURI('/overshare'))
+        .set('Content-Type', 'application/json')
+        .send({ numTries })
+        .expect(200)
+      lifetimeTries += numTries
+      expect(resp.body).toEqual({
+        numTries,
+        numTriesOnThisMachine: lifetimeTries
+      })
+    }
+    await check(1)
+    await check(3)
+    await check(2)
+    expect(lifetimeTries).toBe(6)
+  }
 }
 
 class Order extends db.Model {
