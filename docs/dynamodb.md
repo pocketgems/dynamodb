@@ -631,18 +631,20 @@ class WebsiteHitCounter extends db.Model {
 }
 
 async function slowlyIncrement(id) {
-  const counter = tx.get(WebsiteHitCounter, id)
-  // here we read and write the data, so the library will generate an update
-  // like "if count was N then set count to N + 1"
+  const counter = await tx.get(WebsiteHitCounter, id)
+  // here we read and write the data, so the library will generate an
+  // update like "if count was N then set count to N + 1"
   counter.count += 1
+  expect(counter.getField('count').canUpdateWithoutCondition).toBe(true)
 }
 
 async function quicklyIncrement(id) {
-  const counter = tx.get(WebsiteHitCounter, id)
+  const counter = await tx.get(WebsiteHitCounter, id)
   // since we only increment the number and never read it, the library will
   // generate an update like "increment quantity by 1" which will succeed no
   // matter what the original value was
   counter.getField('count').incrementBy(1)
+  expect(counter.getField('count').canUpdateWithoutCondition).toBe(false)
 }
 ```
 
@@ -650,12 +652,16 @@ Using the `incrementBy()` only helps if you're not going to read the field
 being incremented (though it never hurts to use it):
 ```javascript
 async function bothAreJustAsFast(id) {
-  const counter = tx.get(WebsiteHitCounter, id)
+  const counter = await tx.get(WebsiteHitCounter, id)
   if (counter.count < 100) { // stop counting after reaching 100
-    counter.count += 1
-    // counter.getField('count').incrementBy(1) isn't any faster because we
-    // have to generate the condition expression due to the above condition
-    // which read the count variable
+    // this is preferred here b/c it is simpler and just as fast in this case
+    // counter.cnt += 1
+
+    // isn't any faster because we have to generate the condition
+    // expression due to the above if condition which read the cnt var
+    counter.getField('cnt').incrementBy(1)
+
+    expect(counter.getField('cnt').canUpdateWithoutCondition).toBe(false)
   }
 }
 ```

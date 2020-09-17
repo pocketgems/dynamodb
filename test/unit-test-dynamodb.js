@@ -790,6 +790,71 @@ class DBReadmeTest extends BaseTest {
       })
     })
   }
+
+  async testIncrementBy () {
+    class WebsiteHitCounter extends db.Model {
+      static FIELDS = { cnt: S.integer().minimum(0) }
+    }
+    await WebsiteHitCounter.createUnittestResource()
+
+    async function slowlyIncrement (id) {
+      return db.Transaction.run(async tx => {
+        const counter = await tx.get(WebsiteHitCounter, id)
+        // here we read and write the data, so the library will generate an
+        // update like "if cnt was N then set cnt to N + 1"
+        counter.cnt += 1
+        expect(counter.getField('cnt').canUpdateWithoutCondition).toBe(false)
+      })
+    }
+
+    async function quicklyIncrement (id) {
+      return db.Transaction.run(async tx => {
+        const counter = await tx.get(WebsiteHitCounter, id)
+        // since we only increment the number and never read it, the library will
+        // generate an update like "increment quantity by 1" which will succeed no
+        // matter what the original value was
+        counter.getField('cnt').incrementBy(1)
+        expect(counter.getField('cnt').canUpdateWithoutCondition).toBe(true)
+      })
+    }
+
+    async function bothAreJustAsFast (id) {
+      return db.Transaction.run(async tx => {
+        const counter = await tx.get(WebsiteHitCounter, id)
+        if (counter.cnt < 100) { // stop counting after reaching 100
+          // this is preferred here b/c it is simpler and just as fast in this case
+          // counter.cnt += 1
+
+          // isn't any faster because we have to generate the condition
+          // expression due to the above if condition which read the cnt var
+          counter.getField('cnt').incrementBy(1)
+
+          expect(counter.getField('cnt').canUpdateWithoutCondition).toBe(false)
+        }
+      })
+    }
+
+    async function checkVal (id, expVal) {
+      await db.Transaction.run(async tx => {
+        const counter = await tx.get(WebsiteHitCounter, id)
+        expect(counter.cnt).toBe(expVal)
+      })
+    }
+
+    const id = uuidv4()
+    await db.Transaction.run(tx => tx.create(
+      WebsiteHitCounter, { id, cnt: 0 }))
+    await slowlyIncrement(id)
+    await checkVal(id, 1)
+    await slowlyIncrement(id)
+    await checkVal(id, 2)
+    await quicklyIncrement(id)
+    await checkVal(id, 3)
+    await quicklyIncrement(id)
+    await checkVal(id, 4)
+    await bothAreJustAsFast(id)
+    await checkVal(id, 5)
+  }
 }
 
 runTests(DynamodbLibTest, DBReadmeTest)
