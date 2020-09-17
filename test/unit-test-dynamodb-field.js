@@ -445,11 +445,22 @@ class NumberFieldTest extends RepeatedFieldTest {
   }
 
   testIncrementByMultipleTimes () {
-    const field = db.__private.NumberField()
-    field.incrementBy(1)
-    field.incrementBy(123)
-    field.incrementBy(321)
-    expect(field.get()).toBe(445)
+    function check (isNew) {
+      const opts = isNew ? {} : { valIsFromDB: true, val: 0 }
+      const field = db.__private.NumberField(opts)
+      let expValue = 0
+      const nums = [1, 123, 321]
+      for (let i = 0; i < nums.length; i++) {
+        const n = nums[i]
+        expValue += n
+        field.incrementBy(n)
+      }
+      expect(field.canUpdateWithoutCondition).toBe(true)
+      expect(field.canUpdateWithIncrement).toBe(!isNew)
+      expect(field.get()).toBe(expValue)
+    }
+    check(true)
+    check(false)
   }
 
   testMixingSetAndIncrementBy () {
@@ -457,13 +468,19 @@ class NumberFieldTest extends RepeatedFieldTest {
     field.incrementBy(1)
     expect(() => {
       field.set(2)
-    }).toThrow()
+    }).not.toThrow()
+    expect(field.canUpdateWithoutCondition).toBe(false)
+    expect(field.canUpdateWithIncrement).toBe(false)
+    expect(field.get()).toBe(2)
 
     field = db.__private.NumberField()
     field.set(1)
     expect(() => {
       field.incrementBy(1)
-    }).toThrow()
+    }).not.toThrow()
+    expect(field.canUpdateWithoutCondition).toBe(false)
+    expect(field.canUpdateWithIncrement).toBe(false)
+    expect(field.get()).toBe(2)
   }
 
   testDefaultThenIncrementBy () {
@@ -501,8 +518,8 @@ class NumberFieldTest extends RepeatedFieldTest {
     // Make sure when a field's initial value is undefined (doesn't exists on
     // server), optimistic locking is still performed.
     const field = db.__private.NumberField({ optional: true, val: undefined })
-    field.incrementBy(788)
-    expect(field.shouldLock).toBe(true)
+    expect(() => field.incrementBy(788)).toThrow(
+      'cannot increment a field whose value is undefined')
   }
 }
 

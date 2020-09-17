@@ -437,43 +437,93 @@ class NumberField extends __Field {
   constructor (...args) {
     super(...args)
     this.__diff = undefined
+    this.__mustUseSet = false
+
+    // figure out what value the diff will be added to
+    if (this.__initialValue !== undefined) {
+      // this occurs when the field is on an existing item AND the item already
+      // had a value for the field
+      this.__base = this.__initialValue
+    } else if (this.__value !== undefined) {
+      // this case occurs when the field is on a new item
+      this.__base = this.__value
+    } else {
+      // this case occurs if the field is not currently present on the item;
+      // in this case increment cannot be used to update the item
+      this.__base = undefined
+    }
   }
 
   set (val) {
-    if (this.__diff !== undefined) {
-      throw new Error('May not mix set and incrementBy calls.')
-    }
     super.set(val)
+    // don't change any state unless set() succeeds
+    this.__diff = undefined // no longer computed as a diff
+    this.__mustUseSet = true
   }
 
   /**
-   * Updates the field's value by an offset. Doesn't perform optimistic
-   * locking on write. May not mix usages of set and incrementBy.
+   * Updates the field's value by an unconditioned increment IF the field is
+   * never read (reduces contention). If the field is ever read, there's no
+   * reason to use this.
    * @param {Number} diff The diff amount.
    */
   incrementBy (diff) {
-    if (this.__diff === undefined) {
-      if (this.mutated &&
-          this.__written) {
-        // If value is mutated, but field hasn't been written, the change must
-        // have been from the default value or DB. Don't throw in that case.
-        throw new Error('May not mix set and incrementBy calls.')
-      }
-      this.__diff = 0
-    }
-    this.__diff += diff
-    const initialVal = this.__initialValue || 0
+    // add the new diff to our current diff, if any
+    // wait to set __diff until after super.set() succeeds to ensure no
+    // changes are made if set() fails!
+    const newDiff = (this.__diff === undefined) ? diff : this.__diff + diff
 
-    // Call directly on super to avoid exception
-    super.set(initialVal + this.__diff)
+    // if we've already read the value, there's no point in generating an
+    // increment update expression as we must lock on the original value anyway
+    if (this.__read || this.__mustUseSet) {
+      this.set(this.__sumIfValid(false, newDiff))
+      // this.__diff isn't set because we can't not using diff updates now
+      return
+    }
+
+    // call directly on super to avoid clearing the diff value
+    super.set(this.__sumIfValid(true, newDiff))
+    this.__diff = newDiff
   }
 
-  get shouldLock () {
-    return this.__diff === undefined || this.__initialValue === undefined
+  /**
+   * Returns the sum of diff and some value. Throws if the latter is undefined.
+   * @param {boolean} fromBase whether to add __base (else __value)
+   * @param {number} diff how much to add
+   * @returns {number} sum
+   */
+  __sumIfValid (fromBase, diff) {
+    const base = fromBase ? this.__base : this.__value
+    if (base === undefined) {
+      throw new InvalidFieldError(
+        this.name, 'cannot increment a field whose value is undefined')
+    }
+    return base + diff
+  }
+
+  /**
+   * Whether to condition the transaction on this field's initial value.
+   */
+  get canUpdateWithoutCondition () {
+    return (
+      // if there's no diff, we cannot use increment
+      this.__diff !== undefined &&
+      // if the field was read, then we must condition on its old value
+      !this.__read)
+  }
+
+  /**
+   * Whether this field can be updated with an increment expression.
+   */
+  get canUpdateWithIncrement () {
+    // if the field didn't have an old value, we can't increment it (DynamoDB
+    // will throw an error if we try to do X=X+1 when X has no value)
+    return this.canUpdateWithoutCondition && this.__initialValue !== undefined
   }
 
   __updateExpression (exprKey) {
-    if (!this.shouldLock) {
+    // if we're locking, there's no point in doing an increment
+    if (this.canUpdateWithIncrement) {
       return [
         `${this.name}=${this.name}+${exprKey}`,
         { [exprKey]: this.__diff },
@@ -484,7 +534,9 @@ class NumberField extends __Field {
   }
 
   __conditionExpression (exprKey) {
-    if (!this.shouldLock) {
+    // if we used incrementBy() and never read the field, then we don't care
+    // what the initial value was
+    if (this.canUpdateWithoutCondition) {
       return []
     }
     return super.__conditionExpression(exprKey)

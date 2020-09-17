@@ -26,7 +26,7 @@ This library is used to interact with the DynamoDB NoSQL database. It provides h
   - [Performance](#performance)
     - [DAX](#dax)
     - [Blind Writes](#blind-writes)
-    - [Updating Item Without AOL](#updating-item-without-aol)
+    - [incrementBy()](#incrementby)
 - [Niche Concepts](#niche-concepts)
   - [Key Encoding](#key-encoding)
   - [Nested Transactions aren't Nested](#nested-transactions-arent-nested)
@@ -621,22 +621,47 @@ related to these are generated as part of any writes processed when the
 transaction commits.
 
 
-### Updating Item Without AOL
-For a higher write throughput and less contention, avoiding AOL might be desirable sometimes. This can be done with access directly to model's fields:
+### incrementBy()
+To achieve higher write throughput and reduce contention, you can use
+`incrementBy()` to mutate numeric fields. This can be used when you want to
+increment (or decrement) a number's value but don't care about its old value:
 ```javascript
-const x = await tx.get(Order, id)
-// x.quantity += 1  results in:
-//   UpdateExpression: 'quantity=2'
-//   ConditionExpression: 'quantity=1'
+class WebsiteHitCounter extends db.Model {
+  static FIELDS = { count: S.integer().minimum(0) }
+}
 
-if (x.quantity < 10) {
-  x.getField('quantity').incrementBy(1) // results in:
-  //   UpdateExpression: 'quantity=quantity+1'
-  //   No ConditionExpression
-  // Notice the read `x.quantity>10` didn't trigger AOL since the subsequent
-  // update happened through `incrementBy()`.
+async function slowlyIncrement(id) {
+  const counter = tx.get(WebsiteHitCounter, id)
+  // here we read and write the data, so the library will generate an update
+  // like "if count was N then set count to N + 1"
+  counter.count += 1
+}
+
+async function quicklyIncrement(id) {
+  const counter = tx.get(WebsiteHitCounter, id)
+  // since we only increment the number and never read it, the library will
+  // generate an update like "increment quantity by 1" which will succeed no
+  // matter what the original value was
+  counter.getField('count').incrementBy(1)
 }
 ```
+
+Using the `incrementBy()` only helps if you're not going to read the field
+being incremented (though it never hurts to use it):
+```javascript
+async function bothAreJustAsFast(id) {
+  const counter = tx.get(WebsiteHitCounter, id)
+  if (counter.count < 100) { // stop counting after reaching 100
+    counter.count += 1
+    // counter.getField('count').incrementBy(1) isn't any faster because we
+    // have to generate the condition expression due to the above condition
+    // which read the count variable
+  }
+}
+```
+
+Using `incrementBy()` on a field whose value is `undefined` is invalid and will
+throw an exception.
 
 
 # Niche Concepts
