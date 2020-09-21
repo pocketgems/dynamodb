@@ -1,5 +1,6 @@
-const S = require('fluent-schema')
 const uuidv4 = require('uuid').v4
+
+const S = require('../src/schema')
 
 const { BaseTest, runTests } = require('./base-unit-test')
 const db = require('./db-with-field-maker')
@@ -26,66 +27,66 @@ class BadModelTest extends BaseTest {
   testDuplicateField () {
     const expMsg = /more than once/
     class BadModel extends db.Model {
-      static KEY = { name: S.string() }
-      static FIELDS = { name: S.string() }
+      static KEY = { name: S.str }
+      static FIELDS = { name: S.str }
     }
     this.check(BadModel, expMsg)
 
     class BadModel2 extends db.Model {
-      static SORT_KEY = { name: S.string() }
-      static FIELDS = { name: S.string() }
+      static SORT_KEY = { name: S.str }
+      static FIELDS = { name: S.str }
     }
     this.check(BadModel2, expMsg)
   }
 
   testReservedName () {
     class BadModel extends db.Model {
-      static SORT_KEY = { isNew: S.string() }
+      static SORT_KEY = { isNew: S.str }
     }
     this.check(BadModel, /this name is reserved/)
 
     class BadModel2 extends db.Model {
-      static SORT_KEY = { getField: S.string() }
+      static SORT_KEY = { getField: S.str }
     }
     this.check(BadModel2, /shadows another name/)
   }
 
   testIDName () {
     class SortKeyMustProvideNames extends db.Model {
-      static SORT_KEY = S.number()
+      static SORT_KEY = S.num
     }
     this.check(SortKeyMustProvideNames, /must define key component name/)
 
     class PartitionKeyMustProvideNames extends db.Model {
-      static KEY = S.number()
+      static KEY = S.num
     }
     this.check(PartitionKeyMustProvideNames, /must define key component name/)
 
     class OkModel extends db.Model {
-      static KEY = { id: S.string() }
+      static KEY = { id: S.str }
       static SORT_KEY = null
     }
     OkModel.__doOneTimeModelPrep()
 
     class IDCanBePartOfACompoundPartitionKey extends db.Model {
-      static KEY = { id: S.string(), n: S.number() }
+      static KEY = { id: S.str, n: S.num }
     }
     IDCanBePartOfACompoundPartitionKey.__doOneTimeModelPrep()
 
     class IDDoesntHaveToBeAString extends db.Model {
-      static KEY = { id: S.number() }
+      static KEY = { id: S.num }
     }
     IDDoesntHaveToBeAString.__doOneTimeModelPrep()
 
     class IDCanBeASortKeyName extends db.Model {
-      static KEY = { x: S.number() }
-      static SORT_KEY = { id: S.string() }
+      static KEY = { x: S.num }
+      static SORT_KEY = { id: S.str }
     }
     IDCanBeASortKeyName.__doOneTimeModelPrep()
 
     class IDCanBeAFieldName extends db.Model {
-      static KEY = { x: S.number() }
-      static FIELDS = { id: S.string() }
+      static KEY = { x: S.num }
+      static FIELDS = { id: S.str }
     }
     IDCanBeAFieldName.__doOneTimeModelPrep()
   }
@@ -267,16 +268,16 @@ class NewModelTest extends BaseTest {
 
 class IDWithSchemaModel extends db.Model {
   static KEY = {
-    id: S.string().pattern(/^xyz.*$/).description(
+    id: S.str.pattern(/^xyz.*$/).desc(
       'any string that starts with the prefix "xyz"')
   }
 }
 
 class CompoundIDModel extends db.Model {
   static KEY = {
-    year: S.integer().minimum(1900),
-    make: S.string().minLength(3),
-    upc: S.string()
+    year: S.int.min(1900),
+    make: S.str.min(3),
+    upc: S.str
   }
 }
 
@@ -351,7 +352,7 @@ class IDSchemaTest extends BaseTest {
 
 class BasicModel extends db.Model {
   static FIELDS = {
-    noRequiredNoDefault: S.number().optional()
+    noRequiredNoDefault: S.num.optional()
   }
 }
 
@@ -519,11 +520,11 @@ class ConditionCheckTest extends BaseTest {
 
 class RangeKeyModel extends db.Model {
   static SORT_KEY = {
-    rangeKey: S.integer().minimum(1)
+    rangeKey: S.int.min(1)
   }
 
   static FIELDS = {
-    n: S.integer()
+    n: S.int
   }
 }
 
@@ -679,14 +680,22 @@ class KeyTest extends BaseTest {
 
 class JSONModel extends db.Model {
   static FIELDS = {
-    objNoDefaultNoRequired: S.object().optional(),
-    objDefaultNoRequired: S.object().default({ a: 1 }).optional(),
-    objNoDefaultRequired: S.object(),
-    objDefaultRequired: S.object().default({}),
-    arrNoDefaultNoRequired: S.array().optional(),
-    arrDefaultNoRequired: S.array().default([1, 2]).optional(),
-    arrNoDefaultRequired: S.array(),
-    arrDefaultRequired: S.array().default([])
+    objNoDefaultNoRequired: S.obj().optional(),
+    objDefaultNoRequired: S.obj({
+      a: S.int
+    }).default({ a: 1 }).optional(),
+    objNoDefaultRequired: S.obj({
+      ab: S.int.optional(),
+      cd: S.arr(S.int).optional()
+    }),
+    objDefaultRequired: S.obj().default({}),
+    arrNoDefaultNoRequired: S.arr().optional(),
+    arrDefaultNoRequired: S.arr().default([1, 2]).optional(),
+    arrNoDefaultRequired: S.arr(S.obj({
+      cd: S.int.optional(),
+      bc: S.int.optional()
+    })),
+    arrDefaultRequired: S.arr().default([])
   }
 }
 
@@ -697,7 +706,7 @@ class JSONModelTest extends BaseTest {
 
   async testRequiredFields () {
     const obj = { ab: 2 }
-    const arr = [2, 1]
+    const arr = [{ cd: 2 }, { cd: 1 }]
     async function check (input) {
       input.id = uuidv4()
       await expect(txGet(JSONModel, input)).rejects.toThrow(
@@ -725,7 +734,7 @@ class JSONModelTest extends BaseTest {
   }
 
   async testDeepUpdate () {
-    const obj = { ab: [] }
+    const obj = { cd: [] }
     const arr = [{}]
     const id = uuidv4()
     const data = { id, objNoDefaultRequired: obj, arrNoDefaultRequired: arr }
@@ -734,8 +743,8 @@ class JSONModelTest extends BaseTest {
     })
 
     await txGet(JSONModel, id, model => {
-      obj.ab.push(1)
-      model.objNoDefaultRequired.ab.push(1)
+      obj.cd.push(1)
+      model.objNoDefaultRequired.cd.push(1)
       arr[0].bc = 32
       model.arrNoDefaultRequired[0].bc = 32
     })
@@ -898,7 +907,7 @@ class WriteBatcherTest extends BaseTest {
   async testReservedAttributeName () {
     // TODO: this should work, but we need to use ExpressionAttributeNames
     class BadAttrName extends db.Model {
-      static FIELDS = { items: S.object() }
+      static FIELDS = { items: S.obj() }
     }
     await BadAttrName.createUnittestResource()
     await expect(db.Transaction.run(tx => {
@@ -1016,9 +1025,9 @@ class OptDefaultModelTest extends BaseTest {
     class OptDefaultModel extends db.Model {
       static get FIELDS () {
         return {
-          def: S.integer().default(7),
-          opt: S.integer().optional(),
-          defOpt: S.integer().default(7).optional()
+          def: S.int.default(7),
+          opt: S.int.optional(),
+          defOpt: S.int.default(7).optional()
         }
       }
     }
@@ -1073,9 +1082,9 @@ class OptDefaultModelTest extends BaseTest {
       static tableName = OptDefaultModel.name
       static FIELDS = {
         ...OptDefaultModel.FIELDS,
-        def2: S.integer().default(8),
-        opt2: S.integer().optional(),
-        defOpt2: S.integer().default(8).optional()
+        def2: S.int.default(8),
+        opt2: S.int.optional(),
+        defOpt2: S.int.default(8).optional()
       }
     }
     await OptDefaultModel2.createUnittestResource()
@@ -1145,7 +1154,7 @@ class OptionalFieldConditionTest extends BaseTest {
     class OptNumModel extends db.Model {
       static get FIELDS () {
         return {
-          n: S.integer().optional()
+          n: S.int.optional()
         }
       }
     }

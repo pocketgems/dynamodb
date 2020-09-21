@@ -1,7 +1,7 @@
-const S = require('fluent-schema')
 const uuidv4 = require('uuid').v4
 
 const db = require('../src/dynamodb')
+const S = require('../src/schema')
 
 const { BaseTest, runTests } = require('./base-unit-test')
 
@@ -28,16 +28,20 @@ async function txGetRequired (keyValues, func) {
 }
 
 class TransactionModel extends db.Model {
-  static KEY = { id: S.string().minLength(1) }
+  static KEY = { id: S.str.min(1) }
   static FIELDS = {
-    field1: S.number().optional(),
-    field2: S.number().optional(),
-    arrField: S.array().optional(),
-    objField: S.object().optional()
+    field1: S.num.optional(),
+    field2: S.num.optional(),
+    arrField: S.arr(S.obj({ a: S.int.optional() })).optional(),
+    objField: S.obj({
+      a: S.obj({
+        a: S.int.optional()
+      }).optional()
+    }).optional()
   }
 }
 class TransactionModelWithRequiredField extends TransactionModel {
-  static FIELDS = { ...super.FIELDS, required: S.number() }
+  static FIELDS = { ...super.FIELDS, required: S.num }
 }
 
 class QuickTransactionTest extends BaseTest {
@@ -458,28 +462,28 @@ class TransactionWriteTest extends QuickTransactionTest {
     await db.Transaction.run(async tx => {
       tx.createOrPut(TransactionModel,
         { id },
-        { id, field1: 3, field2: 1, objField: { a: 1 } })
+        { id, field1: 3, field2: 1, objField: { a: { a: 1 } } })
     })
     await db.Transaction.run(async tx => {
       const item = await tx.get(TransactionModel, id)
       expect(item.id).toBe(id)
       expect(item.field1).toBe(3)
       expect(item.field2).toBe(1)
-      expect(item.objField).toEqual({ a: 1 })
+      expect(item.objField).toEqual({ a: { a: 1 } })
     })
 
     // can omit id in new data param (it's implied)
     await db.Transaction.run(async tx => {
       tx.createOrPut(TransactionModel,
         { id, field1: 3 },
-        { field1: 33, field2: 11, objField: { a: 11 } })
+        { field1: 33, field2: 11, objField: { a: { a: 11 } } })
     })
     await db.Transaction.run(async tx => {
       const item = await tx.get(TransactionModel, id)
       expect(item.id).toBe(id)
       expect(item.field1).toBe(33)
       expect(item.field2).toBe(11)
-      expect(item.objField).toEqual({ a: 11 })
+      expect(item.objField).toEqual({ a: { a: 11 } })
     })
   }
 

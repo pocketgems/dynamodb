@@ -1,7 +1,7 @@
-const S = require('fluent-schema')
 const uuidv4 = require('uuid').v4
 
 const db = require('../src/dynamodb')
+const S = require('../src/schema')
 const { PropDataModels } = require('../src/sharedlib-apis-dynamodb')
 
 const { BaseServiceTest, BaseTest, runTests } = require('./base-unit-test')
@@ -157,15 +157,15 @@ class DynamodbLibTest extends BaseServiceTest {
 
 class Order extends db.Model {
   static FIELDS = {
-    product: S.string(),
-    quantity: S.integer()
+    product: S.str,
+    quantity: S.int
   }
 }
 
 class OrderWithPrice extends db.Model {
   static FIELDS = {
-    quantity: S.integer(),
-    unitPrice: S.integer().description('price per unit in cents')
+    quantity: S.int,
+    unitPrice: S.int.desc('price per unit in cents')
   }
 
   totalPrice (salesTax = 0.1) {
@@ -176,26 +176,26 @@ class OrderWithPrice extends db.Model {
 
 class RaceResult extends db.Model {
   static KEY = {
-    raceID: S.integer(),
-    runnerName: S.string()
+    raceID: S.int,
+    runnerName: S.str
   }
 }
 
 class ModelWithFields extends db.Model {
   static FIELDS = {
-    someInt: S.integer().minimum(0),
-    someBool: S.boolean(),
-    someObj: S.object().prop('arr', S.array().items(S.string()))
+    someInt: S.int.min(0),
+    someBool: S.bool,
+    someObj: S.obj().prop('arr', S.arr(S.str))
   }
 }
 
 class ModelWithComplexFields extends db.Model {
   static FIELDS = {
-    aNonNegInt: S.integer().minimum(0),
-    anOptBool: S.boolean().optional(), // default value is undefined
+    aNonNegInt: S.int.min(0),
+    anOptBool: S.bool.optional(), // default value is undefined
     // this field defaults to 5; once it is set, it cannot be changed (though
     // it won't always be 5 since it can be created with a non-default value)
-    immutableInt: S.integer().readOnly().default(5)
+    immutableInt: S.int.readOnly().default(5)
   }
 }
 
@@ -218,6 +218,7 @@ class DBReadmeTest extends BaseTest {
       expect(order.product).toBe('coffee')
       expect(order.quantity).toBe(1)
     })
+    // Example
     await db.Transaction.run(async tx => {
       const order = await tx.get(Order, id)
       expect(order.id).toBe(id)
@@ -308,15 +309,19 @@ class DBReadmeTest extends BaseTest {
     // this is the portion from the readme; the earlier part of this test is
     // thoroughly checking correctness
     await db.Transaction.run(async tx => {
+      // example1122start
+      // can omit the optional field
       const item = tx.create(ModelWithComplexFields, {
         id: uuidv4(),
         aNonNegInt: 0,
         immutableInt: 3
       })
       expect(item.aNonNegInt).toBe(0)
+      // omitted optional field => undefined
       expect(item.anOptBool).toBe(undefined)
       expect(item.immutableInt).toBe(3)
 
+      // can override the default value
       const item2 = tx.create(ModelWithComplexFields, {
         id: uuidv4(),
         aNonNegInt: 1,
@@ -325,8 +330,10 @@ class DBReadmeTest extends BaseTest {
       expect(item2.aNonNegInt).toBe(1)
       expect(item2.anOptBool).toBe(true)
       expect(item2.immutableInt).toBe(5) // the default value
+      // can't change read only fields:
       expect(() => { item2.immutableInt = 3 }).toThrow(
         'immutableInt is immutable so value cannot be changed')
+      // example1122end
     })
   }
 
@@ -417,7 +424,7 @@ class DBReadmeTest extends BaseTest {
 
   async testGuestbook () {
     class Guestbook extends db.Model {
-      static FIELDS = { signers: S.array().items(S.string()) }
+      static FIELDS = { signers: S.arr(S.str) }
     }
     await Guestbook.createUnittestResource()
     const id = uuidv4()
@@ -463,13 +470,13 @@ class DBReadmeTest extends BaseTest {
 
   async testRaceCondition () {
     class SkierStats extends db.Model {
-      static KEY = { resort: S.string() }
-      static FIELDS = { numSkiers: S.integer().minimum(0).default(0) }
+      static KEY = { resort: S.str }
+      static FIELDS = { numSkiers: S.int.min(0).default(0) }
     }
     await SkierStats.createUnittestResource()
     class LiftStats extends db.Model {
-      static KEY = { resort: S.string() }
-      static FIELDS = { numLiftRides: S.integer().minimum(0).default(0) }
+      static KEY = { resort: S.str }
+      static FIELDS = { numLiftRides: S.int.min(0).default(0) }
     }
     await LiftStats.createUnittestResource()
 
@@ -621,11 +628,11 @@ class DBReadmeTest extends BaseTest {
   async testBlindWritesCreateOrUpdate () {
     class LastUsedFeature extends db.Model {
       static KEY = {
-        user: S.string(),
-        feature: S.string()
+        user: S.str,
+        feature: S.str
       }
 
-      static FIELDS = { epoch: S.integer() }
+      static FIELDS = { epoch: S.int }
     }
     await LastUsedFeature.createUnittestResource()
     await db.Transaction.run(tx => {
@@ -718,7 +725,7 @@ class DBReadmeTest extends BaseTest {
     expect(key.encodedKeys._id).toBe('123\0Mel')
 
     class StringKeyWithNullBytes extends db.Model {
-      static KEY = { id: S.object().prop('raw', S.string()) }
+      static KEY = { id: S.obj().prop('raw', S.str) }
     }
     await StringKeyWithNullBytes.createUnittestResource()
     const strWithNullByte = 'I can contain \0, no pr\0blem!'
@@ -735,8 +742,8 @@ class DBReadmeTest extends BaseTest {
 
   async testSortKeys () {
     class CustomerData extends db.Model {
-      static KEY = { store: S.string() }
-      static SORT_KEY = { customer: S.string() }
+      static KEY = { store: S.str }
+      static SORT_KEY = { customer: S.str }
     }
     await CustomerData.createUnittestResource()
     await db.Transaction.run(tx => {
@@ -749,13 +756,19 @@ class DBReadmeTest extends BaseTest {
       // we override the default table name so that our subclasses all use the same
       // table name
       static tableName = 'Inventory'
-      static KEY = { userID: S.string() }
+      static KEY = { userID: S.str }
       static get SORT_KEY () {
-        return { typeKey: S.string().default(this.INVENTORY_ITEM_TYPE) }
+        return { typeKey: S.str.default(this.INVENTORY_ITEM_TYPE) }
       }
 
       static get FIELDS () {
-        return { stuff: S.object().default({}) }
+        return {
+          stuff: S.obj({
+            usd: S.int.optional(),
+            rmb: S.int.optional(),
+            ax: S.obj().optional()
+          }).default({}).optional()
+        }
       }
 
       static INVENTORY_ITEM_TYPE () { throw new Error('To be overwritten') }
@@ -768,7 +781,7 @@ class DBReadmeTest extends BaseTest {
       static INVENTORY_ITEM_TYPE = 'weapon'
       static FIELDS = {
         ...super.FIELDS,
-        weaponSkillLevel: S.integer()
+        weaponSkillLevel: S.int
       }
     }
     await Weapon.createUnittestResource()
@@ -793,7 +806,7 @@ class DBReadmeTest extends BaseTest {
 
   async testIncrementBy () {
     class WebsiteHitCounter extends db.Model {
-      static FIELDS = { cnt: S.integer().minimum(0) }
+      static FIELDS = { cnt: S.int.min(0) }
     }
     await WebsiteHitCounter.createUnittestResource()
 

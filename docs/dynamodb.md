@@ -48,11 +48,11 @@ is composed of one or more _Fields_. Each item uniquely identified by a
 
 ## Minimal Example
 Define a new table like this:
-```javascript
+```javascript <!-- embed:../test/unit-test-dynamodb.js:scope:Order -->
 class Order extends db.Model {
   static FIELDS = {
-    product: S.string(),
-    quantity: S.integer()
+    product: S.str,
+    quantity: S.int
   }
 }
 ```
@@ -64,12 +64,15 @@ tx.create(Order, { id, product: 'coffee', quantity: 1 })
 ```
 
 Later, we can retrieve it from the database and modify it:
-```javascript
-const order = await tx.get(Order, id)
-expect(order.id).toBe(id)
-expect(order.product).toBe('coffee')
-expect(order.quantity).toBe(1)
-order.quantity = 2
+```javascript <!-- embed:../test/unit-test-dynamodb.js:scope:DBReadmeTest:testMinimalExample:Example -->
+    // Example
+    await db.Transaction.run(async tx => {
+      const order = await tx.get(Order, id)
+      expect(order.id).toBe(id)
+      expect(order.product).toBe('coffee')
+      expect(order.quantity).toBe(1)
+      order.quantity = 2
+    })
 ```
 
 
@@ -84,21 +87,29 @@ changed.
 
 You can override the default and define your key to be composed of one _or
 more_ fields with arbitrary
-[fluent-schema](https://github.com/fastify/fluent-schema)s (`S`):
-```javascript
+[Todea schema](./schema.md)s (`R`):
+```javascript <!-- embed:../test/unit-test-dynamodb.js:scope:RaceResult -->
 class RaceResult extends db.Model {
   static KEY = {
-    raceID: S.integer(),
-    runnerName: S.string()
+    raceID: S.int,
+    runnerName: S.str
   }
 }
 ```
 
 Access each component of a key just like any other field:
-```javascript
-const raceResult = await tx.get(RaceResult, { raceID: 99, runnerName: 'Bo' })
-expect(raceResult.raceID).toBe(99)
-expect(raceResult.runnerName).toBe('Bo')
+```javascript <!-- embed:../test/unit-test-dynamodb.js:scope:DBReadmeTest:testKeys -->
+  async testKeys () {
+    await RaceResult.createUnittestResource()
+    await db.Transaction.run(async tx => {
+      const raceResult = await tx.get(
+        RaceResult,
+        { raceID: 99, runnerName: 'Bo' },
+        { createIfMissing: true })
+      expect(raceResult.raceID).toBe(99)
+      expect(raceResult.runnerName).toBe('Bo')
+    })
+  }
 ```
 
 It is best practice for keys to have semantic meaning whenever possible. In
@@ -120,12 +131,12 @@ the same key.
 ### Fields
 Fields are pieces of data attached to an item. They are defined similar to
 `KEY`:
-```javascript
+```javascript <!-- embed:../test/unit-test-dynamodb.js:scope:ModelWithFields -->
 class ModelWithFields extends db.Model {
   static FIELDS = {
-    someInt: S.integer().minimum(0),
-    someBool: S.boolean(),
-    someObj: S.object().prop('arr', S.array().items(S.string()))
+    someInt: S.int.min(0),
+    someBool: S.bool,
+    someObj: S.obj().prop('arr', S.arr(S.str))
   }
 }
 ```
@@ -144,39 +155,41 @@ Fields can be configured to be optional, immutable and/or have default values:
          field is required.
     * The default value is _not_ assigned to an optional field that is missing
       when it is fetched from the database.
-```javascript
+```javascript <!-- embed:../test/unit-test-dynamodb.js:scope:ModelWithComplexFields -->
 class ModelWithComplexFields extends db.Model {
   static FIELDS = {
-    aNonNegInt: S.integer().minimum(0),
-    anOptBool: S.boolean().optional(), // default value is undefined
+    aNonNegInt: S.int.min(0),
+    anOptBool: S.bool.optional(), // default value is undefined
     // this field defaults to 5; once it is set, it cannot be changed (though
     // it won't always be 5 since it can be created with a non-default value)
-    immutableInt: S.integer().readOnly().default(5)
+    immutableInt: S.int.readOnly().default(5)
   }
 }
+```
+```javascript <!-- embed:../test/unit-test-dynamodb.js:section:example1122start:example1122end -->
+      // can omit the optional field
+      const item = tx.create(ModelWithComplexFields, {
+        id: uuidv4(),
+        aNonNegInt: 0,
+        immutableInt: 3
+      })
+      expect(item.aNonNegInt).toBe(0)
+      // omitted optional field => undefined
+      expect(item.anOptBool).toBe(undefined)
+      expect(item.immutableInt).toBe(3)
 
-// can omit the optional field
-const item = tx.create(ModelWithComplexFields, {
-  id: uuidv4(),
-  aNonNegInt: 0,
-  immutableInt: 3
-})
-expect(item.aNonNegInt).toBe(0)
-expect(item.anOptBool).toBe(undefined) // omitted optional field => undefined
-expect(item.immutableInt).toBe(3)
-
-// can override the default value
-const item2 = tx.create(ModelWithComplexFields, {
-  id: uuidv4(),
-  aNonNegInt: 1,
-  anOptBool: true
-})
-expect(item2.aNonNegInt).toBe(1)
-expect(item2.anOptBool).toBe(true)
-expect(item2.immutableInt).toBe(5) // the default value
-// can't change read only fields:
-expect(() => { item2.immutableInt = 3 }).toThrow(
-  'immutableInt is immutable so value cannot be changed')
+      // can override the default value
+      const item2 = tx.create(ModelWithComplexFields, {
+        id: uuidv4(),
+        aNonNegInt: 1,
+        anOptBool: true
+      })
+      expect(item2.aNonNegInt).toBe(1)
+      expect(item2.anOptBool).toBe(true)
+      expect(item2.immutableInt).toBe(5) // the default value
+      // can't change read only fields:
+      expect(() => { item2.immutableInt = 3 }).toThrow(
+        'immutableInt is immutable so value cannot be changed')
 ```
 
 
@@ -201,7 +214,7 @@ The schema is checked as follows:
          // db.InvalidFieldError because someInt should be an integer
          const data = {
            id: uuidv4(),
-           someInt: '1', // does not match the schema S.integer())!
+           someInt: '1', // does not match the schema S.int)!
            someBool: true,
            someObj: { arr: [] }
          }
@@ -246,12 +259,13 @@ The schema is checked as follows:
 As you've noticed, key components and fields are simply accessed by their names
 (e.g., `raceResult.runnerName` or `order.product`). You can also define
 instance methods on your models to provide additional functionality:
-```javascript
+```javascript <!-- embed:../test/unit-test-dynamodb.js:scope:OrderWithPrice -->
 class OrderWithPrice extends db.Model {
   static FIELDS = {
-    quantity: S.integer(),
-    unitPrice: S.integer().description('price per unit in cents')
+    quantity: S.int,
+    unitPrice: S.int.desc('price per unit in cents')
   }
+
   totalPrice (salesTax = 0.1) {
     const subTotal = this.quantity * this.unitPrice
     return subTotal * (1 + salesTax)
@@ -308,7 +322,7 @@ throw a `db.ModelAlreadyExistsError` exception without additional retries.
 Consider this guestbook model:
 ```javascript
 class Guestbook extends db.Model {
-  static FIELDS = { names: S.array().items(S.string()) }
+  static FIELDS = { names: S.arr(S.str) }
 }
 ```
 
@@ -366,12 +380,12 @@ Race conditions are still possible! Consider a ski resort which records some
 stats about skiers and lifts:
 ```javascript
 class SkierStats extends db.Model {
-  static KEY = { resort: S.string() }
-  static FIELDS = { numSkiers: S.integer().minimum(0).default(0) }
+  static KEY = { resort: S.str }
+  static FIELDS = { numSkiers: S.int.min(0).default(0) }
 }
 class LiftStats extends db.Model {
-  static KEY = { resort: S.string() }
-  static FIELDS = { numLiftRides: S.integer().minimum(0).default(0) }
+  static KEY = { resort: S.str }
+  static FIELDS = { numLiftRides: S.int.min(0).default(0) }
 }
 ```
 
@@ -600,10 +614,10 @@ For example, maybe we're tracking whether a customer has used a particular featu
 ```javascript
 class LastUsedFeature extends db.Model {
   static KEY = {
-    user: S.string(),
-    feature: S.string()
+    user: S.str,
+    feature: S.str
   }
-  static FIELDS = { epoch: S.integer() }
+  static FIELDS = { epoch: S.int }
 }
 // ...
 tx.createOrPut(HasTriedFeature,
@@ -627,7 +641,7 @@ To achieve higher write throughput and reduce contention, you can use
 increment (or decrement) a number's value but don't care about its old value:
 ```javascript
 class WebsiteHitCounter extends db.Model {
-  static FIELDS = { count: S.integer().minimum(0) }
+  static FIELDS = { count: S.int.min(0) }
 }
 
 async function slowlyIncrement(id) {
@@ -697,7 +711,7 @@ to store a string with this value, your best option is to probably nest it
 inside of an object:
 ```javascript
 class StringKeyWithNullBytes extends db.Model {
-  static KEY = { id: S.object().prop('raw', S.string()) }
+  static KEY = { id: S.obj().prop('raw', S.str) }
 }
 tx.create(StringKeyWithNullBytes, {
   id: {
@@ -774,8 +788,8 @@ across multiple nodes instead of just one.
 When using sort keys, be careful not to overload an single database node. For example, it'd be awful to have a model like this:
 ```javascript
 class CustomerData extends db.Model {
-  static KEY = { store: S.string() }
-  static SORT_KEY = { customer: S.string() }
+  static KEY = { store: S.str }
+  static SORT_KEY = { customer: S.str }
 }
 tx.create(CustomerData, { store: 'Wallymart', customer: uuidv4() })
 ```
@@ -800,14 +814,14 @@ class Inventory extends db.Model {
   // we override the default table name so that our subclasses all use the same
   // table name
   static tableName = 'Inventory'
-  static KEY = { userID: S.string() }
+  static KEY = { userID: S.str }
 
   static get SORT_KEY () {
-    return { typeKey: S.string().default(this.INVENTORY_ITEM_TYPE) }
+    return { typeKey: S.str.default(this.INVENTORY_ITEM_TYPE) }
   }
 
   static get FIELDS () {
-    return { stuff: S.object().default({}) }
+    return { stuff: S.obj().default({}) }
   }
 
   static INVENTORY_ITEM_TYPE () { throw new Error('To be overwritten') }
@@ -819,7 +833,7 @@ class Weapon extends Inventory {
   static INVENTORY_ITEM_TYPE = 'weapon'
   static FIELDS = {
     ...super.FIELDS,
-    weaponSkillLevel: S.integer()
+    weaponSkillLevel: S.int
   }
 }
 

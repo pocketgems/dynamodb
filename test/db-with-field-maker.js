@@ -1,7 +1,7 @@
 const assert = require('assert')
-const S = require('fluent-schema')
 
 const db = require('../src/dynamodb')
+const S = require('../src/schema')
 
 // create helper functions to construct fields for testing purposes
 db.__private.fields.forEach(Cls => {
@@ -24,16 +24,16 @@ function fieldFromFieldOptions (Cls, options) {
   processOption('schema', schema => schema)
   if (!schema) {
     if (Cls.name === 'ArrayField') {
-      schema = S.array()
+      schema = S.arr()
     } else if (Cls.name === 'BooleanField') {
-      schema = S.boolean()
+      schema = S.bool
     } else if (Cls.name === 'NumberField') {
-      schema = S.number()
+      schema = S.num
     } else if (Cls.name === 'ObjectField') {
-      schema = S.object()
+      schema = S.obj()
     } else {
       assert.ok(Cls.name === 'StringField', 'unexpected class: ' + Cls.name)
-      schema = S.string()
+      schema = S.str
     }
   }
   let initVal

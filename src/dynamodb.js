@@ -1,12 +1,12 @@
 const assert = require('assert')
 
 const ajv = new (require('ajv'))({
-  allErrors: true,
-  removeAdditional: 'failing'
+  allErrors: true
 })
 const deepeq = require('deep-equal')
-const S = require('fluent-schema')
 const deepcopy = require('rfdc')()
+
+const S = require('./schema')
 
 /**
  * @namespace Errors
@@ -153,8 +153,8 @@ class __Field {
       }
     }
 
-    assert.ok(schema.isFluentSchema, 'should be fluent-schema')
-    schema = schema.valueOf()
+    assert.ok(schema.isTodeaSchema, 'should be Todea schema')
+    schema = schema.jsonSchema()
     const isKey = !!keyType
     const options = {
       keyType,
@@ -654,9 +654,9 @@ class Data extends Key {
 }
 
 const _ID_FIELD_OPTS = __Field.__validateFieldOptions(
-  'HASH', '_id', S.string().minLength(1))
+  'HASH', '_id', S.str.min(1))
 const _SK_FIELD_OPTS = __Field.__validateFieldOptions(
-  'RANGE', '_sk', S.string().minLength(1))
+  'RANGE', '_sk', S.str.min(1))
 
 // sentinel values for different item creation methods
 const ITEM_SOURCE = {
@@ -764,7 +764,7 @@ class Model {
         } else {
           keyComponents[kind] = {}
         }
-      } else if (opts.isFluentSchema || opts.schema) {
+      } else if (opts.isTodeaSchema || opts.schema) {
         throw new InvalidFieldError('key', 'must define key component name(s)')
       } else {
         keyComponents[kind] = opts
@@ -848,16 +848,16 @@ class Model {
    * partition key is a UUIDv4.
    *
    * A key can simply be some scalar value:
-   *   static KEY = { id: S.string() }
+   *   static KEY = { id: S.str }
    *
    * A key may can be "compound key", i.e., a key with one or components, each
    * with their own name and schema:
    *   static KEY = {
-   *     email: S.string().format(S.FORMATS.EMAIL),
-   *     birthYear: S.integer().minimum(1900)
+   *     email: S.str,
+   *     birthYear: S.int.min(1900)
    *   }
    */
-  static KEY = { id: S.string().format(S.FORMATS.UUID) }
+  static KEY = { id: S.SCHEMAS.UUID }
 
   /** Defines the sort key, if any. Uses the compound key format from KEY. */
   static SORT_KEY = {}
@@ -865,11 +865,11 @@ class Model {
   /**
    * Defines the non-key fields. By default there are no fields.
    *
-   * Properties are defined as a map from field names to a fluent-schema:
+   * Properties are defined as a map from field names to a Todea schema:
    * @example
    *   static FIELDS = {
-   *     someNumber: S.number(),
-   *     someNumberWithOptions: S.number().optional().default(0).readOnly()
+   *     someNumber: S.num,
+   *     someNumberWithOptions: S.num.optional().default(0).readOnly()
    *   }
    */
   static FIELDS = {}

@@ -1,4 +1,4 @@
-const S = require('fluent-schema')
+const S = require('../src/schema')
 
 const { BaseTest, runTests } = require('./base-unit-test')
 const db = require('./db-with-field-maker')
@@ -33,7 +33,7 @@ class CommonFieldTest extends BaseTest {
   testInvalidFieldName () {
     expect(() => {
       db.__private.__Field.__validateFieldOptions(
-        undefined, '_nope', S.string())
+        undefined, '_nope', S.str)
     }).toThrow(/may not start with/)
   }
 
@@ -138,12 +138,21 @@ class CommonFieldTest extends BaseTest {
   testMutatedFlagDetectsNestedChanges () {
     // Array and Object fields detects nested mutation correctly
     const deepobj = {}
-    const arr = [1, 2, 3, deepobj]
-    const arrayField = db.__private.ArrayField({ valIsFromDB: true, val: arr })
+    const arr = [{}, {}, deepobj]
+    const arrSchema = S.arr(S.obj({ prop: S.int.optional() }))
+    const arrayField = db.__private.ArrayField({
+      valIsFromDB: true,
+      val: arr,
+      schema: arrSchema
+    })
     expect(arrayField.mutated).toBe(false)
 
     const obj = { key: arr }
-    const objectField = db.__private.ObjectField({ valIsFromDB: true, val: obj })
+    const objectField = db.__private.ObjectField({
+      valIsFromDB: true,
+      val: obj,
+      schema: S.obj({ key: arrSchema.optional() })
+    })
     expect(objectField.mutated).toBe(false)
 
     deepobj.prop = 1
@@ -289,10 +298,10 @@ class CommonFieldTest extends BaseTest {
 
 class FieldSchemaTest extends BaseTest {
   testValidSchemaType () {
-    db.__private.NumberField({ schema: S.number() })
-    db.__private.StringField({ schema: S.string() })
-    db.__private.ArrayField({ schema: S.array() })
-    db.__private.ObjectField({ schema: S.object() })
+    db.__private.NumberField({ schema: S.num })
+    db.__private.StringField({ schema: S.str })
+    db.__private.ArrayField({ schema: S.arr() })
+    db.__private.ObjectField({ schema: S.obj() })
   }
 
   testInvalidSchema () {
@@ -304,9 +313,10 @@ class FieldSchemaTest extends BaseTest {
 
   testInvalidSchemaType () {
     const badSchema = {
-      isFluentSchema: true,
+      isTodeaSchema: true,
       type: 'mystery'
     }
+    badSchema.jsonSchema = () => badSchema
     expect(() => {
       db.__private.__Field.__validateFieldOptions(
         undefined, 'nameIsFine', badSchema)
@@ -316,7 +326,7 @@ class FieldSchemaTest extends BaseTest {
   testInvalidDefault () {
     // Make sure default values are checked against schema
     expect(() => {
-      db.__private.StringField({ schema: S.string().minLength(8), default: '123' })
+      db.__private.StringField({ schema: S.str.min(8), default: '123' })
     }).toThrow(db.InvalidFieldError)
   }
 
@@ -324,7 +334,7 @@ class FieldSchemaTest extends BaseTest {
     // Make sure string schema is checked
     const field = db.__private.StringField({
       val: '123456789',
-      schema: S.string().minLength(8).maxLength(9)
+      schema: S.str.min(8).max(9)
     })
     expect(() => {
       field.set('123')
@@ -341,7 +351,7 @@ class FieldSchemaTest extends BaseTest {
     // Make sure object schema is checked
     const field = db.__private.ObjectField({
       val: { abc: 'x' },
-      schema: S.object().prop('abc', S.string())
+      schema: S.obj().prop('abc', S.str)
     })
 
     const invalidValues = [
@@ -375,8 +385,12 @@ class RepeatedFieldTest extends BaseTest {
     return ['a', 1, { a: 1 }, [1], true]
   }
 
+  get valueSchema () {
+    return undefined
+  }
+
   testInvalidValueType () {
-    const field = this.fieldFactory()
+    const field = this.fieldFactory({ schema: this.valueSchema })
     this.values.forEach(val => {
       if (val.constructor.name === this.valueType.name) {
         field.set(val)
@@ -397,7 +411,10 @@ class RepeatedFieldTest extends BaseTest {
   testDefaultValue () {
     this.values.forEach(val => {
       if (val.constructor.name === this.valueType.name) {
-        const field = this.fieldFactory({ default: val })
+        const field = this.fieldFactory({
+          default: val,
+          schema: this.valueSchema
+        })
         expect(field.get()).toStrictEqual(val)
       } else {
         expect(() => {
@@ -574,9 +591,20 @@ class ObjectFieldTest extends RepeatedFieldTest {
     return Object
   }
 
+  get valueSchema () {
+    return S.obj({ a: S.int.optional() })
+  }
+
   testDefaultDeepCopy () {
     const def = { a: { b: 1 } }
-    const field = db.__private.ObjectField({ default: def })
+    const field = db.__private.ObjectField({
+      default: def,
+      schema: S.obj({
+        a: S.obj({
+          b: S.int
+        })
+      })
+    })
     def.a.b = 2
     expect(field.get().a.b).toBe(1)
   }
