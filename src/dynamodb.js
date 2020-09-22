@@ -1,8 +1,5 @@
 const assert = require('assert')
 
-const ajv = new (require('ajv'))({
-  allErrors: true
-})
 const deepeq = require('deep-equal')
 const deepcopy = require('rfdc')()
 
@@ -145,7 +142,7 @@ function loadOptionDefaults (options, defaults) {
  * @memberof Internal
  */
 class __Field {
-  static __validateFieldOptions (keyType, fieldName, schema) {
+  static __validateFieldOptions (modelName, keyType, fieldName, schema) {
     if (fieldName.startsWith('_')) {
       if (fieldName !== '_sk' && fieldName !== '_id') {
         throw new InvalidFieldError(
@@ -154,20 +151,20 @@ class __Field {
     }
 
     assert.ok(schema.isTodeaSchema, 'should be Todea schema')
-    schema = schema.jsonSchema()
+    const compiledSchema = schema.getValidatorAndJSONSchema(
+      `${modelName}.${fieldName}`)
+    schema = compiledSchema.jsonSchema
     const isKey = !!keyType
     const options = {
       keyType,
       schema,
       optional: schema.optional === true,
       immutable: isKey || schema.readOnly === true,
-      default: schema.default
+      default: schema.default,
+      validateOrDie: compiledSchema.validateOrDie
     }
     const FieldCls = schemaTypeToFieldClassMap[options.schema.type]
-    if (!FieldCls) {
-      throw new InvalidFieldError(
-        fieldName, `unsupported field type ${options.schema.type}`)
-    }
+    assert.ok(FieldCls, `unsupported field type ${options.schema.type}`)
 
     const hasDefault = Object.prototype.hasOwnProperty.call(schema, 'default')
     if (hasDefault && options.default === undefined) {
@@ -188,7 +185,6 @@ class __Field {
           'Keys must never be optional.')
       }
     }
-    options.schemaValidator = ajv.compile(options.schema)
     if (hasDefault) {
       validateValue(this.name, options, options.default)
     }
@@ -433,15 +429,7 @@ function validateValue (fieldName, opts, val) {
   }
 
   // validate the value against the provided schema
-  const validator = opts.schemaValidator
-  if (!validator(val)) {
-    throw new InvalidFieldError(
-      fieldName,
-      `value ${JSON.stringify(val)} does not conform to schema ` +
-      `${JSON.stringify(schema)} with error ` +
-      JSON.stringify(validator.errors, null, 2)
-    )
-  }
+  opts.validateOrDie(val)
   return valueType
 }
 
@@ -653,11 +641,6 @@ class Data extends Key {
   }
 }
 
-const _ID_FIELD_OPTS = __Field.__validateFieldOptions(
-  'HASH', '_id', S.str.min(1))
-const _SK_FIELD_OPTS = __Field.__validateFieldOptions(
-  'RANGE', '_sk', S.str.min(1))
-
 // sentinel values for different item creation methods
 const ITEM_SOURCE = {
   CREATE: { isCreate: true },
@@ -709,9 +692,13 @@ class Model {
     for (const [name, opts] of Object.entries(this.constructor.__VIS_ATTRS)) {
       this.__addField(name, opts, vals)
     }
-    this.__addField('_id', _ID_FIELD_OPTS, vals)
+    const _idFieldOpts = __Field.__validateFieldOptions(
+      this.constructor.name, 'HASH', '_id', S.str.min(1))
+    this.__addField('_id', _idFieldOpts, vals)
     if (this.constructor.__hasSortKey()) {
-      this.__addField('_sk', _SK_FIELD_OPTS, vals)
+      const _skFieldOpts = __Field.__validateFieldOptions(
+        this.constructor.name, 'RANGE', '_sk', S.str.min(1))
+      this.__addField('_sk', _skFieldOpts, vals)
     }
     Object.seal(this)
   }
@@ -808,7 +795,7 @@ class Model {
             fieldName, 'property name cannot be used more than once')
         }
         const finalFieldOpts = __Field.__validateFieldOptions(
-          keyType || undefined, fieldName, schema)
+          this.name, keyType || undefined, fieldName, schema)
         this.__VIS_ATTRS[fieldName] = finalFieldOpts
         if (keyType) {
           this.__KEY_COMPONENT_NAMES.add(fieldName)

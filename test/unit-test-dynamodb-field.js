@@ -33,7 +33,7 @@ class CommonFieldTest extends BaseTest {
   testInvalidFieldName () {
     expect(() => {
       db.__private.__Field.__validateFieldOptions(
-        undefined, '_nope', S.str)
+        'FakeModelName', undefined, '_nope', S.str)
     }).toThrow(/may not start with/)
   }
 
@@ -151,7 +151,7 @@ class CommonFieldTest extends BaseTest {
     const objectField = db.__private.ObjectField({
       valIsFromDB: true,
       val: obj,
-      schema: S.obj({ key: arrSchema.optional() })
+      schema: S.obj({ key: arrSchema.copy().optional() })
     })
     expect(objectField.mutated).toBe(false)
 
@@ -291,7 +291,7 @@ class CommonFieldTest extends BaseTest {
     const field = db.__private.NumberField({ default: 987 })
     expect(() => {
       field.set('123')
-    }).toThrow(db.InvalidFieldError)
+    }).toThrow(S.ValidationError)
     expect(field.get()).toBe(987)
   }
 }
@@ -311,23 +311,11 @@ class FieldSchemaTest extends BaseTest {
     }).toThrow()
   }
 
-  testInvalidSchemaType () {
-    const badSchema = {
-      isTodeaSchema: true,
-      type: 'mystery'
-    }
-    badSchema.jsonSchema = () => badSchema
-    expect(() => {
-      db.__private.__Field.__validateFieldOptions(
-        undefined, 'nameIsFine', badSchema)
-    }).toThrow(/unsupported field type/)
-  }
-
   testInvalidDefault () {
     // Make sure default values are checked against schema
     expect(() => {
       db.__private.StringField({ schema: S.str.min(8), default: '123' })
-    }).toThrow(db.InvalidFieldError)
+    }).toThrow(S.ValidationError)
   }
 
   testStringValidation () {
@@ -338,13 +326,13 @@ class FieldSchemaTest extends BaseTest {
     })
     expect(() => {
       field.set('123')
-    }).toThrow(db.InvalidFieldError)
+    }).toThrow(S.ValidationError)
 
     field.set('12345678') // 8 char ok.
 
     expect(() => {
       field.set('1234567890') // 10 char not ok.
-    }).toThrow(db.InvalidFieldError)
+    }).toThrow(S.ValidationError)
   }
 
   testInvalidObject () {
@@ -362,7 +350,7 @@ class FieldSchemaTest extends BaseTest {
     invalidValues.forEach(val => {
       expect(() => {
         field.set(val)
-      }).toThrow(db.InvalidFieldError)
+      }).toThrow(S.ValidationError)
     })
     field.set({ abc: '123' })
   }
@@ -398,7 +386,7 @@ class RepeatedFieldTest extends BaseTest {
       } else {
         expect(() => {
           field.set(val)
-        }).toThrow(db.InvalidFieldError)
+        }).toThrow(S.ValidationError)
       }
     })
   }
@@ -419,7 +407,7 @@ class RepeatedFieldTest extends BaseTest {
       } else {
         expect(() => {
           this.fieldFactory({ default: val }) // eslint-disable-line no-new
-        }).toThrow(db.InvalidFieldError)
+        }).toThrow(S.ValidationError)
       }
     })
   }

@@ -293,13 +293,13 @@ class IDSchemaTest extends BaseTest {
     const m1 = await txCreate(cls, { id })
     expect(m1.id).toBe(id)
     await expect(txCreate(cls, { id: 'bad' })).rejects.toThrow(
-      db.InvalidFieldError)
+      S.ValidationError)
 
     // IDs are checked when keys are created too
-    expect(() => cls.key('bad')).toThrow(db.InvalidFieldError)
+    expect(() => cls.key('bad')).toThrow(S.ValidationError)
     const keyOrder = cls.__KEY_ORDER.partition
     expect(() => cls.__encodeCompoundValueToString(keyOrder, { id: 'X' }))
-      .toThrow(db.InvalidFieldError)
+      .toThrow(S.ValidationError)
     expect(cls.key('xyz').encodedKeys).toEqual({ _id: 'xyz' })
     expect(cls.__encodeCompoundValueToString(keyOrder, { id: 'xyz' }))
       .toEqual('xyz')

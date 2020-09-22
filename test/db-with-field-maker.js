@@ -61,8 +61,9 @@ function fieldFromFieldOptions (Cls, options) {
   const optionKeysLeft = Object.keys(options)
   assert.ok(optionKeysLeft.length === 0,
       `unexpected option(s): ${optionKeysLeft}`)
-  const name = 'someName'
-  options = db.__private.__Field.__validateFieldOptions(keyType, name, schema)
+  const name = 'fakeTestField'
+  options = db.__private.__Field.__validateFieldOptions(
+    'fakeTestModel', keyType, name, schema)
   return new Cls(name, options, initVal, valIsFromDB, valSpecified, false)
 }
 

@@ -301,10 +301,12 @@ class DBReadmeTest extends BaseTest {
     // can also omit an optional field altogether
     await check({ aNonNegInt: 4 })
     // schemas still have to be met
-    await check({ aNonNegInt: -5 }, /aNonNegInt.*does not conform/)
-    await check({ aNonNegInt: 6, anOptBool: 'true' }, /anOptBool.*not conform/)
+    await check({ aNonNegInt: -5 },
+      'Validation Error: ModelWithComplexFields.aNonNegInt')
+    await check({ aNonNegInt: 6, anOptBool: 'true' },
+      'Validation Error: ModelWithComplexFields.anOptBool')
     await check({ aNonNegInt: 7, immutableInt: '5' },
-      /immutableInt.*does not conform/)
+      'Validation Error: ModelWithComplexFields.immutableInt')
 
     // this is the portion from the readme; the earlier part of this test is
     // thoroughly checking correctness
@@ -351,21 +353,21 @@ class DBReadmeTest extends BaseTest {
       }
       expect(() => {
         tx.create(ModelWithFields, data)
-      }).toThrow(db.InvalidFieldError)
+      }).toThrow(S.ValidationError)
       data.someInt = 1
       const x = tx.create(ModelWithFields, data)
 
       // fields are checked when set
       expect(() => {
         x.someBool = 1 // throws because the type should be boolean not int
-      }).toThrow(db.InvalidFieldError)
+      }).toThrow(S.ValidationError)
       expect(() => {
         x.someObj = {} // throws because the required "arr" key is missing
-      }).toThrow(db.InvalidFieldError)
+      }).toThrow(S.ValidationError)
       expect(() => {
         // throws b/c arr is supposed to contain strings
         x.someObj = { arr: [5] }
-      }).toThrow(db.InvalidFieldError)
+      }).toThrow(S.ValidationError)
       x.someObj = { arr: ['ok'] } // ok!
     })
 
@@ -380,9 +382,9 @@ class DBReadmeTest extends BaseTest {
 
       expect(() => {
         item.getField('someObj').validate()
-      }).toThrow(db.InvalidFieldError)
+      }).toThrow(S.ValidationError)
     })
-    await expect(badTx).rejects.toThrow(db.InvalidFieldError)
+    await expect(badTx).rejects.toThrow(S.ValidationError)
 
     // compound key validation
     async function check (compoundID, isOk) {

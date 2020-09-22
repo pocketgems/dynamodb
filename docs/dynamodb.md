@@ -211,7 +211,7 @@ The schema is checked as follows:
      reference (e.g., an object or array), then changing a value inside the reference does _not_ trigger a validation check.
 ```javascript
          // fields are checked immediately when creating a new item; this throws
-         // db.InvalidFieldError because someInt should be an integer
+         // S.ValidationError because someInt should be an integer
          const data = {
            id: uuidv4(),
            someInt: '1', // does not match the schema S.int)!
