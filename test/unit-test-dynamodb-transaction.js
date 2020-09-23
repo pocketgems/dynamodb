@@ -52,8 +52,8 @@ class QuickTransactionTest extends BaseTest {
     })
   }
 
-  async setUp () {
-    await super.setUp()
+  async beforeAll () {
+    await super.beforeAll()
     await TransactionModel.createUnittestResource()
     await TransactionModelWithRequiredField.createUnittestResource()
     this.oldTransactionOptions = db.Transaction.prototype.defaultOptions
@@ -62,8 +62,8 @@ class QuickTransactionTest extends BaseTest {
     this.mockTransactionDefaultOptions(newOptions)
   }
 
-  async tearDown () {
-    super.tearDown()
+  async afterAll () {
+    super.afterAll()
     this.mockTransactionDefaultOptions(this.oldTransactionOptions)
   }
 }
@@ -113,8 +113,8 @@ class ParameterTest extends BaseTest {
 }
 
 class TransactionGetTest extends QuickTransactionTest {
-  async setUp () {
-    await super.setUp()
+  async beforeAll () {
+    await super.beforeAll()
     this.modelName = uuidv4()
     await txGet(this.modelName)
   }
@@ -289,8 +289,8 @@ class TransactionGetTest extends QuickTransactionTest {
 }
 
 class TransactionWriteTest extends QuickTransactionTest {
-  async setUp () {
-    await super.setUp()
+  async beforeAll () {
+    await super.beforeAll()
     this.modelName = '1234'
     await txGet(this.modelName, model => {
       model.field1 = 0

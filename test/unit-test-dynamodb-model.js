@@ -138,7 +138,7 @@ async function txCreate (...args) {
 class SimpleModel extends db.Model {}
 
 class SimpleModelTest extends BaseTest {
-  async setUp () {
+  async beforeAll () {
     // Create new table should work
     await SimpleModel.createUnittestResource()
   }
@@ -282,7 +282,7 @@ class CompoundIDModel extends db.Model {
 }
 
 class IDSchemaTest extends BaseTest {
-  async setUp () {
+  async beforeAll () {
     await IDWithSchemaModel.createUnittestResource()
     await CompoundIDModel.createUnittestResource()
   }
@@ -357,7 +357,7 @@ class BasicModel extends db.Model {
 }
 
 class WriteTest extends BaseTest {
-  async setUp () {
+  async beforeAll () {
     await BasicModel.createUnittestResource()
     this.modelName = uuidv4()
     await txGet(BasicModel, this.modelName, model => {
@@ -478,7 +478,7 @@ class WriteTest extends BaseTest {
 }
 
 class ConditionCheckTest extends BaseTest {
-  async setUp () {
+  async beforeAll () {
     await BasicModel.createUnittestResource()
     this.modelName = uuidv4()
     await txGet(BasicModel, this.modelName)
@@ -529,7 +529,7 @@ class RangeKeyModel extends db.Model {
 }
 
 class KeyTest extends BaseTest {
-  async setUp () {
+  async beforeAll () {
     await Promise.all([
       SimpleModel.createUnittestResource(),
       RangeKeyModel.createUnittestResource()
@@ -700,7 +700,7 @@ class JSONModel extends db.Model {
 }
 
 class JSONModelTest extends BaseTest {
-  async setUp () {
+  async beforeAll () {
     await JSONModel.createUnittestResource()
   }
 
@@ -850,7 +850,7 @@ class GetArgsParserTest extends BaseTest {
 }
 
 class WriteBatcherTest extends BaseTest {
-  async setUp () {
+  async beforeAll () {
     await BasicModel.createUnittestResource()
     this.modelNames = [uuidv4(), uuidv4()]
     const futs = this.modelNames.map(name => {

@@ -203,7 +203,7 @@ class ModelWithComplexFields extends db.Model {
 // tests for features; it only verifies that code from the readme actually runs
 // correctly (and continues to do so after any library changes)
 class DBReadmeTest extends BaseTest {
-  async setUp () {
+  async beforeAll () {
     await Order.createUnittestResource()
     await RaceResult.createUnittestResource()
     await ModelWithFields.createUnittestResource()
