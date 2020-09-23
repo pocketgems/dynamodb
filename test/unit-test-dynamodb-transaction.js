@@ -1,3 +1,5 @@
+const assert = require('assert')
+
 const uuidv4 = require('uuid').v4
 
 const db = require('../src/dynamodb')
@@ -321,6 +323,27 @@ class TransactionWriteTest extends QuickTransactionTest {
     const model = await txGet(data)
     expect(model.isNew).toBe(false)
     expect(model.field1).toBe(val)
+  }
+
+  async testMultipleCreateErrors () {
+    const id1 = uuidv4()
+    const id2 = uuidv4()
+    function createBoth (tx) {
+      tx.create(TransactionModel, { id: id1 })
+      tx.create(TransactionModel, { id: id2 })
+    }
+    await db.Transaction.run(createBoth)
+    expect((await txGet(id1)).id).toBe(id1)
+    expect((await txGet(id2)).id).toBe(id2)
+    try {
+      await db.Transaction.run(createBoth)
+      assert.fail('should not get here')
+    } catch (err) {
+      expect(err.message).toMatch(/^Multiple Unretryable Errors:/)
+      expect(err.message).toContain('Tried to recreate an existing model: _id=' + id1)
+      expect(err.message).toContain('Tried to recreate an existing model: _id=' + id2)
+      expect(err.message.split('\n').length).toBe(3)
+    }
   }
 
   async testCreateWithData () {

@@ -53,16 +53,18 @@ class InvalidFieldError extends Error {
  * Original exception is attached to property `original`
  * Original stack is appended to current stack.
  *
+ * @arg {string} msg the error message
+ * @arg {Error} [originalException] the original error which led to this
  * @access public
  * @memberof Errors
  */
 class TransactionFailedError extends Error {
-  constructor (obj) {
-    super(obj)
+  constructor (msg, originalException) {
+    super(msg)
     this.name = this.constructor.name
-    this.original = obj
-    if (obj instanceof Error) {
-      this.stack += '\n' + obj.stack
+    this.original = originalException
+    if (originalException instanceof Error) {
+      this.stack += '\n' + originalException.stack
     }
   }
 }
@@ -1617,6 +1619,9 @@ class __WriteBatcher {
     const responseBody = response.httpResponse.body.toString()
     const reasons = JSON.parse(responseBody).CancellationReasons
     assert(reasons, 'error body missing reasons: ' + responseBody)
+    if (response.error) {
+      response.error.allErrors = []
+    }
     for (let idx = 0; idx < reasons.length; idx++) {
       const reason = reasons[idx]
       if (reason.Code === 'ConditionalCheckFailed') {
@@ -1641,12 +1646,29 @@ class __WriteBatcher {
             )
             break
         }
+        let CustomErrorCls
         if (model.__src.isCreate) {
-          response.error = new ModelAlreadyExistsError(model._id, model._sk)
+          CustomErrorCls = ModelAlreadyExistsError
         } else if (model.__src.isUpdate) {
-          response.error = new InvalidModelUpdateError(model._id, model._sk)
+          CustomErrorCls = InvalidModelUpdateError
+        }
+        if (CustomErrorCls) {
+          const err = new CustomErrorCls(model._id, model._sk)
+          if (response.error) {
+            response.error.allErrors.push(err)
+          } else {
+            // response.error appears to always be set in the wild; but we have
+            // this case just in case we're wrong or something changes
+            response.error = err
+            response.error.allErrors = [err]
+          }
         }
       }
+    }
+    // if there were no custom errors, then use the original error
+    /* istanbul ignore if */
+    if (response.error && !response.error.allErrors.length) {
+      response.error.allErrors.push(response.error)
     }
   }
 }
@@ -2057,8 +2079,32 @@ class Transaction {
         await this.__writeBatcher.commit()
         return ret
       } catch (err) {
-        if (!this.constructor.__isRetryable(err)) {
-          throw err
+        // make sure EVERY error is retryable; allErrors is present if err
+        // was thrown in __WriteBatcher.__commit()'s onError handler
+        const allErrors = err.allErrors || [err]
+        const errorMessages = []
+        for (let i = 0; i < allErrors.length; i++) {
+          const anErr = allErrors[i]
+          if (!this.constructor.__isRetryable(anErr)) {
+            errorMessages.push(`  ${i + 1}) ${anErr.message}`)
+          }
+        }
+        if (errorMessages.length) {
+          if (allErrors.length === 1) {
+            // if there was only one error, just rethrow it
+            if (allErrors[0].statusCode !== undefined) {
+              // don't propagate the statusCode field outside of this library
+              // (it has special meaning to fastify)
+              delete allErrors[0].statusCode
+            }
+            throw allErrors[0]
+          } else {
+            // if there were multiple errors, combine it into one error which
+            // summarizes all of the failures
+            throw new TransactionFailedError(
+              ['Multiple Unretryable Errors: ', ...errorMessages].join('\n'),
+              err)
+          }
         } else {
           console.log(`Transaction commit attempt ${tryCnt} failed with ` +
             `error ${err}.`)
@@ -2076,6 +2122,9 @@ class Transaction {
 
   /**
    * Runs a function in transaction, using specified parameters.
+   *
+   * If a non-retryable error is thrown while running the transaction, it will
+   * be re-raised (with its statusCode field removed).
    *
    * @param {TransactionOptions} [options]
    * @param {Function} func the closure to run.
