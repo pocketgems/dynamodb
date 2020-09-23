@@ -1506,7 +1506,7 @@ class __WriteBatcher {
    * @param {Model} model the model to write
    * @access private
    */
-  async __write (model) {
+  __write (model) {
     if (!this.__toCheck[model]) {
       if (this.__toCheck[model] === false) {
         throw new Error(`Attempting to write model ${model.toString()} twice`)
@@ -1556,7 +1556,7 @@ class __WriteBatcher {
 
     for (const model of this.__allModels) {
       if (this.__toCheck[model] && model.__isMutated()) {
-        await this.__write(model)
+        this.__write(model)
       }
     }
 

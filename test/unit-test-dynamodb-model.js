@@ -864,7 +864,7 @@ class WriteBatcherTest extends BaseTest {
   async testUntrackedWrite () {
     const batcher = new db.__private.__WriteBatcher()
     const model = await txGet(BasicModel, uuidv4())
-    await expect(batcher.__write(model)).rejects.toThrow()
+    expect(() => batcher.__write(model)).toThrow()
   }
 
   async testDupWrite () {
@@ -872,10 +872,8 @@ class WriteBatcherTest extends BaseTest {
     const model = await txGet(BasicModel, uuidv4())
     batcher.track(model)
     model.noRequiredNoDefault += 1
-    expect(async () => {
-      await batcher.__write(model)
-    }).not.toThrow()
-    await expect(batcher.__write(model)).rejects.toThrow()
+    batcher.__write(model)
+    expect(() => batcher.__write(model)).toThrow()
   }
 
   async testReadonly () {

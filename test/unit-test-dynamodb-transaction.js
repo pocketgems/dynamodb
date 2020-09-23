@@ -396,7 +396,7 @@ class TransactionWriteTest extends QuickTransactionTest {
         { createIfMissing: true })
       expect(txModel.isNew).toBe(false)
 
-      await expect(tx.__writeBatcher.__write(txModel)).rejects.toThrow()
+      expect(() => tx.__writeBatcher.__write(txModel)).toThrow()
       expect(tx.__writeBatcher.__toWrite.length).toBe(0)
     })
   }
@@ -406,7 +406,7 @@ class TransactionWriteTest extends QuickTransactionTest {
       const txModel = await tx.get(TransactionModel, uuidv4(),
         { createIfMissing: true })
       expect(txModel.isNew).toBe(true)
-      await tx.__writeBatcher.__write(txModel)
+      tx.__writeBatcher.__write(txModel)
       expect(tx.__writeBatcher.__toWrite.length).toBe(1)
       expect(tx.__writeBatcher.__toWrite[0]).toHaveProperty('Put')
     })
@@ -880,11 +880,11 @@ class TransactionConditionCheckTest extends QuickTransactionTest {
         expect(result).toStrictEqual(modelNames)
       }
 
-      await tx.__writeBatcher.__write(model1)
+      tx.__writeBatcher.__write(model1)
       checkModel(model1)
 
       model2.field1 = 0
-      await tx.__writeBatcher.__write(model2)
+      tx.__writeBatcher.__write(model2)
       checkModel(model2)
     })
   }
