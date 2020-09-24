@@ -119,9 +119,14 @@ class KeyOnlyModel extends db.Model {
   static SORT_KEY = { sk: S.str.min(1) }
 }
 
+class KeyOnlyModel2 extends KeyOnlyModel {
+  static tableName = KeyOnlyModel.tableName // same
+}
+
 class TransactionEdgeCaseTest extends BaseTest {
   async beforeAll () {
     await KeyOnlyModel.createUnittestResource()
+    await KeyOnlyModel2.createUnittestResource()
   }
 
   async afterEach () {
@@ -135,6 +140,21 @@ class TransactionEdgeCaseTest extends BaseTest {
       const i2 = tx.create(KeyOnlyModel, { id: 'xy', sk: suffix })
       expect(i1.toString()).not.toEqual(i2.toString())
     })
+  }
+
+  async testKeyCollisionFromSeparateModels () {
+    const suffix = uuidv4()
+    let checked = false
+    const promise = db.Transaction.run(async tx => {
+      const i1 = tx.create(KeyOnlyModel, { id: 'x', sk: suffix })
+      await db.Transaction.run(tx => {
+        const i2 = tx.create(KeyOnlyModel2, { id: 'x', sk: suffix })
+        expect(i1.toString()).toEqual(i2.toString())
+        checked = true
+      })
+    })
+    await expect(promise).rejects.toThrow(db.ModelAlreadyExistsError)
+    expect(checked).toBe(true)
   }
 }
 
