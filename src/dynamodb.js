@@ -1435,6 +1435,37 @@ class Model {
 }
 
 /**
+ * Used for tracking a non-existent item.
+ */
+class NonExistentItem {
+  constructor (key) {
+    this.key = key
+  }
+
+  __isMutated () {
+    return false
+  }
+
+  __conditionCheckParams () {
+    return {
+      TableName: this.key.Cls.fullTableName,
+      Key: this.key.encodedKeys,
+      ConditionExpression: 'attribute_not_exists(#id)',
+      ExpressionAttributeNames: { '#id': '_id' }
+    }
+  }
+
+  /**
+   * Must be the same as Model.toString() because it is used as the unique
+   * identifier of an item for Objects and Sets.
+   */
+  toString () {
+    return makeItemString(
+      this.key.Cls, this.key.encodedKeys._id, this.key.encodedKeys._sk)
+  }
+}
+
+/**
  * Returns a string which uniquely identifies an item.
  * @param {Model} modelCls the Model for the item
  * @param {string} _id the item's partition key
@@ -1599,13 +1630,16 @@ class __WriteBatcher {
     const params = {
       TransactItems: items
     }
-    const request = this.documentClient.transactWrite(params)
-    /* istanbul ignore next */
+    await this.transactWrite(params)
+    return true
+  }
+
+  async transactWrite (txWriteParams) {
+    const request = this.documentClient.transactWrite(txWriteParams)
     request.on('extractError', (response) => {
       this.__extractError(request, response)
     })
-    await request.promise()
-    return true
+    return request.promise()
   }
 
   /**
@@ -1757,6 +1791,7 @@ class Transaction {
     const getParams = key.Cls.__getParams(key.encodedKeys, params)
     const data = await this.documentClient.get(getParams).promise()
     if (!params.createIfMissing && !data.Item) {
+      this.__writeBatcher.track(new NonExistentItem(key))
       return undefined
     }
     const isNew = !data.Item
