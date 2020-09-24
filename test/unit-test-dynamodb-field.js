@@ -298,7 +298,7 @@ class CommonFieldTest extends BaseTest {
 
 class FieldSchemaTest extends BaseTest {
   testValidSchemaType () {
-    db.__private.NumberField({ schema: S.num })
+    db.__private.NumberField({ schema: S.double })
     db.__private.StringField({ schema: S.str })
     db.__private.ArrayField({ schema: S.arr() })
     db.__private.ObjectField({ schema: S.obj() })

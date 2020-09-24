@@ -32,8 +32,8 @@ async function txGetRequired (keyValues, func) {
 class TransactionModel extends db.Model {
   static KEY = { id: S.str.min(1) }
   static FIELDS = {
-    field1: S.num.optional(),
-    field2: S.num.optional(),
+    field1: S.double.optional(),
+    field2: S.double.optional(),
     arrField: S.arr(S.obj({ a: S.int.optional() })).optional(),
     objField: S.obj({
       a: S.obj({
@@ -43,7 +43,7 @@ class TransactionModel extends db.Model {
   }
 }
 class TransactionModelWithRequiredField extends TransactionModel {
-  static FIELDS = { ...super.FIELDS, required: S.num }
+  static FIELDS = { ...super.FIELDS, required: S.double }
 }
 
 class QuickTransactionTest extends BaseTest {

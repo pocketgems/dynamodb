@@ -28,7 +28,7 @@ function fieldFromFieldOptions (Cls, options) {
     } else if (Cls.name === 'BooleanField') {
       schema = S.bool
     } else if (Cls.name === 'NumberField') {
-      schema = S.num
+      schema = S.double
     } else if (Cls.name === 'ObjectField') {
       schema = S.obj()
     } else {

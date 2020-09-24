@@ -857,8 +857,8 @@ class Model {
    * Properties are defined as a map from field names to a Todea schema:
    * @example
    *   static FIELDS = {
-   *     someNumber: S.num,
-   *     someNumberWithOptions: S.num.optional().default(0).readOnly()
+   *     someNumber: S.double,
+   *     someNumberWithOptions: S.double.optional().default(0).readOnly()
    *   }
    */
   static FIELDS = {}

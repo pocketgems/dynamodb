@@ -53,12 +53,12 @@ class BadModelTest extends BaseTest {
 
   testIDName () {
     class SortKeyMustProvideNames extends db.Model {
-      static SORT_KEY = S.num
+      static SORT_KEY = S.double
     }
     this.check(SortKeyMustProvideNames, /must define key component name/)
 
     class PartitionKeyMustProvideNames extends db.Model {
-      static KEY = S.num
+      static KEY = S.double
     }
     this.check(PartitionKeyMustProvideNames, /must define key component name/)
 
@@ -69,23 +69,23 @@ class BadModelTest extends BaseTest {
     OkModel.__doOneTimeModelPrep()
 
     class IDCanBePartOfACompoundPartitionKey extends db.Model {
-      static KEY = { id: S.str, n: S.num }
+      static KEY = { id: S.str, n: S.double }
     }
     IDCanBePartOfACompoundPartitionKey.__doOneTimeModelPrep()
 
     class IDDoesntHaveToBeAString extends db.Model {
-      static KEY = { id: S.num }
+      static KEY = { id: S.double }
     }
     IDDoesntHaveToBeAString.__doOneTimeModelPrep()
 
     class IDCanBeASortKeyName extends db.Model {
-      static KEY = { x: S.num }
+      static KEY = { x: S.double }
       static SORT_KEY = { id: S.str }
     }
     IDCanBeASortKeyName.__doOneTimeModelPrep()
 
     class IDCanBeAFieldName extends db.Model {
-      static KEY = { x: S.num }
+      static KEY = { x: S.double }
       static FIELDS = { id: S.str }
     }
     IDCanBeAFieldName.__doOneTimeModelPrep()
@@ -352,7 +352,7 @@ class IDSchemaTest extends BaseTest {
 
 class BasicModel extends db.Model {
   static FIELDS = {
-    noRequiredNoDefault: S.num.optional()
+    noRequiredNoDefault: S.double.optional()
   }
 }
 
