@@ -62,7 +62,7 @@ class DynamodbLibTest extends BaseServiceTest {
   async testQueryJsonFail () {
     const result = await this.app.post(getURI('/clienterrors'))
       .query('{d}').expect(400)
-    expect(result.body.error.name).toBe('Body Validation Failure')
+    expect(result.body.errObj.name).toBe('Body Validation Failure')
   }
 
   async testBodyJsonFail () {
@@ -70,7 +70,7 @@ class DynamodbLibTest extends BaseServiceTest {
       .send('{d}')
       .set('Content-Type', 'application/json')
       .expect(400)
-    expect(result.body.error.name).toBe('Body Parse Failure')
+    expect(result.body.errObj.name).toBe('Body Parse Failure')
   }
 
   async testMissingRequiredPropFail () {
@@ -78,7 +78,7 @@ class DynamodbLibTest extends BaseServiceTest {
       .send('{}')
       .set('Content-Type', 'application/json')
       .expect(400)
-    expect(result.body.error.name).toBe('Body Validation Failure')
+    expect(result.body.errObj.name).toBe('Body Validation Failure')
   }
 
   async testBodyContentTypeFail () {
@@ -86,7 +86,7 @@ class DynamodbLibTest extends BaseServiceTest {
       .send('{}')
       .set('Content-Type', 'text/html')
       .expect(415)
-    expect(result.body.error.name).toBe('Content-Type Not Permitted')
+    expect(result.body.errObj.name).toBe('Content-Type Not Permitted')
   }
 
   async testValidJsonSchema () {
@@ -110,7 +110,7 @@ class DynamodbLibTest extends BaseServiceTest {
         .expect(shouldSucceed ? 200 : 500)
 
       if (!shouldSucceed) {
-        expect(resp.body.error.name).toBe('TransactionFailedError')
+        expect(resp.body.errObj.name).toBe('TransactionFailedError')
         return
       }
 
