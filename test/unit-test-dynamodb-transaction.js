@@ -156,6 +156,56 @@ class TransactionEdgeCaseTest extends BaseTest {
     await expect(promise).rejects.toThrow(db.ModelAlreadyExistsError)
     expect(checked).toBe(true)
   }
+
+  async testConditionedOnNonExistentItem () {
+    const idToRead = { id: uuidv4(), sk: 'x' }
+    const idToWrite = { id: uuidv4(), sk: 'y' }
+
+    // make transactWrite() is called with the proper parameters
+    const __WriteBatcher = db.__private.__WriteBatcher
+    const spy = jest.spyOn(__WriteBatcher.prototype, 'transactWrite')
+    await db.Transaction.run(async tx => {
+      const item = await tx.get(KeyOnlyModel, idToRead)
+      if (!item) {
+        tx.create(KeyOnlyModel, idToWrite)
+      }
+    })
+    await db.Transaction.run(async tx => {
+      expect(await tx.get(KeyOnlyModel, idToRead)).toBe(undefined)
+      expect(await tx.get(KeyOnlyModel, idToWrite)).not.toBe(undefined)
+    })
+    expect(spy).toHaveBeenCalledTimes(1)
+    const callArgs = spy.mock.calls[0]
+    expect(callArgs.length).toBe(1)
+    expect(Object.keys(callArgs[0])).toEqual(['TransactItems'])
+    const txItems = callArgs[0].TransactItems
+    expect(txItems.length).toBe(2)
+    const putIdx = txItems[0].Put ? 0 : 1
+    const putExpr = txItems[putIdx]
+    const checkExpr = txItems[1 - putIdx]
+    expect(putExpr).toEqual({
+      Put: {
+        TableName: 'sharedlibKeyOnlyModel',
+        Item: {
+          _id: idToWrite.id,
+          _sk: 'y'
+        },
+        ConditionExpression: 'attribute_not_exists(#id)',
+        ExpressionAttributeNames: { '#id': '_id' }
+      }
+    })
+    expect(checkExpr).toEqual({
+      ConditionCheck: {
+        TableName: 'sharedlibKeyOnlyModel',
+        Key: {
+          _id: idToRead.id,
+          _sk: 'x'
+        },
+        ConditionExpression: 'attribute_not_exists(#id)',
+        ExpressionAttributeNames: { '#id': '_id' }
+      }
+    })
+  }
 }
 
 class TransactionGetTest extends QuickTransactionTest {
