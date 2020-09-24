@@ -1422,17 +1422,30 @@ class Model {
   }
 
   /**
-   * Shows the type and key of a model, for example,
-   * [Model Foo:partitionKey:sortKey], so that each model has a unique
-   * identifier to be used in Object and Set.
+   * Must be the same as NonExistentModel.toString() because it is used as the
+   * unique identifier of an item for Objects and Sets.
    */
   toString () {
-    let keyStr = this.__db_attrs._id.__value
-    if (this.constructor.__hasSortKey()) {
-      keyStr += this.__db_attrs._sk.__value
-    }
-    return `[Model ${this.constructor.name}:${keyStr}]`
+    return makeItemString(
+      this.constructor,
+      this.__db_attrs._id.__value,
+      this.constructor.__hasSortKey() ? this.__db_attrs._sk.__value : undefined
+    )
   }
+}
+
+/**
+ * Returns a string which uniquely identifies an item.
+ * @param {Model} modelCls the Model for the item
+ * @param {string} _id the item's partition key
+ * @param {string} [_sk] the item's sort key
+ */
+function makeItemString (modelCls, _id, _sk) {
+  const arr = [modelCls.tableName, _id]
+  if (_sk !== undefined) {
+    arr.push(_sk)
+  }
+  return JSON.stringify(arr)
 }
 
 async function getWithArgs (args, callback) {
