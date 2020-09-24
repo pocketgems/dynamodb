@@ -2080,7 +2080,7 @@ class Transaction {
         return ret
       } catch (err) {
         // make sure EVERY error is retryable; allErrors is present if err
-        // was thrown in __WriteBatcher.__commit()'s onError handler
+        // was thrown in __WriteBatcher.commit()'s onError handler
         const allErrors = err.allErrors || [err]
         const errorMessages = []
         for (let i = 0; i < allErrors.length; i++) {
