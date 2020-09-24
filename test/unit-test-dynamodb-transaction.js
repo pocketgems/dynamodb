@@ -114,6 +114,30 @@ class ParameterTest extends BaseTest {
   }
 }
 
+class KeyOnlyModel extends db.Model {
+  static KEY = { id: S.str.min(1) }
+  static SORT_KEY = { sk: S.str.min(1) }
+}
+
+class TransactionEdgeCaseTest extends BaseTest {
+  async beforeAll () {
+    await KeyOnlyModel.createUnittestResource()
+  }
+
+  async afterEach () {
+    jest.restoreAllMocks()
+  }
+
+  async testKeyCollision () {
+    const suffix = uuidv4()
+    await db.Transaction.run(tx => {
+      const i1 = tx.create(KeyOnlyModel, { id: 'x', sk: 'y' + suffix })
+      const i2 = tx.create(KeyOnlyModel, { id: 'xy', sk: suffix })
+      expect(i1.toString()).not.toEqual(i2.toString())
+    })
+  }
+}
+
 class TransactionGetTest extends QuickTransactionTest {
   async beforeAll () {
     await super.beforeAll()
@@ -915,6 +939,7 @@ class TransactionConditionCheckTest extends QuickTransactionTest {
 
 runTests(
   ParameterTest,
+  TransactionEdgeCaseTest,
   TransactionGetTest,
   TransactionWriteTest,
   TransactionRetryTest,
