@@ -2159,6 +2159,9 @@ class Transaction {
         }
       }
       if (tryCnt >= this.options.retries) {
+        // note: this exact message is checked and during load testing this
+        // error will not be sent to Sentry; if this message changes, please
+        // update make-app.js too
         throw new TransactionFailedError('Too much contention.')
       }
       const offset = Math.floor(Math.random() * millisBackOff * 0.2) -
