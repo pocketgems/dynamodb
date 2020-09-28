@@ -418,7 +418,7 @@ class RepeatedFieldTest extends BaseTest {
     let field = this.fieldFactory({ keyType: 'HASH' })
     field.name = 'myField'
     expect(field.__conditionExpression('')).toStrictEqual(
-      ['attribute_not_exists(myField)', {}])
+      ['attribute_not_exists(#myField)', {}])
 
     // non-key and unread means no condition
     field = this.fieldFactory()
@@ -428,7 +428,7 @@ class RepeatedFieldTest extends BaseTest {
     // once it is read, it will generate a condition though
     field.get()
     expect(field.__conditionExpression('')).toStrictEqual(
-      ['attribute_not_exists(myField)', {}])
+      ['attribute_not_exists(#myField)', {}])
   }
 }
 

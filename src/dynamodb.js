@@ -302,7 +302,7 @@ class __Field {
         return [undefined, {}, true]
       } else {
         return [
-          `${this.name}=${exprKey}`,
+          `#${this.name}=${exprKey}`,
           { [exprKey]: deepcopy(this.__value) },
           false
         ]
@@ -337,12 +337,12 @@ class __Field {
     }
     if (this.__initialValue === undefined) {
       return [
-        `attribute_not_exists(${this.name})`,
+        `attribute_not_exists(#${this.name})`,
         {}
       ]
     }
     return [
-      `${this.name}=${exprKey}`,
+      `#${this.name}=${exprKey}`,
       { [exprKey]: this.__initialValue }
     ]
   }
@@ -527,7 +527,7 @@ class NumberField extends __Field {
     // if we're locking, there's no point in doing an increment
     if (this.canUpdateWithIncrement) {
       return [
-        `${this.name}=${this.name}+${exprKey}`,
+        `#${this.name}=#${this.name}+${exprKey}`,
         { [exprKey]: this.__diff },
         false
       ]
@@ -1030,7 +1030,7 @@ class Model {
     })
 
     let conditionExpr
-    let hasExistsCheck = false
+    const exprAttrNames = {}
     const isCreateOrPut = this.__src.isCreateOrPut
     const exprValues = {}
     if (this.isNew) {
@@ -1043,17 +1043,18 @@ class Model {
             (!isCreateOrPut || !condition.startsWith('attribute_not_exists'))) {
             conditions.push(condition)
             Object.assign(exprValues, vals)
+            exprAttrNames['#' + field.name] = field.name
           }
         }
         conditionExpr = conditions.join(' AND ')
 
         if (conditionExpr.length !== 0) {
-          conditionExpr = `attribute_not_exists(#id) OR (${conditionExpr})`
-          hasExistsCheck = true
+          conditionExpr = `attribute_not_exists(#_id) OR (${conditionExpr})`
+          exprAttrNames['#_id'] = '_id'
         }
       } else {
-        conditionExpr = 'attribute_not_exists(#id)'
-        hasExistsCheck = true
+        conditionExpr = 'attribute_not_exists(#_id)'
+        exprAttrNames['#_id'] = '_id'
       }
     } else {
       const conditions = []
@@ -1063,6 +1064,7 @@ class Model {
         if (condition) {
           conditions.push(condition)
           Object.assign(exprValues, vals)
+          exprAttrNames['#' + field.name] = field.name
         }
       }
       conditionExpr = conditions.join(' AND ')
@@ -1078,8 +1080,8 @@ class Model {
     if (Object.keys(exprValues).length) {
       ret.ExpressionAttributeValues = exprValues
     }
-    if (hasExistsCheck) {
-      ret.ExpressionAttributeNames = { '#id': '_id' }
+    if (Object.keys(exprAttrNames).length) {
+      ret.ExpressionAttributeNames = exprAttrNames
     }
     return ret
   }
@@ -1104,6 +1106,7 @@ class Model {
    */
   __updateParams (shouldValidate) {
     const conditions = []
+    const exprAttrNames = {}
     const exprValues = {}
     const itemKey = {}
     const sets = []
@@ -1140,22 +1143,23 @@ class Model {
         Object.assign(exprValues, vals)
       }
       if (remove) {
-        removes.push(field.name)
+        removes.push('#' + field.name)
       }
-
       if (field.accessed) {
         accessedFields.push(field)
       }
+      if (set || remove) {
+        exprAttrNames['#' + field.name] = field.name
+      }
     })
 
-    let hasExistsCheck = false
     if (this.isNew) {
-      conditions.push('attribute_not_exists(#id)')
-      hasExistsCheck = true
+      conditions.push('attribute_not_exists(#_id)')
+      exprAttrNames['#_id'] = '_id'
     } else {
       if (isUpdate) {
-        conditions.push('attribute_exists(#id)')
-        hasExistsCheck = true
+        conditions.push('attribute_exists(#_id)')
+        exprAttrNames['#_id'] = '_id'
       }
 
       for (const field of accessedFields) {
@@ -1171,6 +1175,7 @@ class Model {
           // so ignore it.
           conditions.push(condition)
           Object.assign(exprValues, vals)
+          exprAttrNames['#' + field.name] = field.name
         }
       }
     }
@@ -1197,8 +1202,8 @@ class Model {
     if (Object.keys(exprValues).length) {
       ret.ExpressionAttributeValues = exprValues
     }
-    if (hasExistsCheck) {
-      ret.ExpressionAttributeNames = { '#id': '_id' }
+    if (Object.keys(exprAttrNames).length) {
+      ret.ExpressionAttributeNames = exprAttrNames
     }
     return ret
   }
@@ -1450,8 +1455,8 @@ class NonExistentItem {
     return {
       TableName: this.key.Cls.fullTableName,
       Key: this.key.encodedKeys,
-      ConditionExpression: 'attribute_not_exists(#id)',
-      ExpressionAttributeNames: { '#id': '_id' }
+      ConditionExpression: 'attribute_not_exists(#_id)',
+      ExpressionAttributeNames: { '#_id': '_id' }
     }
   }
 
@@ -2140,6 +2145,7 @@ class Transaction {
         if (errorMessages.length) {
           if (allErrors.length === 1) {
             // if there was only one error, just rethrow it
+            /* istanbul ignore next */
             if (allErrors[0].statusCode !== undefined) {
               // don't propagate the statusCode field outside of this library
               // (it has special meaning to fastify)

@@ -701,7 +701,7 @@ class DBReadmeTest extends BaseTest {
         }
         const [cond, vals] = x.getField('quantity').__conditionExpression(':_1')
         expect(vals).toEqual({ ':_1': origValue })
-        expect(cond).toBe('quantity=:_1')
+        expect(cond).toBe('#quantity=:_1')
       })
       await db.Transaction.run(async tx => {
         const order = await tx.get(Order, id)

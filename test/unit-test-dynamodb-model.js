@@ -440,7 +440,7 @@ class WriteTest extends BaseTest {
       expect(model).toHaveProperty(propName)
       expect(model.__putParams().Item).not.toHaveProperty(propName)
       expect(model.__updateParams()[UPDATE_EXPRESSION_STR])
-        .toContain('REMOVE ' + propName)
+        .toContain('REMOVE #' + propName)
     })
 
     // Read and check again
@@ -514,7 +514,7 @@ class ConditionCheckTest extends BaseTest {
     const m1 = await txGet(BasicModel, this.modelName)
     m1.noRequiredNoDefault // eslint-disable-line no-unused-expressions
     expect(m1.__conditionCheckParams()).toHaveProperty('ConditionExpression',
-      'attribute_not_exists(noRequiredNoDefault)')
+      'attribute_not_exists(#noRequiredNoDefault)')
   }
 }
 
@@ -890,9 +890,9 @@ class WriteBatcherTest extends BaseTest {
       // we never read the old value on model1, so our update should NOT be
       // conditioned on the old value
       expect(update.ConditionExpression).toBe(undefined)
-      expect(update.UpdateExpression).toBe('SET noRequiredNoDefault=:_0')
+      expect(update.UpdateExpression).toBe('SET #noRequiredNoDefault=:_0')
       const condition = data.TransactItems[1].ConditionCheck
-      expect(condition.ConditionExpression).toBe('noRequiredNoDefault=:_1')
+      expect(condition.ConditionExpression).toBe('#noRequiredNoDefault=:_1')
       throw new Error(msg)
     })
     batcher.documentClient.transactWrite = mock
@@ -903,14 +903,17 @@ class WriteBatcherTest extends BaseTest {
   }
 
   async testReservedAttributeName () {
-    // TODO: this should work, but we need to use ExpressionAttributeNames
-    class BadAttrName extends db.Model {
-      static FIELDS = { items: S.obj() }
+    // AWS reserves a lot of names like the ones used as field names here; we
+    // should be able to use them anyway (thanks to ExpressionAttributeNames)
+    class ReservedAttrName extends db.Model {
+      static FIELDS = { items: S.obj(), count: S.int, token: S.str }
     }
-    await BadAttrName.createUnittestResource()
-    await expect(db.Transaction.run(tx => {
-      tx.create(BadAttrName, { id: uuidv4(), items: {} })
-    })).rejects.toThrow('Attribute name is a reserved keyword')
+    await ReservedAttrName.createUnittestResource()
+    await db.Transaction.run(tx => {
+      tx.create(ReservedAttrName, {
+        id: uuidv4(), items: {}, count: 0, token: 'x'
+      })
+    })
   }
 
   async testExceptionParser () {
@@ -1169,7 +1172,7 @@ class OptionalFieldConditionTest extends BaseTest {
       }
       const field = item.getField('n')
       const [condition, vals] = field.__conditionExpression(':_1')
-      expect(condition).toBe('attribute_not_exists(n)')
+      expect(condition).toBe('attribute_not_exists(#n)')
       expect(vals).toEqual({})
     })
   }
