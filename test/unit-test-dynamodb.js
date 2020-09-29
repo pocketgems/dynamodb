@@ -699,9 +699,10 @@ class DBReadmeTest extends BaseTest {
           // less scalable than "increment quantity by 1".
           // x.quantity += 1
         }
-        const [cond, vals] = x.getField('quantity').__conditionExpression(':_1')
+        const quantityField = x.getField('quantity')
+        const [cond, vals] = quantityField.__conditionExpression(':_1')
         expect(vals).toEqual({ ':_1': origValue })
-        expect(cond).toBe('#quantity=:_1')
+        expect(cond).toBe(quantityField.__awsName + '=:_1')
       })
       await db.Transaction.run(async tx => {
         const order = await tx.get(Order, id)

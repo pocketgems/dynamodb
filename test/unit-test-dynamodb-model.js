@@ -386,8 +386,9 @@ class WriteTest extends BaseTest {
     await txGet(BasicModel, this.modelName, model => {
       model.noRequiredNoDefault += 1
       const params = model.__updateParams()
+      const awsName = model.getField('noRequiredNoDefault').__awsName
       expect(params[CONDITION_EXPRESSION_STR]).toContain(
-        'noRequiredNoDefault=:_')
+        awsName + '=:_')
       expect(params.ExpressionAttributeValues).toHaveProperty(
         ':_0')
     })
@@ -440,7 +441,7 @@ class WriteTest extends BaseTest {
       expect(model).toHaveProperty(propName)
       expect(model.__putParams().Item).not.toHaveProperty(propName)
       expect(model.__updateParams()[UPDATE_EXPRESSION_STR])
-        .toContain('REMOVE #' + propName)
+        .toContain('REMOVE ' + model.getField(propName).__awsName)
     })
 
     // Read and check again
@@ -513,8 +514,9 @@ class ConditionCheckTest extends BaseTest {
   async testReadonlyModel () {
     const m1 = await txGet(BasicModel, this.modelName)
     m1.noRequiredNoDefault // eslint-disable-line no-unused-expressions
+    const awsName = m1.getField('noRequiredNoDefault').__awsName
     expect(m1.__conditionCheckParams()).toHaveProperty('ConditionExpression',
-      'attribute_not_exists(#noRequiredNoDefault)')
+      `attribute_not_exists(${awsName})`)
   }
 }
 
@@ -890,9 +892,10 @@ class WriteBatcherTest extends BaseTest {
       // we never read the old value on model1, so our update should NOT be
       // conditioned on the old value
       expect(update.ConditionExpression).toBe(undefined)
-      expect(update.UpdateExpression).toBe('SET #noRequiredNoDefault=:_0')
+      const awsName = model1.getField('noRequiredNoDefault').__awsName
+      expect(update.UpdateExpression).toBe(`SET ${awsName}=:_0`)
       const condition = data.TransactItems[1].ConditionCheck
-      expect(condition.ConditionExpression).toBe('#noRequiredNoDefault=:_1')
+      expect(condition.ConditionExpression).toBe(`${awsName}=:_1`)
       throw new Error(msg)
     })
     batcher.documentClient.transactWrite = mock
@@ -1172,7 +1175,7 @@ class OptionalFieldConditionTest extends BaseTest {
       }
       const field = item.getField('n')
       const [condition, vals] = field.__conditionExpression(':_1')
-      expect(condition).toBe('attribute_not_exists(#n)')
+      expect(condition).toBe(`attribute_not_exists(${field.__awsName})`)
       expect(vals).toEqual({})
     })
   }

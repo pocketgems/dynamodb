@@ -223,7 +223,7 @@ class __Field {
    *   true, then the field was present)
    * @param {boolean} isForUpdate whether this field is part of an update
    */
-  constructor (name, opts, val, valIsFromDB, valSpecified, isForUpdate) {
+  constructor (idx, name, opts, val, valIsFromDB, valSpecified, isForUpdate) {
     for (const [key, value] of Object.entries(opts)) {
       Object.defineProperty(this, key, { value, writable: false })
     }
@@ -234,7 +234,8 @@ class __Field {
      * @instance
      * @member {String} name The name of the owning property.
      */
-    this.name = name // Will be set after params for model are setup
+    this.__idx = idx
+    this.name = name
     this.__value = undefined
     this.__readInitialValue = false // If get is called
     this.__written = false // If set is called
@@ -288,6 +289,16 @@ class __Field {
   }
 
   /**
+   * Name used in AWS expressions.
+   *
+   * This name is short for performance reasons, and is used with
+   * ExpressionAttributeNames to avoid collisions with reserved AWS names.
+   */
+  get __awsName () {
+    return `#${this.__idx}`
+  }
+
+  /**
    * Generates a [SET, AttributeValues, REMOVE] tuple.
    *
    * @access package
@@ -302,7 +313,7 @@ class __Field {
         return [undefined, {}, true]
       } else {
         return [
-          `#${this.name}=${exprKey}`,
+          `${this.__awsName}=${exprKey}`,
           { [exprKey]: deepcopy(this.__value) },
           false
         ]
@@ -337,12 +348,12 @@ class __Field {
     }
     if (this.__initialValue === undefined) {
       return [
-        `attribute_not_exists(#${this.name})`,
+        `attribute_not_exists(${this.__awsName})`,
         {}
       ]
     }
     return [
-      `#${this.name}=${exprKey}`,
+      `${this.__awsName}=${exprKey}`,
       { [exprKey]: this.__initialValue }
     ]
   }
@@ -527,7 +538,7 @@ class NumberField extends __Field {
     // if we're locking, there's no point in doing an increment
     if (this.canUpdateWithIncrement) {
       return [
-        `#${this.name}=#${this.name}+${exprKey}`,
+        `${this.__awsName}=${this.__awsName}+${exprKey}`,
         { [exprKey]: this.__diff },
         false
       ]
@@ -691,28 +702,29 @@ class Model {
     }
 
     // add user-defined fields from FIELDS & key components from KEY & SORT_KEY
-    for (const [name, opts] of Object.entries(this.constructor.__VIS_ATTRS)) {
-      this.__addField(name, opts, vals)
-    }
+    let fieldIdx = 0
     const _idFieldOpts = __Field.__validateFieldOptions(
       this.constructor.name, 'HASH', '_id', S.str.min(1))
-    this.__addField('_id', _idFieldOpts, vals)
+    this.__addField(fieldIdx++, '_id', _idFieldOpts, vals)
     if (this.constructor.__hasSortKey()) {
       const _skFieldOpts = __Field.__validateFieldOptions(
         this.constructor.name, 'RANGE', '_sk', S.str.min(1))
-      this.__addField('_sk', _skFieldOpts, vals)
+      this.__addField(fieldIdx++, '_sk', _skFieldOpts, vals)
+    }
+    for (const [name, opts] of Object.entries(this.constructor.__VIS_ATTRS)) {
+      this.__addField(fieldIdx++, name, opts, vals)
     }
     Object.seal(this)
   }
 
-  __addField (name, opts, vals) {
+  __addField (idx, name, opts, vals) {
     const val = vals[name]
     const valSpecified = Object.hasOwnProperty.call(vals, name)
     const Cls = schemaTypeToFieldClassMap[opts.schema.type]
     // can't force validation of undefined values for blind updates because
     //   they are permitted to omit fields
     const field = new Cls(
-      name, opts, val, !this.isNew, valSpecified, !!this.__src.isUpdate)
+      idx, name, opts, val, !this.isNew, valSpecified, !!this.__src.isUpdate)
     Object.seal(field)
     this[name] = field
     if (!opts.keyType || name === '_id' || name === '_sk') {
@@ -1029,6 +1041,7 @@ class Model {
       }
     })
 
+    const idField = this.__db_attrs._id
     let conditionExpr
     const exprAttrNames = {}
     const isCreateOrPut = this.__src.isCreateOrPut
@@ -1043,18 +1056,18 @@ class Model {
             (!isCreateOrPut || !condition.startsWith('attribute_not_exists'))) {
             conditions.push(condition)
             Object.assign(exprValues, vals)
-            exprAttrNames['#' + field.name] = field.name
+            exprAttrNames[field.__awsName] = field.name
           }
         }
         conditionExpr = conditions.join(' AND ')
 
         if (conditionExpr.length !== 0) {
-          conditionExpr = `attribute_not_exists(#_id) OR (${conditionExpr})`
-          exprAttrNames['#_id'] = '_id'
+          conditionExpr = `attribute_not_exists(${idField.__awsName}) OR (${conditionExpr})`
+          exprAttrNames[idField.__awsName] = idField.name
         }
       } else {
-        conditionExpr = 'attribute_not_exists(#_id)'
-        exprAttrNames['#_id'] = '_id'
+        conditionExpr = `attribute_not_exists(${idField.__awsName})`
+        exprAttrNames[idField.__awsName] = idField.name
       }
     } else {
       const conditions = []
@@ -1064,7 +1077,7 @@ class Model {
         if (condition) {
           conditions.push(condition)
           Object.assign(exprValues, vals)
-          exprAttrNames['#' + field.name] = field.name
+          exprAttrNames[field.__awsName] = field.name
         }
       }
       conditionExpr = conditions.join(' AND ')
@@ -1143,23 +1156,24 @@ class Model {
         Object.assign(exprValues, vals)
       }
       if (remove) {
-        removes.push('#' + field.name)
+        removes.push(field.__awsName)
       }
       if (field.accessed) {
         accessedFields.push(field)
       }
       if (set || remove) {
-        exprAttrNames['#' + field.name] = field.name
+        exprAttrNames[field.__awsName] = field.name
       }
     })
 
+    const idField = this.__db_attrs._id
     if (this.isNew) {
-      conditions.push('attribute_not_exists(#_id)')
-      exprAttrNames['#_id'] = '_id'
+      conditions.push(`attribute_not_exists(${idField.__awsName})`)
+      exprAttrNames[idField.__awsName] = idField.name
     } else {
       if (isUpdate) {
-        conditions.push('attribute_exists(#_id)')
-        exprAttrNames['#_id'] = '_id'
+        conditions.push(`attribute_exists(${idField.__awsName})`)
+        exprAttrNames[idField.__awsName] = idField.name
       }
 
       for (const field of accessedFields) {
@@ -1175,7 +1189,7 @@ class Model {
           // so ignore it.
           conditions.push(condition)
           Object.assign(exprValues, vals)
-          exprAttrNames['#' + field.name] = field.name
+          exprAttrNames[field.__awsName] = field.name
         }
       }
     }
@@ -1455,8 +1469,8 @@ class NonExistentItem {
     return {
       TableName: this.key.Cls.fullTableName,
       Key: this.key.encodedKeys,
-      ConditionExpression: 'attribute_not_exists(#_id)',
-      ExpressionAttributeNames: { '#_id': '_id' }
+      ConditionExpression: 'attribute_not_exists(#0)',
+      ExpressionAttributeNames: { '#0': '_id' }
     }
   }
 
