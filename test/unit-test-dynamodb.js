@@ -426,30 +426,30 @@ class DBReadmeTest extends BaseTest {
 
   async testGuestbook () {
     class Guestbook extends db.Model {
-      static FIELDS = { signers: S.arr(S.str) }
+      static FIELDS = { names: S.arr(S.str) }
     }
     await Guestbook.createUnittestResource()
     const id = uuidv4()
     await db.Transaction.run(tx => {
-      tx.create(Guestbook, { id, signers: [] })
+      tx.create(Guestbook, { id, names: [] })
     })
     async function addName (name) {
       return db.Transaction.run(async tx => {
         const gb = await tx.get(Guestbook, id)
-        gb.signers.push(name)
+        gb.names.push(name)
         return gb
       })
     }
     let [gb1, gb2] = await Promise.all([addName('Alice'), addName('Bob')])
-    if (gb2.signers.length === 1) {
+    if (gb2.names.length === 1) {
       // store first one to complete in gb1 to simplify code below
       [gb1, gb2] = [gb2, gb1]
     }
-    expect(gb1.signers.length + gb2.signers.length).toBe(3)
-    expect(gb1.signers.length).toBe(1)
-    expect(['Alice', 'Bob']).toContain(gb1.signers[0])
-    gb2.signers.sort()
-    expect(gb2.signers).toEqual(['Alice', 'Bob'])
+    expect(gb1.names.length + gb2.names.length).toBe(3)
+    expect(gb1.names.length).toBe(1)
+    expect(['Alice', 'Bob']).toContain(gb1.names[0])
+    gb2.names.sort()
+    expect(gb2.names).toEqual(['Alice', 'Bob'])
   }
 
   async testTxRetries () {
@@ -808,7 +808,7 @@ class DBReadmeTest extends BaseTest {
 
   async testIncrementBy () {
     class WebsiteHitCounter extends db.Model {
-      static FIELDS = { cnt: S.int.min(0) }
+      static FIELDS = { count: S.int.min(0) }
     }
     await WebsiteHitCounter.createUnittestResource()
 
@@ -816,35 +816,36 @@ class DBReadmeTest extends BaseTest {
       return db.Transaction.run(async tx => {
         const counter = await tx.get(WebsiteHitCounter, id)
         // here we read and write the data, so the library will generate an
-        // update like "if cnt was N then set cnt to N + 1"
-        counter.cnt += 1
-        expect(counter.getField('cnt').canUpdateWithoutCondition).toBe(false)
+        // update like "if count was N then set count to N + 1"
+        counter.count += 1
+        expect(counter.getField('count').canUpdateWithoutCondition).toBe(false)
       })
     }
 
     async function quicklyIncrement (id) {
       return db.Transaction.run(async tx => {
         const counter = await tx.get(WebsiteHitCounter, id)
-        // since we only increment the number and never read it, the library will
-        // generate an update like "increment quantity by 1" which will succeed no
-        // matter what the original value was
-        counter.getField('cnt').incrementBy(1)
-        expect(counter.getField('cnt').canUpdateWithoutCondition).toBe(true)
+        // since we only increment the number and never read it, the library
+        // will generate an update like "increment quantity by 1" which will
+        // succeed no matter what the original value was
+        counter.getField('count').incrementBy(1)
+        expect(counter.getField('count').canUpdateWithoutCondition).toBe(true)
       })
     }
 
     async function bothAreJustAsFast (id) {
       return db.Transaction.run(async tx => {
         const counter = await tx.get(WebsiteHitCounter, id)
-        if (counter.cnt < 100) { // stop counting after reaching 100
+        if (counter.count < 100) { // stop counting after reaching 100
           // this is preferred here b/c it is simpler and just as fast in this case
-          // counter.cnt += 1
+          // counter.count += 1
 
           // isn't any faster because we have to generate the condition
-          // expression due to the above if condition which read the cnt var
-          counter.getField('cnt').incrementBy(1)
+          // expression due to the above if condition which read the count var
+          counter.getField('count').incrementBy(1)
 
-          expect(counter.getField('cnt').canUpdateWithoutCondition).toBe(false)
+          expect(counter.getField('count').canUpdateWithoutCondition).toBe(
+            false)
         }
       })
     }
@@ -852,13 +853,13 @@ class DBReadmeTest extends BaseTest {
     async function checkVal (id, expVal) {
       await db.Transaction.run(async tx => {
         const counter = await tx.get(WebsiteHitCounter, id)
-        expect(counter.cnt).toBe(expVal)
+        expect(counter.count).toBe(expVal)
       })
     }
 
     const id = uuidv4()
     await db.Transaction.run(tx => tx.create(
-      WebsiteHitCounter, { id, cnt: 0 }))
+      WebsiteHitCounter, { id, count: 0 }))
     await slowlyIncrement(id)
     await checkVal(id, 1)
     await slowlyIncrement(id)

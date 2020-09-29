@@ -669,13 +669,13 @@ async function bothAreJustAsFast(id) {
   const counter = await tx.get(WebsiteHitCounter, id)
   if (counter.count < 100) { // stop counting after reaching 100
     // this is preferred here b/c it is simpler and just as fast in this case
-    // counter.cnt += 1
+    // counter.count += 1
 
     // isn't any faster because we have to generate the condition
-    // expression due to the above if condition which read the cnt var
-    counter.getField('cnt').incrementBy(1)
+    // expression due to the above if condition which read the count var
+    counter.getField('count').incrementBy(1)
 
-    expect(counter.getField('cnt').canUpdateWithoutCondition).toBe(false)
+    expect(counter.getField('count').canUpdateWithoutCondition).toBe(false)
   }
 }
 ```
