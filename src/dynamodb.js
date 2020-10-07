@@ -69,29 +69,34 @@ class TransactionFailedError extends Error {
   }
 }
 
-/**
- * Thrown when a model is to be created, but DB already has an item with the
- * same key.
- */
-class ModelAlreadyExistsError extends Error {
-  constructor (_id, _sk) {
+/** Thrown when there's some error with a particular model. */
+class GenericModelError extends Error {
+  constructor (msg, _id, _sk) {
     const skStr = (_sk !== undefined) ? ` _sk=${_sk}` : ''
-    super(`Tried to recreate an existing model: _id=${_id}${skStr}`)
+    super(`${msg}: _id=${_id}${skStr}`)
     this.name = this.constructor.name
     this.retryable = false
   }
 }
 
 /**
+ * Thrown when a model is to be created, but DB already has an item with the
+ * same key.
+ */
+class ModelAlreadyExistsError extends GenericModelError {
+  constructor (_id, _sk) {
+    super('Tried to recreate an existing model', _id, _sk)
+  }
+}
+
+/**
  * Thrown when a model is to be updated, but condition check failed.
  */
-class InvalidModelUpdateError extends Error {
+class InvalidModelUpdateError extends GenericModelError {
   constructor (_id, _sk) {
-    const skStr = (_sk !== undefined) ? ` _sk=${_sk}` : ''
-    super(`Tried to update model _id=${_id}${skStr} ` +
-      'with outdated / invalid conditions')
-    this.name = this.constructor.name
-    this.retryable = false
+    super('Tried to update model with outdated / invalid conditions', _id, _sk)
+  }
+}
   }
 }
 
