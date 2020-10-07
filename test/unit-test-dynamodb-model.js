@@ -899,7 +899,7 @@ class WriteBatcherTest extends BaseTest {
       throw new Error(msg)
     })
     batcher.documentClient.transactWrite = mock
-    await expect(batcher.commit()).rejects.toThrow(msg)
+    await expect(batcher.commit(true)).rejects.toThrow(msg)
     expect(mock).toHaveBeenCalledTimes(1)
 
     batcher.documentClient.transactWrite = originalFunc

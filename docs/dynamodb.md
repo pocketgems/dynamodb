@@ -12,6 +12,7 @@ This library is used to interact with the DynamoDB NoSQL database. It provides h
     - [ACID Properties](#acid-properties)
     - [Automatic Optimistic Locking (AOL)](#automatic-optimistic-locking-aol)
     - [Retries](#retries)
+    - [Read-Only](#read-only)
     - [Warning: Race Conditions](#warning-race-conditions)
     - [Warning: Side Effects](#warning-side-effects)
     - [Per-request transaction](#per-request-transaction)
@@ -372,6 +373,19 @@ await db.Transaction.run(retryOptions, async tx => {
 // t=700ms, retry 3 (backed off again, this time for 400ms)
 // t=1200ms, retry 4 (backed off for 500ms this time; was capped by maxBackoff)
 // fail
+```
+
+
+### Read-Only
+You can ensure a transaction does not make any database changes by setting the
+`readOnly` option to true, or calling `tx.makeReadOnly()`:
+```javascript
+const readOnlyOption = { readOnly: true }
+await db.Transaction.run(readOnlyOption, async tx => { /* ... */ })
+await db.Transaction.run(async tx => {
+  tx.makeReadOnly()
+  // ...
+})
 ```
 
 

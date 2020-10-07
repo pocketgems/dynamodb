@@ -97,6 +97,13 @@ class InvalidModelUpdateError extends GenericModelError {
     super('Tried to update model with outdated / invalid conditions', _id, _sk)
   }
 }
+
+/**
+ * Thrown when a tx tries to write when it was marked read-only.
+ */
+class WriteAttemptedInReadOnlyTxError extends Error {
+  constructor (_id, _sk) {
+    super('Tried to write model in a read-only transaction', _id, _sk)
   }
 }
 
@@ -1620,7 +1627,7 @@ class __WriteBatcher {
    *
    * @returns {Boolean} whether any model is written to DB.
    */
-  async commit () {
+  async commit (expectWrites) {
     assert.ok(!this.resolved, 'Already wrote models.')
     this.resolved = true
 
@@ -1632,6 +1639,11 @@ class __WriteBatcher {
 
     if (!this.__toWrite.length) {
       return false
+    }
+    if (!expectWrites) {
+      const x = this.__toWrite[0]
+      const key = x.Update ? x.Update.Key : x.Put.Item
+      throw new WriteAttemptedInReadOnlyTxError(key._id, key._sk)
     }
 
     if (this.__allModels.length === 1 &&
@@ -1751,6 +1763,7 @@ class Transaction {
   /**
    * Options for running a transaction.
    * @typedef {Object} TransactionOptions
+   * @property {Boolean} [readOnly=false] whether writes are allowed
    * @property {Number} [retries=3] The number of times to retry after the
    *   initial attempt fails.
    * @property {Number} [initialBackoff=500] In milliseconds, delay
@@ -1764,6 +1777,7 @@ class Transaction {
    */
   get defaultOptions () {
     return {
+      readOnly: false,
       retries: 3,
       initialBackoff: 500,
       maxBackoff: 10000
@@ -2132,6 +2146,11 @@ class Transaction {
     return false
   }
 
+  /** Marks a transaction as read-only. */
+  makeReadOnly () {
+    this.options.readOnly = true
+  }
+
   /**
    * Runs a closure in transaction.
    * @param {Function} func the closure to run
@@ -2148,7 +2167,7 @@ class Transaction {
       try {
         this.__reset()
         const ret = await func(this)
-        await this.__writeBatcher.commit()
+        await this.__writeBatcher.commit(!this.options.readOnly)
         return ret
       } catch (err) {
         // make sure EVERY error is retryable; allErrors is present if err
@@ -2314,7 +2333,8 @@ function setup (config) {
     InvalidOptionsError,
     InvalidParameterError,
     ModelAlreadyExistsError,
-    TransactionFailedError
+    TransactionFailedError,
+    WriteAttemptedInReadOnlyTxError
   }
 
   const toExport = Object.assign({}, exportAsClass)

@@ -872,6 +872,21 @@ class TransactionWriteTest extends QuickTransactionTest {
   }
 }
 
+class TransactionReadOnlyTest extends QuickTransactionTest {
+  async testReadOnlyOption () {
+    await expect(db.Transaction.run({ readOnly: true }, async tx => {
+      tx.create(TransactionModel, { id: uuidv4() })
+    })).rejects.toThrow('read-only')
+  }
+
+  async testMakeReadOnlyDuringTx () {
+    await expect(db.Transaction.run(async tx => {
+      tx.makeReadOnly()
+      tx.update(TransactionModel, { id: uuidv4() }, { field1: 1 })
+    })).rejects.toThrow('read-only')
+  }
+}
+
 class TransactionRetryTest extends QuickTransactionTest {
   async expectRetries (err, maxTries, expectedRuns) {
     let cnt = 0
@@ -1012,6 +1027,7 @@ runTests(
   TransactionEdgeCaseTest,
   TransactionGetTest,
   TransactionWriteTest,
+  TransactionReadOnlyTest,
   TransactionRetryTest,
   TransactionBackoffTest,
   TransactionConditionCheckTest
