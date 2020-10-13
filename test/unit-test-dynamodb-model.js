@@ -941,6 +941,8 @@ class WriteBatcherTest extends BaseTest {
 
     const batcher = new db.__private.__WriteBatcher()
     batcher.track({
+      __fullTableName: 'sharedlibTestModel',
+      tableName: 'TestModel',
       _id: '123',
       __src: itemSourceCreate
     })
@@ -964,7 +966,12 @@ class WriteBatcherTest extends BaseTest {
     })
     const request = {
       params: {
-        TransactItems: [{ Put: { Item: item } }]
+        TransactItems: [{
+          Put: {
+            Item: item,
+            TableName: 'sharedlibTestModel'
+          }
+        }]
       }
     }
     response.error = undefined
@@ -975,7 +982,10 @@ class WriteBatcherTest extends BaseTest {
     batcher.__allModels[0]._sk = '456'
     request.params.TransactItems = [
       {
-        Update: { Key: { _id: { S: '123' }, _sk: { S: '456' } } }
+        Update: {
+          Key: { _id: { S: '123' }, _sk: { S: '456' } },
+          TableName: 'sharedlibTestModel'
+        }
       }
     ]
     response.error = undefined
