@@ -705,7 +705,7 @@ class Model {
     // field (the optional sort key).
     this.__db_attrs = {}
     // __non_db_attrs has a __Field subclass object for each key component
-    this.__nondb_attrs = {}
+    this.__non_db_attrs = {}
 
     // make sure val is populated with both the encoded keys (_id and _sk) as
     // well as each key components (i.e., the keys in KEY and SORT_KEYS)
@@ -745,7 +745,7 @@ class Model {
       // they are otherwise ignored!
       this.__db_attrs[name] = field
     } else {
-      this.__nondb_attrs[name] = field
+      this.__non_db_attrs[name] = field
     }
     Object.defineProperty(this, name, {
       get: (...args) => {
@@ -925,7 +925,7 @@ class Model {
    */
   getField (name) {
     assert.ok(!name.startsWith('_'), 'may not access internal computed fields')
-    return this.__db_attrs[name] || this.__nondb_attrs[name]
+    return this.__db_attrs[name] || this.__non_db_attrs[name]
   }
 
   /**
@@ -1867,10 +1867,10 @@ class Transaction {
     const data = await this.documentClient.transactGet({
       TransactItems: txItems
     }).promise()
-    const resps = data.Responses
+    const responses = data.Responses
     const models = []
     for (let idx = 0; idx < keys.length; idx++) {
-      const data = resps[idx]
+      const data = responses[idx]
       if ((!params || !params.createIfMissing) && !data.Item) {
         models[idx] = undefined
         continue
@@ -1927,8 +1927,8 @@ class Transaction {
       }).promise()
 
       // Merge results
-      const resps = data.Responses
-      for (const [modelClsName, items] of Object.entries(resps)) {
+      const responses = data.Responses
+      for (const [modelClsName, items] of Object.entries(responses)) {
         const Cls = modelClsLookup[modelClsName]
         for (const item of items) {
           unorderedModels.push(new Cls(ITEM_SOURCE.GET, false, item))
@@ -2204,7 +2204,7 @@ class Transaction {
             // if there were multiple errors, combine it into one error which
             // summarizes all of the failures
             throw new TransactionFailedError(
-              ['Multiple Unretryable Errors: ', ...errorMessages].join('\n'),
+              ['Multiple Non-retryable Errors: ', ...errorMessages].join('\n'),
               err)
           }
         } else {

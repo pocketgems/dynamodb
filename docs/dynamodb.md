@@ -30,7 +30,7 @@ This library is used to interact with the DynamoDB NoSQL database. It provides h
     - [incrementBy()](#incrementby)
 - [Niche Concepts](#niche-concepts)
   - [Key Encoding](#key-encoding)
-  - [Nested Transactions aren't Nested](#nested-transactions-arent-nested)
+  - [Nested Transactions are NOT Nested](#nested-transactions-are-not-nested)
   - [Unsupported DynamoDB Features](#unsupported-dynamodb-features)
   - [Table Creation & Persistence](#table-creation--persistence)
   - [Sort Keys](#sort-keys)
@@ -487,7 +487,7 @@ RaceResult.key({ raceID: 1, runnerName: 'Dave' })
 
 For models which have only a single key field, you _may_ omit the field name:
 ```javascript
-Order.key(uuivd4())
+Order.key(uuid4())
 ```
 
 The `db.Key` object produced by this `key()` method is used as the first
@@ -729,13 +729,13 @@ class StringKeyWithNullBytes extends db.Model {
 }
 tx.create(StringKeyWithNullBytes, {
   id: {
-    raw: 'I can contain \0, no pr\0blem!'
+    raw: 'I can contain \0, no pr\0bl\0em!'
   }
 })
 ```
 
 
-## Nested Transactions aren't Nested
+## Nested Transactions are NOT Nested
 Nested transactions like this should be avoided:
 ```javascript
 await Transaction.run(async outerTx => {
@@ -805,7 +805,7 @@ class CustomerData extends db.Model {
   static KEY = { store: S.str }
   static SORT_KEY = { customer: S.str }
 }
-tx.create(CustomerData, { store: 'Wallymart', customer: uuidv4() })
+tx.create(CustomerData, { store: 'Walmart', customer: uuidv4() })
 ```
 
 In this case, every customer for a store would be on the same database node.
@@ -910,7 +910,7 @@ Our `Transaction` class, combines AOL and DynamoDB's transactWrite with the foll
 * TransactWrite request is constructed using the following rules:
     * For each readonly items:
         * Append ConditionExpressions generated using AOL
-    * For each readwrite items:
+    * For each read-write items:
         * Append UpdateExpression generated using AOL.
         * Append ConditionExpressions generated using AOL
 * Transaction commits when the transaction context / scope is exited.

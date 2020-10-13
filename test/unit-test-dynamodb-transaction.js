@@ -273,7 +273,7 @@ class TransactionGetTest extends QuickTransactionTest {
     expect(m4.id).toBe(newName)
   }
 
-  testTrasactGet () {
+  testTransactGet () {
     return this._testMultipleGet(false)
   }
 
@@ -433,7 +433,7 @@ class TransactionWriteTest extends QuickTransactionTest {
       await db.Transaction.run(createBoth)
       assert.fail('should not get here')
     } catch (err) {
-      expect(err.message).toMatch(/^Multiple Unretryable Errors:/)
+      expect(err.message).toMatch(/^Multiple Non-retryable Errors:/)
       const errPrefix =
         'Tried to recreate an existing model: sharedlibTransactionModel _id='
       expect(err.message).toContain(errPrefix + id1)
@@ -607,7 +607,7 @@ class TransactionWriteTest extends QuickTransactionTest {
   }
 
   async testUpdateItemNonExisting () {
-    const id = 'nonexist' + uuidv4()
+    const id = 'nonexistent' + uuidv4()
     let fut = db.Transaction.run(async tx => {
       tx.update(TransactionModel,
         { id }, { field1: 2 })
@@ -644,7 +644,7 @@ class TransactionWriteTest extends QuickTransactionTest {
   }
 
   async testUpdateNoReturn () {
-    // UpdateItem should not return the model for futher modifications
+    // UpdateItem should not return the model for further modifications
     const fut = db.Transaction.run(async tx => {
       const ret = tx.update(TransactionModel,
         { id: this.modelName, field1: 1 }, { field1: 2 })
@@ -916,7 +916,7 @@ class TransactionRetryTest extends QuickTransactionTest {
     await this.expectRetries(err, 1, 2)
   }
 
-  testIsRetrableErrors () {
+  testIsRetryableErrors () {
     const err = new Error()
     expect(db.Transaction.__isRetryable(err)).toBe(false)
 
