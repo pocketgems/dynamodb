@@ -434,8 +434,10 @@ class TransactionWriteTest extends QuickTransactionTest {
       assert.fail('should not get here')
     } catch (err) {
       expect(err.message).toMatch(/^Multiple Unretryable Errors:/)
-      expect(err.message).toContain('Tried to recreate an existing model: _id=' + id1)
-      expect(err.message).toContain('Tried to recreate an existing model: _id=' + id2)
+      const errPrefix =
+        'Tried to recreate an existing model: sharedlibTransactionModel _id='
+      expect(err.message).toContain(errPrefix + id1)
+      expect(err.message).toContain(errPrefix + id2)
       expect(err.message.split('\n').length).toBe(3)
     }
   }

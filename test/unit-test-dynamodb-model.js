@@ -255,7 +255,8 @@ class NewModelTest extends BaseTest {
     const id = uuidv4()
     await txCreate(SimpleModel, { id })
     await expect(txCreate(SimpleModel, { id }))
-      .rejects.toThrow(`Tried to recreate an existing model: _id=${id}`)
+      .rejects.toThrow(
+        `Tried to recreate an existing model: SimpleModel _id=${id}`)
   }
 
   async testNewModelParamsDeprecated () {
@@ -977,7 +978,7 @@ class WriteBatcherTest extends BaseTest {
     response.error = undefined
     batcher.__extractError(request, response)
     expect(response.error.message)
-      .toBe('Tried to recreate an existing model: _id=123')
+      .toBe('Tried to recreate an existing model: sharedlibTestModel _id=123')
 
     batcher.__allModels[0]._sk = '456'
     request.params.TransactItems = [
@@ -991,7 +992,9 @@ class WriteBatcherTest extends BaseTest {
     response.error = undefined
     batcher.__extractError(request, response)
     expect(response.error.message)
-      .toBe('Tried to recreate an existing model: _id=123 _sk=456')
+      .toBe([
+        'Tried to recreate an existing model: ',
+        'sharedlibTestModel _id=123 _sk=456'].join(''))
 
     response.error = undefined
     batcher.__allModels[0].__src = 'something else'

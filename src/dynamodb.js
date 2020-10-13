@@ -71,9 +71,9 @@ class TransactionFailedError extends Error {
 
 /** Thrown when there's some error with a particular model. */
 class GenericModelError extends Error {
-  constructor (msg, _id, _sk) {
+  constructor (msg, table, _id, _sk) {
     const skStr = (_sk !== undefined) ? ` _sk=${_sk}` : ''
-    super(`${msg}: _id=${_id}${skStr}`)
+    super(`${msg}: ${table} _id=${_id}${skStr}`)
     this.name = this.constructor.name
     this.retryable = false
   }
@@ -84,8 +84,8 @@ class GenericModelError extends Error {
  * same key.
  */
 class ModelAlreadyExistsError extends GenericModelError {
-  constructor (_id, _sk) {
-    super('Tried to recreate an existing model', _id, _sk)
+  constructor (table, _id, _sk) {
+    super('Tried to recreate an existing model', table, _id, _sk)
   }
 }
 
@@ -93,8 +93,9 @@ class ModelAlreadyExistsError extends GenericModelError {
  * Thrown when a model is to be updated, but condition check failed.
  */
 class InvalidModelUpdateError extends GenericModelError {
-  constructor (_id, _sk) {
-    super('Tried to update model with outdated / invalid conditions', _id, _sk)
+  constructor (table, _id, _sk) {
+    super('Tried to update model with outdated / invalid conditions',
+      table, _id, _sk)
   }
 }
 
@@ -102,8 +103,8 @@ class InvalidModelUpdateError extends GenericModelError {
  * Thrown when a tx tries to write when it was marked read-only.
  */
 class WriteAttemptedInReadOnlyTxError extends Error {
-  constructor (_id, _sk) {
-    super('Tried to write model in a read-only transaction', _id, _sk)
+  constructor (table, _id, _sk) {
+    super('Tried to write model in a read-only transaction', table, _id, _sk)
   }
 }
 
@@ -1434,9 +1435,11 @@ class Model {
           const isConditionalCheckFailure =
             error.code === 'ConditionalCheckFailedException'
           if (isConditionalCheckFailure && this.__src.isCreate) {
-            throw new ModelAlreadyExistsError(this._id, this._sk)
+            throw new ModelAlreadyExistsError(
+              this.constructor.tableName, this._id, this._sk)
           } else if (isConditionalCheckFailure && this.__src.isUpdate) {
-            throw new InvalidModelUpdateError(this.id, this._sk)
+            throw new InvalidModelUpdateError(
+              this.constructor.tableName, this._id, this._sk)
           } else {
             throw error
           }
@@ -1642,8 +1645,15 @@ class __WriteBatcher {
     }
     if (!expectWrites) {
       const x = this.__toWrite[0]
-      const key = x.Update ? x.Update.Key : x.Put.Item
-      throw new WriteAttemptedInReadOnlyTxError(key._id, key._sk)
+      let table, key
+      if (x.Update) {
+        table = x.Update.TableName
+        key = x.Update.Key
+      } else {
+        table = x.Put.TableName
+        key = x.Put.Item
+      }
+      throw new WriteAttemptedInReadOnlyTxError(table, key._id, key._sk)
     }
 
     if (this.__allModels.length === 1 &&
@@ -1713,18 +1723,18 @@ class __WriteBatcher {
         const transact = request.params.TransactItems[idx]
         const method = Object.keys(transact)[0]
         let model
-
+        const tableName = transact[method].TableName
         switch (method) {
           case 'Update':
           case 'ConditionCheck':
             model = this.__getModel(
-              transact[method].TableName,
+              tableName,
               transact[method].Key
             )
             break
           case 'Put':
             model = this.__getModel(
-              transact[method].TableName,
+              tableName,
               transact[method].Item
             )
             break
@@ -1736,7 +1746,7 @@ class __WriteBatcher {
           CustomErrorCls = InvalidModelUpdateError
         }
         if (CustomErrorCls) {
-          const err = new CustomErrorCls(model._id, model._sk)
+          const err = new CustomErrorCls(tableName, model._id, model._sk)
           if (response.error) {
             response.error.allErrors.push(err)
           } else {
