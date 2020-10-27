@@ -3,6 +3,7 @@ const assert = require('assert')
 const deepeq = require('deep-equal')
 const deepcopy = require('rfdc')()
 
+const AsyncEmitter = require('./async-emitter')
 const S = require('./schema')
 
 /**
@@ -1829,6 +1830,13 @@ class Transaction {
     POST_COMMIT: 'postCommit'
   }
 
+  addEventHandler (event, handler) {
+    if (!Object.values(this.constructor.EVENTS).includes(event)) {
+      throw new Error(`Unsupported event ${event}`)
+    }
+    this.__eventEmitter.once(event, handler)
+  }
+
   /**
    * Get an item using DynamoDB's getItem API.
    *
@@ -2138,6 +2146,7 @@ class Transaction {
 
   __reset () {
     this.__writeBatcher = new __WriteBatcher()
+    this.__eventEmitter = new AsyncEmitter()
   }
 
   static __isRetryable (err) {
@@ -2178,6 +2187,7 @@ class Transaction {
         this.__reset()
         const ret = await func(this)
         await this.__writeBatcher.commit(!this.options.readOnly)
+        await this.__eventEmitter.emit(this.constructor.EVENTS.POST_COMMIT)
         return ret
       } catch (err) {
         // make sure EVERY error is retryable; allErrors is present if err

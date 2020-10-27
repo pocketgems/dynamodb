@@ -670,6 +670,28 @@ class DBReadmeTest extends BaseTest {
     })
   }
 
+  async testPostCommitHook () {
+    const mock = jest.fn()
+
+    const fut = db.Transaction.run(async tx => {
+      tx.addEventHandler(db.Transaction.EVENTS.POST_COMMIT, mock)
+      throw new Error()
+    })
+    await expect(fut).rejects.toThrow()
+    expect(mock).toHaveBeenCalledTimes(0)
+
+    await db.Transaction.run(async tx => {
+      tx.addEventHandler(db.Transaction.EVENTS.POST_COMMIT, mock)
+    })
+    expect(mock).toHaveBeenCalledTimes(1)
+
+    const fut1 = db.Transaction.run(async tx => {
+      tx.addEventHandler('123', mock)
+    })
+    await expect(fut1).rejects.toThrow('Unsupported event 123')
+    expect(mock).toHaveBeenCalledTimes(1)
+  }
+
   async testCreateAndIncrement () {
     const id = uuidv4()
     await db.Transaction.run(async tx => {
