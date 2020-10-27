@@ -757,7 +757,7 @@ This library does not yet support:
 
 
 ## Table Creation & Persistence
-When the localhost server runs, it generates `config/init-resources.yml` based
+When the localhost server runs, it generates `config/resources.yml` based
 on the models you've defined (make sure to export them from your service!).
 On localhost, the data persists until you shut down the service. If you add new
 models or change a model (particularly its key structure), you will need to restart your service to incorporate the changes.
