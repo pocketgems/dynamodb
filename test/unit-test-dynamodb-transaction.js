@@ -887,6 +887,13 @@ class TransactionReadOnlyTest extends QuickTransactionTest {
       tx.update(TransactionModel, { id: uuidv4() }, { field1: 1 })
     })).rejects.toThrow('read-only')
   }
+
+  async testDelete () {
+    await expect(db.Transaction.run(async tx => {
+      tx.makeReadOnly()
+      tx.delete(TransactionModel.key({ id: uuidv4() }))
+    })).rejects.toThrow('in a read-only transaction')
+  }
 }
 
 class TransactionRetryTest extends QuickTransactionTest {
@@ -1024,13 +1031,162 @@ class TransactionConditionCheckTest extends QuickTransactionTest {
   }
 }
 
+class TransactionDeleteTest extends QuickTransactionTest {
+  async getNoCreate (id) {
+    return db.Transaction.run(tx => {
+      return tx.get(TransactionModel, id)
+    })
+  }
+
+  async testDeleteParams () {
+    const result = await db.Transaction.run(async tx => {
+      const m1 = await tx.get(TransactionModel, uuidv4(),
+        { createIfMissing: true })
+      const m2 = await tx.get(TransactionModel, uuidv4(),
+        { createIfMissing: true })
+      const m3 = TransactionModel.key({ id: uuidv4() })
+
+      tx.delete(m1, m2, m3) // fine
+
+      expect(() => {
+        tx.delete(123)
+      }).toThrow('Invalid parameter args. Must be models and keys.')
+
+      return 1122331
+    })
+    expect(result).toBe(1122331) // Proof that tx ran
+  }
+
+  async testDeleteModel () {
+    const m = await txGet(uuidv4())
+    const key = TransactionModel.key({ id: m.id })
+    const result = await db.Transaction.run(async tx => {
+      const model = await tx.get(key)
+      tx.delete(model)
+      return model
+    })
+    expect(result.id).toBe(m.id)
+    expect(await this.getNoCreate(m.id)).toBeUndefined()
+  }
+
+  async testTxDeleteModel () {
+    const m = await txGet(uuidv4())
+    const key = TransactionModel.key({ id: m.id })
+    const result = await db.Transaction.run(async tx => {
+      // multiple items goes through TransactWrite
+      await tx.get(TransactionModel, uuidv4(), { createIfMissing: true })
+      const model = await tx.get(key)
+      tx.delete(model)
+      return model
+    })
+    expect(result.id).toBe(m.id)
+    expect(await this.getNoCreate(m.id)).toBeUndefined()
+  }
+
+  async testDeleteNonExisting () {
+    // Deleting an item that we don't know if exists should silently pass
+    const data = TransactionModel.data({ id: uuidv4() })
+    await db.Transaction.run(async tx => {
+      tx.delete(data)
+    })
+
+    await db.Transaction.run(async tx => {
+      // creat then delete in the same transaction don't cause conflicts
+      const model = await tx.get(data, { createIfMissing: true })
+      tx.delete(model)
+    })
+
+    await db.Transaction.run(async tx => {
+      // creat then delete in the same transaction don't cause conflicts
+      const model = await tx.create(data.Cls, data.keyComponents)
+      tx.delete(model)
+    })
+  }
+
+  async testDeleteMissing () {
+    // Deleting an item that we DO know exists should fail
+    const key = TransactionModel.key({ id: uuidv4() })
+    await txGet(key.keyComponents.id)
+    let fut = db.Transaction.run({ retries: 0 }, async tx => {
+      const model = await tx.get(key)
+      await db.Transaction.run(async innerTx => {
+        innerTx.delete(key)
+      })
+      tx.delete(model)
+    })
+    await expect(fut).rejects.toThrow(
+      'Tried to delete model with outdated / invalid conditions:')
+
+    await txGet(key.keyComponents.id)
+    fut = db.Transaction.run({ retries: 0 }, async tx => {
+      await tx.get(TransactionModel, uuidv4())
+      const model = await tx.get(key)
+      await db.Transaction.run(async innerTx => {
+        innerTx.delete(key)
+      })
+      tx.delete(model)
+    })
+    await expect(fut).rejects.toThrow(
+      'Tried to delete model with outdated / invalid conditions:')
+  }
+
+  async testMissingRequired () {
+    // Deleting using key should work even when the model has required fields
+    await db.Transaction.run({ retries: 0 }, async tx => {
+      tx.delete(TransactionModelWithRequiredField.key({ id: uuidv4() }))
+    })
+  }
+
+  async testDoubleDeletion () {
+    const id = uuidv4()
+    let fut = db.Transaction.run({ retries: 0 }, async tx => {
+      tx.delete(TransactionModel.key({ id }))
+      tx.delete(TransactionModel.key({ id }))
+    })
+    await expect(fut).rejects.toThrow(
+      'Tried to delete model when it\'s already deleted in the current tx:')
+
+    fut = db.Transaction.run({ retries: 0 }, async tx => {
+      const model = await tx.get(TransactionModel.data({ id }),
+        { createIfMissing: true })
+      tx.delete(model)
+      tx.delete(model)
+    })
+    await expect(fut).rejects.toThrow(
+      'Tried to delete model when it\'s already deleted in the current tx:')
+  }
+
+  async testConditionalDelete () {
+    // If a model's properties is accessed before the model is deleted, the
+    // deletion operation should have it reflected in the condition expr
+    const id = uuidv4()
+    await txGet(id, m => {
+      m.field1 = 123
+    })
+    const fut = db.Transaction.run({ retries: 0 }, async tx => {
+      const model = await tx.get(TransactionModel, id)
+      if (model.field1 === 123) {
+        tx.delete(model)
+      }
+      await db.Transaction.run(async innerTx => {
+        // Modify the field before outer tx commits
+        const model2 = await innerTx.get(TransactionModel, id)
+        model2.field1 = 321
+      })
+    })
+    await expect(fut).rejects.toThrow(
+      'Tried to delete model with outdated / invalid conditions')
+  }
+}
+
 runTests(
   ParameterTest,
+  TransactionBackoffTest,
+  TransactionConditionCheckTest,
+  TransactionDeleteTest,
   TransactionEdgeCaseTest,
   TransactionGetTest,
-  TransactionWriteTest,
   TransactionReadOnlyTest,
   TransactionRetryTest,
-  TransactionBackoffTest,
-  TransactionConditionCheckTest
+  TransactionWriteTest
 )

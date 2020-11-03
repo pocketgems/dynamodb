@@ -64,7 +64,16 @@ function fieldFromFieldOptions (Cls, options) {
   const name = 'fakeTestField'
   options = db.__private.__Field.__validateFieldOptions(
     'fakeTestModel', keyType, name, schema)
-  return new Cls(0, name, options, initVal, valIsFromDB, valSpecified, false)
+  return new Cls({
+    idx: 0,
+    name,
+    opts: options,
+    val: initVal,
+    valIsFromDB,
+    valSpecified,
+    isForUpdate: false,
+    isForDelete: false
+  })
 }
 
 module.exports = db

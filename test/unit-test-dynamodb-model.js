@@ -760,6 +760,11 @@ class JSONModelTest extends BaseTest {
 }
 
 class GetArgsParserTest extends BaseTest {
+  async beforeAll () {
+    await super.beforeAll()
+    await SimpleModel.createUnittestResource()
+  }
+
   async testJustAModel () {
     await expect(db.__private.getWithArgs([SimpleModel], () => {})).rejects
       .toThrow(db.InvalidParameterError)
@@ -1194,18 +1199,199 @@ class OptionalFieldConditionTest extends BaseTest {
   }
 }
 
+class TTLModel extends db.Model {
+  static FIELDS = {
+    expirationTime: S.int,
+    doubleTime: S.double,
+    notTime: S.str.optional(),
+    optionalTime: S.int.optional()
+  }
+
+  static EXPIRE_EPOCH_FIELD = 'expirationTime'
+}
+
+class NoTTLModel extends TTLModel {
+  static EXPIRE_EPOCH_FIELD = undefined
+}
+
+class TTLTest extends BaseTest {
+  async beforeAll () {
+    await super.beforeAll()
+    await TTLModel.createUnittestResource()
+    await NoTTLModel.createUnittestResource()
+  }
+
+  async testTTL () {
+    const id = uuidv4()
+    const currentTime = Math.floor(new Date().getTime() / 1000)
+    await db.Transaction.run(tx => {
+      tx.create(TTLModel, {
+        id,
+        expirationTime: currentTime + 1,
+        doubleTime: 1
+      })
+    })
+
+    await new Promise((resolve, reject) => {
+      setTimeout(resolve, 2000)
+    })
+
+    const model = await db.Transaction.run(tx => {
+      return tx.get(TTLModel, id)
+    })
+    expect(model).toBeUndefined()
+  }
+
+  async testCFResource () {
+    expect(TTLModel.__getResourceDefinition())
+      .toHaveProperty('TimeToLiveSpecification')
+  }
+
+  async testConfigValidation () {
+    const Cls1 = class extends TTLModel {
+      static EXPIRE_EPOCH_FIELD = 'notTime'
+    }
+    expect(() => {
+      Cls1.__getResourceDefinition()
+    }).toThrow('must refer to an integer or double field')
+
+    const Cls2 = class extends TTLModel {
+      static EXPIRE_EPOCH_FIELD = 'optionalTime'
+    }
+    expect(() => {
+      Cls2.__getResourceDefinition()
+    }).toThrow('EXPIRE_EPOCH_FIELD must refer to a required field')
+
+    const Cls3 = class extends TTLModel {
+      static EXPIRE_EPOCH_FIELD = 'doubleTime'
+    }
+    expect(() => {
+      Cls3.__getResourceDefinition()
+    }).not.toThrow()
+
+    const Cls4 = class extends TTLModel {
+      static EXPIRE_EPOCH_FIELD = 'invalid'
+    }
+    expect(() => {
+      Cls4.__getResourceDefinition()
+    }).toThrow('EXPIRE_EPOCH_FIELD must refer to an existing field')
+  }
+
+  async testExpiration () {
+    const currentTime = Math.ceil(new Date().getTime() / 1000)
+    const result = await db.Transaction.run(async tx => {
+      const model = tx.create(TTLModel,
+        { id: uuidv4(), expirationTime: 0, doubleTime: 0 })
+      // No value, no expiration
+      expect(model.__hasExpired).toBe(false)
+
+      // Older then 5 years, no expiration
+      model.expirationTime = 120000000
+      expect(model.__hasExpired).toBe(false)
+
+      // No value, no expiration
+      expect(model.__hasExpired).toBe(false)
+
+      // Expired
+      model.expirationTime = currentTime - 1000
+      expect(model.__hasExpired).toBe(true)
+
+      // Not yet
+      model.expirationTime = currentTime + 1000
+      expect(model.__hasExpired).toBe(false)
+
+      // TTL not enabled, no expiration
+      const model1 = tx.create(NoTTLModel,
+        { id: uuidv4(), expirationTime: 0, doubleTime: 0 })
+      model1.expirationTime = currentTime - 1000
+      expect(model1.__hasExpired).toBe(false)
+      return 1122
+    })
+    expect(result).toBe(1122) // Proof that the tx ran
+  }
+
+  async testExpiredModel () {
+    // Expired model should be hidden
+    const currentTime = Math.ceil(new Date().getTime() / 1000)
+
+    const id = uuidv4()
+    await db.Transaction.run(tx => {
+      tx.create(NoTTLModel, {
+        id,
+        expirationTime: currentTime - 10000,
+        doubleTime: 11223
+      })
+    })
+
+    // Turn on ttl locally now
+    NoTTLModel.EXPIRE_EPOCH_FIELD = 'expirationTime'
+
+    // if not createIfMissing, nothing should be returned
+    let model = await db.Transaction.run(tx => {
+      return tx.get(NoTTLModel, id)
+    })
+    expect(model).toBeUndefined()
+
+    // if createIfMissing, a new model should be returned
+    model = await db.Transaction.run(tx => {
+      return tx.get(NoTTLModel,
+        { id, expirationTime: currentTime + 10000, doubleTime: 111 },
+        { createIfMissing: true })
+    })
+    expect(model.isNew).toBe(true)
+
+    model = await db.Transaction.run(tx => {
+      return tx.get(NoTTLModel, id)
+    })
+    expect(model.doubleTime).toBe(111)
+    expect(model.isNew).toBe(false)
+
+    NoTTLModel.EXPIRE_EPOCH_FIELD = undefined
+  }
+
+  async testOverrideExpiredModel () {
+    // When blind write to a model with TTL enabled, the condition must take
+    // expired but not yet deleted models into account, and don't fail the tx
+    const currentTime = Math.ceil(new Date().getTime() / 1000)
+
+    const id = uuidv4()
+    await db.Transaction.run(tx => {
+      tx.create(NoTTLModel, {
+        id,
+        expirationTime: currentTime - 10000,
+        doubleTime: 11223
+      })
+    })
+    // Turn on ttl locally now
+    NoTTLModel.EXPIRE_EPOCH_FIELD = 'expirationTime'
+
+    await db.Transaction.run(tx => {
+      tx.create(NoTTLModel,
+        { id, expirationTime: currentTime + 1000, doubleTime: 111 })
+    })
+
+    const model = await db.Transaction.run(tx => {
+      return tx.get(NoTTLModel, id)
+    })
+    expect(model.doubleTime).toBe(111)
+
+    NoTTLModel.EXPIRE_EPOCH_FIELD = undefined
+  }
+}
+
 runTests(
   BadModelTest,
+  ConditionCheckTest,
   ErrorTest,
+  GetArgsParserTest,
+  IDSchemaTest,
+  JSONModelTest,
   KeyTest,
+  NewModelTest,
   OptDefaultModelTest,
   OptionalFieldConditionTest,
   SimpleModelTest,
-  JSONModelTest,
-  NewModelTest,
-  WriteTest,
-  ConditionCheckTest,
-  IDSchemaTest,
-  GetArgsParserTest,
-  WriteBatcherTest
+  TTLTest,
+  WriteBatcherTest,
+  WriteTest
 )

@@ -24,6 +24,7 @@ This library is used to interact with the DynamoDB NoSQL database. It provides h
       - [Read Consistency](#read-consistency)
       - [Batch Read](#batch-read)
     - [Write](#write)
+    - [Delete](#delete)
   - [Performance](#performance)
     - [DAX](#dax)
     - [Blind Writes](#blind-writes)
@@ -31,6 +32,7 @@ This library is used to interact with the DynamoDB NoSQL database. It provides h
 - [Niche Concepts](#niche-concepts)
   - [Key Encoding](#key-encoding)
   - [Nested Transactions are NOT Nested](#nested-transactions-are-not-nested)
+  - [Time To Live](#time-to-live)
   - [Unsupported DynamoDB Features](#unsupported-dynamodb-features)
   - [Table Creation & Persistence](#table-creation--persistence)
   - [Sort Keys](#sort-keys)
@@ -600,6 +602,12 @@ To modify data in the database, simply modify fields on an item created by
 `tx.create()` or fetched by `tx.get()`. When the transaction commits, all
 changes will be written to the database automatically.
 
+For improved performance, data can be updated without being read from database first. See details in [blind writes](#blind-writes).
+
+### Delete
+Items can be deleted from the database via `tx.delete()`. The delete method accepts models or keys as parameters. For example, `tx.delete(model1, key1, model2, ...keys, key2)`.
+
+For models that were read from server via `tx.get()`, if the model turns out to be missing on server when the transaction commits, an exception is thrown. Otherwise, deletion on missing items will be treated as noop.
 
 ## Performance
 
@@ -748,6 +756,25 @@ await Transaction.run(async outerTx => {
 The inner transaction, if it commits, will commit first. If the outer
 transaction is retried, the inner transaction _will be run additional times_.
 
+## Time To Live
+DynamoDB supports Time-To-Live (TTL) per item. When the current timestamp reaches an item's TTL, the item is automatically removed from the database without incurring additional costs. This is useful when some data can be safely removed based on how long they have been stored. For example, to remember places I've visited in the past 7 days, I can store each place as a DB item and set the TTL to be 7 days from the current time. To retrieve places I can easily scan all places in the database without filtering data.
+
+A model can have one integer or double field to store an epoch timestamp in seconds as the expiration time. The field is designated via the `EXPIRE_EPOCH_FIELD` property. The field must be non-optional integer or double type.
+
+NOTE: When the timestamp is more than 5 years in the past, the item will not be removed.So to keep an item indefinitely in a TTL enabled table, you may safely set the TTL field to 0.
+
+```javascript <!-- embed:../test/unit-test-dynamodb-model.js:scope:TTLModel -->
+class TTLModel extends db.Model {
+  static FIELDS = {
+    expirationTime: S.int,
+    doubleTime: S.double,
+    notTime: S.str.optional(),
+    optionalTime: S.int.optional()
+  }
+
+  static EXPIRE_EPOCH_FIELD = 'expirationTime'
+}
+```
 
 ## Unsupported DynamoDB Features
 This library does not yet support:

@@ -101,6 +101,38 @@ class InvalidModelUpdateError extends GenericModelError {
 }
 
 /**
+ * Thrown when a model is to be deleted, but condition check failed.
+ */
+class InvalidModelDeletionError extends GenericModelError {
+  constructor (table, _id, _sk) {
+    super('Tried to delete model with outdated / invalid conditions',
+      table, _id, _sk)
+  }
+}
+
+/**
+ * Thrown when a model is being created more than once.
+ */
+class ModelCreatedTwiceError extends GenericModelError {
+  constructor (model) {
+    super('Tried to create model when it\'s already created in the same tx',
+      model.__fullTableName, model._id, model._sk)
+    this.model = model
+  }
+}
+
+/**
+ * Thrown when a model is being deleted more than once.
+ */
+class ModelDeletedTwiceError extends GenericModelError {
+  constructor (model) {
+    super('Tried to delete model when it\'s already deleted in the current tx',
+      model.__fullTableName, model._id, model._sk)
+    this.model = model
+  }
+}
+
+/**
  * Thrown when a tx tries to write when it was marked read-only.
  */
 class WriteAttemptedInReadOnlyTxError extends Error {
@@ -166,7 +198,7 @@ class __Field {
       }
     }
 
-    assert.ok(schema.isTodeaSchema, 'should be Todea schema')
+    assert.ok(schema.isTodeaSchema, 'must be Todea schema')
     const compiledSchema = schema.getValidatorAndJSONSchema(
       `${modelName}.${fieldName}`)
     schema = compiledSchema.jsonSchema
@@ -236,8 +268,18 @@ class __Field {
    * @param {boolean} valSpecified whether val was specified (if this is
    *   true, then the field was present)
    * @param {boolean} isForUpdate whether this field is part of an update
+   * @param {boolean} isForUpdate whether this field is part of an delete
    */
-  constructor (idx, name, opts, val, valIsFromDB, valSpecified, isForUpdate) {
+  constructor ({
+    idx,
+    name,
+    opts,
+    val,
+    valIsFromDB,
+    valSpecified,
+    isForUpdate,
+    isForDelete
+  }) {
     for (const [key, value] of Object.entries(opts)) {
       Object.defineProperty(this, key, { value, writable: false })
     }
@@ -295,7 +337,7 @@ class __Field {
     if (!this.keyType) { // keys are validated elsewhere; don't re-validate
       if (!useDefault) { // default was validated by __validateFieldOptions
         // validate everything except values omitted from an update() call
-        if (valSpecified || !isForUpdate) {
+        if (valSpecified || !(isForUpdate || isForDelete)) {
           this.validate()
         }
       }
@@ -466,8 +508,8 @@ function validateValue (fieldName, opts, val) {
  * @private
  */
 class NumberField extends __Field {
-  constructor (...args) {
-    super(...args)
+  constructor (options) {
+    super(options)
     this.__diff = undefined
     this.__mustUseSet = false
 
@@ -673,7 +715,8 @@ const ITEM_SOURCE = {
   CREATE: { isCreate: true },
   GET: { isGet: true },
   UPDATE: { isUpdate: true },
-  CREATE_OR_PUT: { isCreateOrPut: true }
+  CREATE_OR_PUT: { isCreateOrPut: true },
+  DELETE: { isDelete: true } // Delete by key creates a local model
 }
 const ITEM_SOURCES = new Set(Object.values(ITEM_SOURCE))
 
@@ -699,6 +742,9 @@ class Model {
 
     // track whether this item has been written to the db yet
     this.__written = false
+
+    // track whether this item has been marked for deletion
+    this.__toBeDeleted = src.isDelete
 
     // __db_attrs has a __Field subclass object for each attribute to be
     // written to the database. There is one attribute for each entry in
@@ -737,8 +783,16 @@ class Model {
     const Cls = schemaTypeToFieldClassMap[opts.schema.type]
     // can't force validation of undefined values for blind updates because
     //   they are permitted to omit fields
-    const field = new Cls(
-      idx, name, opts, val, !this.isNew, valSpecified, !!this.__src.isUpdate)
+    const field = new Cls({
+      idx,
+      name,
+      opts,
+      val,
+      valIsFromDB: !this.isNew,
+      valSpecified,
+      isForUpdate: this.__src.isUpdate,
+      isForDelete: this.__src.isDelete
+    })
     Object.seal(field)
     this[name] = field
     if (!opts.keyType || name === '_id' || name === '_sk') {
@@ -837,6 +891,28 @@ class Model {
         }
       }
     }
+
+    if (this.EXPIRE_EPOCH_FIELD) {
+      const attr = this.__VIS_ATTRS[this.EXPIRE_EPOCH_FIELD]
+      if (!attr) {
+        throw new GenericModelError(
+          'EXPIRE_EPOCH_FIELD must refer to an existing field',
+          this.name
+        )
+      }
+      if (!['integer', 'number'].includes(attr.schema.type)) {
+        throw new GenericModelError(
+          'EXPIRE_EPOCH_FIELD must refer to an integer or double field',
+          this.name
+        )
+      }
+      if (attr.optional) {
+        throw new GenericModelError(
+          'EXPIRE_EPOCH_FIELD must refer to a required field',
+          this.name
+        )
+      }
+    }
   }
 
   static __getResourceDefinition () {
@@ -850,11 +926,20 @@ class Model {
       attrs.push({ AttributeName: '_sk', AttributeType: 'S' })
       keys.push({ AttributeName: '_sk', KeyType: 'RANGE' })
     }
-    return {
+
+    const ret = {
       TableName: this.fullTableName,
       AttributeDefinitions: attrs,
       KeySchema: keys
     }
+
+    if (this.EXPIRE_EPOCH_FIELD) {
+      ret.TimeToLiveSpecification = {
+        AttributeName: this.EXPIRE_EPOCH_FIELD,
+        Enabled: true
+      }
+    }
+    return ret
   }
 
   /**
@@ -1055,7 +1140,6 @@ class Model {
       }
     })
 
-    const idField = this.__db_attrs._id
     let conditionExpr
     const exprAttrNames = {}
     const isCreateOrPut = this.__src.isCreateOrPut
@@ -1067,7 +1151,8 @@ class Model {
           const exprKey = `:_${exprCount++}`
           const [condition, vals] = field.__conditionExpression(exprKey)
           if (condition &&
-            (!isCreateOrPut || !condition.startsWith('attribute_not_exists'))) {
+            (!isCreateOrPut ||
+             !condition.startsWith('attribute_not_exists'))) {
             conditions.push(condition)
             Object.assign(exprValues, vals)
             exprAttrNames[field.__awsName] = field.name
@@ -1076,12 +1161,17 @@ class Model {
         conditionExpr = conditions.join(' AND ')
 
         if (conditionExpr.length !== 0) {
-          conditionExpr = `attribute_not_exists(${idField.__awsName}) OR (${conditionExpr})`
-          exprAttrNames[idField.__awsName] = idField.name
+          const [cond, names, vals] = this.__nonexistentModelCondition()
+          conditionExpr = `${cond} OR
+            (${conditionExpr})`
+          Object.assign(exprAttrNames, names)
+          Object.assign(exprValues, vals)
         }
       } else {
-        conditionExpr = `attribute_not_exists(${idField.__awsName})`
-        exprAttrNames[idField.__awsName] = idField.name
+        const [cond, names, vals] = this.__nonexistentModelCondition()
+        conditionExpr = cond
+        Object.assign(exprAttrNames, names)
+        Object.assign(exprValues, vals)
       }
     } else {
       const conditions = []
@@ -1182,8 +1272,10 @@ class Model {
 
     const idField = this.__db_attrs._id
     if (this.isNew) {
-      conditions.push(`attribute_not_exists(${idField.__awsName})`)
-      exprAttrNames[idField.__awsName] = idField.name
+      const [cond, names, vals] = this.__nonexistentModelCondition()
+      conditions.push(cond)
+      Object.assign(exprAttrNames, names)
+      Object.assign(exprValues, vals)
     } else {
       if (isUpdate) {
         conditions.push(`attribute_exists(${idField.__awsName})`)
@@ -1236,6 +1328,41 @@ class Model {
     return ret
   }
 
+  __deleteParams () {
+    const itemKey = {}
+    Object.keys(this.__db_attrs).forEach(key => {
+      const field = this.__db_attrs[key]
+      if (field.keyType !== undefined) {
+        itemKey[field.name] = field.__value
+      }
+    })
+
+    const ret = {
+      TableName: this.__fullTableName,
+      Key: itemKey
+    }
+    if (!this.isNew) {
+      const idField = this.__db_attrs._id
+      const conditions = [
+        `attribute_exists(${idField.__awsName})`
+      ]
+      const attrNames = {
+        [idField.__awsName]: idField.name
+      }
+      const conditionCheckParams = this.__updateParams(false)
+      if (conditionCheckParams.ConditionExpression) {
+        conditions.push(conditionCheckParams.ConditionExpression)
+        Object.assign(attrNames, conditionCheckParams.ExpressionAttributeNames)
+        ret.ExpressionAttributeValues =
+          conditionCheckParams.ExpressionAttributeValues
+      }
+
+      ret.ConditionExpression = conditions.join(' AND ')
+      ret.ExpressionAttributeNames = attrNames
+    }
+    return ret
+  }
+
   /**
    * Indicates if any field was mutated. New models are considered to be
    * mutated as well.
@@ -1243,11 +1370,13 @@ class Model {
    * @type {Boolean}
    */
   __isMutated () {
-    return this.isNew || Object.values(this.__db_attrs).reduce(
-      (result, field) => {
-        return result || field.mutated
-      },
-      false)
+    return this.isNew ||
+      this.__toBeDeleted ||
+      Object.values(this.__db_attrs).reduce(
+        (result, field) => {
+          return result || field.mutated
+        },
+        false)
   }
 
   /**
@@ -1414,6 +1543,21 @@ class Model {
     return this.__splitKeysAndData(vals)
   }
 
+  __markForDeletion () {
+    if (this.__toBeDeleted) {
+      throw new ModelDeletedTwiceError(this)
+    }
+    this.__toBeDeleted = true
+  }
+
+  __writeMethod () {
+    if (this.__toBeDeleted) {
+      return 'delete'
+    }
+    const usePut = this.__src.isCreateOrPut
+    return usePut ? 'put' : 'update'
+  }
+
   /**
    * Writes model to database. Uses DynamoDB update under the hood.
    * @access package
@@ -1422,8 +1566,7 @@ class Model {
     assert.ok(!this.__written, 'May write once')
     this.__written = true
 
-    const usePut = this.__src.isCreateOrPut
-    const method = usePut ? 'put' : 'update'
+    const method = this.__writeMethod()
     const params = this[`__${method}Params`]()
     const retries = 3
     let millisBackOff = 40
@@ -1435,7 +1578,10 @@ class Model {
         if (!error.retryable) {
           const isConditionalCheckFailure =
             error.code === 'ConditionalCheckFailedException'
-          if (isConditionalCheckFailure && this.__src.isCreate) {
+          if (isConditionalCheckFailure && this.__toBeDeleted) {
+            throw new InvalidModelDeletionError(
+              this.constructor.tableName, this._id, this._sk)
+          } else if (isConditionalCheckFailure && this.__src.isCreate) {
             throw new ModelAlreadyExistsError(
               this.constructor.tableName, this._id, this._sk)
           } else if (isConditionalCheckFailure && this.__src.isUpdate) {
@@ -1454,6 +1600,69 @@ class Model {
       await sleep(millisBackOff + offset)
       millisBackOff *= 2
     }
+  }
+
+  /**
+   * Checks if the model has expired due to TTL.
+   *
+   * @return true if TTL is turned on for the model, and there is a expiration
+   *   time set for the current model, and the expiration time is smaller than
+   *   current time.
+   */
+  get __hasExpired () {
+    if (!this.constructor.EXPIRE_EPOCH_FIELD) {
+      return false
+    }
+    const expirationTime = this.getField(this.constructor.EXPIRE_EPOCH_FIELD)
+      .__value
+    if (!expirationTime) {
+      return false
+    }
+    const currentSecond = Math.ceil(new Date().getTime() / 1000)
+    // When TTL is more than 5 years in the past, TTL is disabled
+    // https://docs.amazonaws.cn/en_us/amazondynamodb/latest/developerguide/
+    // time-to-live-ttl-before-you-start.html
+    const lowerBound = currentSecond - 157680000
+    return expirationTime > lowerBound && expirationTime <= currentSecond
+  }
+
+  /**
+   * @return a [ConditionExpression, ExpressionAttributeNames,
+   *   ExpressionAttributeValues] tuple to make sure the model
+   *   does not exist on server.
+   */
+  __nonexistentModelCondition () {
+    const idField = this.__db_attrs._id
+    let condition = `attribute_not_exists(${idField.__awsName})`
+    const attrNames = {
+      [idField.__awsName]: idField.name
+    }
+    let attrValues
+    if (this.constructor.EXPIRE_EPOCH_FIELD) {
+      const expireField = this.getField(this.constructor.EXPIRE_EPOCH_FIELD)
+      const currentSecond = Math.ceil(new Date().getTime() / 1000)
+
+      // When TTL is more than 5 years in the past, TTL is disabled
+      // https://docs.amazonaws.cn/en_us/amazondynamodb/latest/developerguide/
+      // time-to-live-ttl-before-you-start.html
+      const lowerBound = currentSecond - 157680000
+      const awsName = expireField.__awsName
+      condition = `(${condition} OR
+        (attribute_exists(${awsName}) and
+         :_ttlMin <= ${awsName} and
+         ${awsName} <= :_ttlMax))`
+      attrNames[awsName] = expireField.name
+      attrValues = {
+        ':_ttlMin': lowerBound,
+        ':_ttlMax': currentSecond
+      }
+    }
+
+    return [
+      condition,
+      attrNames,
+      attrValues
+    ]
   }
 
   /**
@@ -1482,11 +1691,17 @@ class NonExistentItem {
   }
 
   __conditionCheckParams () {
+    const key = this.key
+    const model = new key.Cls(ITEM_SOURCE.GET, true, key.keyComponents)
+    const [
+      condition, attrNames, attrValues
+    ] = model.__nonexistentModelCondition()
     return {
       TableName: this.key.Cls.fullTableName,
       Key: this.key.encodedKeys,
-      ConditionExpression: 'attribute_not_exists(#0)',
-      ExpressionAttributeNames: { '#0': '_id' }
+      ConditionExpression: condition,
+      ExpressionAttributeNames: attrNames,
+      ExpressionAttributeValues: attrValues
     }
   }
 
@@ -1602,14 +1817,24 @@ class __WriteBatcher {
     }
     this.__toCheck[model] = false
 
-    let action = 'Update'
-    let params = model.__updateParams()
-    if (!Object.prototype.hasOwnProperty.call(
-      params,
-      'UpdateExpression'
-    )) {
-      action = 'Put'
-      params = model.__putParams()
+    let action
+    let params
+
+    if (model.__toBeDeleted) {
+      action = 'Delete'
+      params = model.__deleteParams()
+    } else {
+      action = 'Update'
+      params = model.__updateParams()
+      if (!Object.prototype.hasOwnProperty.call(
+        params,
+        'UpdateExpression'
+      )) {
+        // When a new item with no values other than the keys are written,
+        // we have to use Put, else dynamodb would throw.
+        action = 'Put'
+        params = model.__putParams()
+      }
     }
     this.__toWrite.push({ [action]: params })
   }
@@ -1620,8 +1845,13 @@ class __WriteBatcher {
    * @param {Model} model A model to track.
    */
   track (model) {
-    assert.ok(this.__toCheck[model] === undefined,
-      `Model ${model.toString()} already tracked`)
+    if (this.__toCheck[model] !== undefined) {
+      if (model.__src.isDelete) {
+        throw new ModelDeletedTwiceError(model)
+      } else {
+        throw new ModelCreatedTwiceError(model)
+      }
+    }
     this.__allModels.push(model)
     this.__toCheck[model] = model
   }
@@ -1641,7 +1871,7 @@ class __WriteBatcher {
       }
     }
 
-    if (!this.__toWrite.length) {
+    if (this.__toWrite.length === 0) {
       return false
     }
     if (!expectWrites) {
@@ -1650,9 +1880,12 @@ class __WriteBatcher {
       if (x.Update) {
         table = x.Update.TableName
         key = x.Update.Key
-      } else {
+      } else if (x.Put) {
         table = x.Put.TableName
         key = x.Put.Item
+      } else {
+        table = x.Delete.TableName
+        key = x.Delete.Key
       }
       throw new WriteAttemptedInReadOnlyTxError(table, key._id, key._sk)
     }
@@ -1728,6 +1961,7 @@ class __WriteBatcher {
         switch (method) {
           case 'Update':
           case 'ConditionCheck':
+          case 'Delete':
             model = this.__getModel(
               tableName,
               transact[method].Key
@@ -1741,7 +1975,9 @@ class __WriteBatcher {
             break
         }
         let CustomErrorCls
-        if (model.__src.isCreate) {
+        if (model.__toBeDeleted) {
+          CustomErrorCls = InvalidModelDeletionError
+        } else if (model.__src.isCreate) {
           CustomErrorCls = ModelAlreadyExistsError
         } else if (model.__src.isUpdate) {
           CustomErrorCls = InvalidModelUpdateError
@@ -1852,7 +2088,17 @@ class Transaction {
     }
     const isNew = !data.Item
     const vals = data.Item || key.vals
-    const model = new key.Cls(ITEM_SOURCE.GET, isNew, vals)
+    let model = new key.Cls(ITEM_SOURCE.GET, isNew, vals)
+    if (model.__hasExpired) {
+      // DynamoDB may not have deleted the model promptly, just treat it as if
+      // it's not on server.
+      if (params.createIfMissing) {
+        model = new key.Cls(ITEM_SOURCE.GET, true, key.vals)
+      } else {
+        this.__writeBatcher.track(new NonExistentItem(key))
+        return undefined
+      }
+    }
     this.__writeBatcher.track(model)
     return model
   }
@@ -2001,7 +2247,7 @@ class Transaction {
    *     times, since there is less HTTP request overhead. Batched fetches is
    *     faster than transactional fetches, but provides a weaker consistency.
    *
-   * @param {Model} Cls a Model class.
+   * @param {Class} Cls a Model class.
    * @param {String|CompositeID} key Key or keyValues
    * @param {GetParams} [params]
    * @returns Model(s) associated with provided key
@@ -2110,9 +2356,9 @@ class Transaction {
         newData[key] = original[key]
       }
     }
-    // We create the item we intend to write (with newData), and the update its
-    // __initialValue for any preconditions requested (with `original`).
-    // Creating the model with newData validates that newData specifies a
+    // We create the item we intend to write (with newData), and then update
+    // its __initialValue for any preconditions requested (with `original`).
+    // Creating the model with newData validates that newData specified are
     // complete, valid item all on its own.
     const model = new Cls(ITEM_SOURCE.CREATE_OR_PUT, true, newData)
     Object.keys(original).forEach(key => {
@@ -2142,6 +2388,28 @@ class Transaction {
     const model = new Cls(ITEM_SOURCE.CREATE, true, { ...data })
     this.__writeBatcher.track(model)
     return model
+  }
+
+  /**
+   * Deletes model(s) from database.
+   *
+   * If a model is read from database, but it did not exist when deleting the
+   * item, an exception is raised.
+   *
+   * @param {...<Key|Model>} args Keys and Models
+   */
+  delete (...args) {
+    for (const a of args) {
+      if (a instanceof Model) {
+        a.__markForDeletion()
+      } else if (a instanceof Key) {
+        const model = new a.Cls(ITEM_SOURCE.DELETE, true,
+          a.keyComponents)
+        this.__writeBatcher.track(model)
+      } else {
+        throw new InvalidParameterError('args', 'Must be models and keys')
+      }
+    }
   }
 
   __reset () {
@@ -2269,6 +2537,9 @@ function makeCreateUnittestResourceFunc (dynamoDB) {
   return async function () {
     this.__doOneTimeModelPrep()
     const params = this.__getResourceDefinition()
+    const ttlSpec = params.TimeToLiveSpecification
+    delete params.TimeToLiveSpecification
+
     params.ProvisionedThroughput = {
       ReadCapacityUnits: 2,
       WriteCapacityUnits: 2
@@ -2279,6 +2550,12 @@ function makeCreateUnittestResourceFunc (dynamoDB) {
         throw err
       }
     })
+    if (ttlSpec) {
+      await dynamoDB.updateTimeToLive({
+        TableName: params.TableName,
+        TimeToLiveSpecification: ttlSpec
+      })
+    }
   }
 }
 
@@ -2349,9 +2626,12 @@ function setup (config) {
 
     // Errors
     InvalidFieldError,
+    InvalidModelDeletionError,
     InvalidModelUpdateError,
     InvalidOptionsError,
     InvalidParameterError,
+    ModelCreatedTwiceError,
+    ModelDeletedTwiceError,
     ModelAlreadyExistsError,
     TransactionFailedError,
     WriteAttemptedInReadOnlyTxError
