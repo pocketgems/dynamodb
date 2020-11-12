@@ -11,6 +11,13 @@ function getURI (postfix) {
 }
 
 class DynamodbLibTest extends BaseServiceTest {
+  async beforeAll () {
+    await super.beforeAll()
+    for (const m of Object.values(PropDataModels)) {
+      await m.createUnittestResource()
+    }
+  }
+
   async testPropModelWorks () {
     const app = this.app
     // invalid body format
