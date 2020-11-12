@@ -1378,9 +1378,15 @@ class TTLTest extends BaseTest {
     const currentTime = Math.ceil(new Date().getTime() / 1000)
 
     const id = uuidv4()
+    const id2 = uuidv4()
     await db.Transaction.run(tx => {
       tx.create(NoTTLModel, {
         id,
+        expirationTime: currentTime - 10000,
+        doubleTime: 11223
+      })
+      tx.create(NoTTLModel, {
+        id: id2,
         expirationTime: currentTime - 10000,
         doubleTime: 11223
       })
@@ -1402,7 +1408,160 @@ class TTLTest extends BaseTest {
     })
     expect(result1).toStrictEqual([undefined, undefined])
 
+    const result2 = await db.Transaction.run(tx => {
+      return tx.get([
+        NoTTLModel.data({
+          id,
+          expirationTime: currentTime - 10000,
+          doubleTime: 1
+        }),
+        NoTTLModel.data({
+          id: id2,
+          expirationTime: currentTime - 10000,
+          doubleTime: 1
+        })
+      ], { inconsistentRead: false, createIfMissing: true })
+    })
+    expect(result2.length).toBe(2)
+    expect(result2[0].id).toBe(id)
+    expect(result2[1].id).toBe(id2)
+
     NoTTLModel.EXPIRE_EPOCH_FIELD = undefined
+  }
+}
+
+class ScanModel extends db.Model {
+  static KEY = {
+    id: S.str
+  }
+
+  static FIELDS = {
+    ts: S.int
+  }
+}
+
+class ScanTest extends BaseTest {
+  async beforeAll () {
+    await super.beforeAll()
+    await ScanModel.createUnittestResource()
+
+    const ts = Math.floor(new Date().getTime() / 1000) - 99999
+    await db.Transaction.run(tx => {
+      const models = []
+      for (let index = 0; index < 5; index++) {
+        models.push(ScanModel.data({
+          id: this.getName(index),
+          ts
+        }))
+      }
+      return tx.get(models, { createIfMissing: true })
+    })
+  }
+
+  getName (idx) {
+    return `scantest-${idx}`
+  }
+
+  async testScanFetchFew () {
+    // Fetching a few items
+    const [models, nextToken] = await db.Transaction.run(async tx => {
+      const scan = tx.scan(ScanModel)
+      return scan.fetch(3)
+    })
+    expect(models.length).toBe(3)
+    expect(nextToken).toBeDefined()
+  }
+
+  async testScanFetchAll () {
+    // Fetching all items
+    const [models, nextToken] = await db.Transaction.run(async tx => {
+      const scan = tx.scan(ScanModel)
+      return scan.fetch(100)
+    })
+    expect(models.length).toBe(5)
+    expect(nextToken).toBeUndefined()
+  }
+
+  async testScanFetchNext () {
+    const [models, nextToken] = await db.Transaction.run(async tx => {
+      const ret = []
+      // example scan start
+      const scan = tx.scan(ScanModel)
+      const [page1, nextToken1] = await scan.fetch(2)
+      const [page2, nextToken2] = await scan.fetch(10, nextToken1)
+      // example scan end
+      ret.push(...page1, ...page2)
+      return [ret, nextToken2]
+    })
+    expect(models.length).toBe(5)
+    expect(nextToken).toBeUndefined()
+  }
+
+  async testScanRunFew () {
+    // Run a few items
+    const ret = await db.Transaction.run(async tx => {
+      const scan = tx.scan(ScanModel)
+      const models = []
+      for await (const model of scan.run(3)) {
+        models.push(model)
+      }
+      return models
+    })
+    expect(ret.length).toBe(3)
+  }
+
+  async testScanRunAll () {
+    // Run all items
+    const ret = await db.Transaction.run(async tx => {
+      const scan = tx.scan(ScanModel)
+      const models = []
+      for await (const model of scan.run(100)) {
+        models.push(model)
+      }
+      return models
+    })
+    expect(ret.length).toBe(5)
+  }
+
+  // It's easier to test is here then in the TTL suite
+  async testTTL () {
+    // Turn on TTL locally
+    ScanModel.EXPIRE_EPOCH_FIELD = 'ts'
+
+    const models = await db.Transaction.run(async tx => {
+      const scan = tx.scan(ScanModel)
+      const ms = []
+      for await (const m of scan.run(100)) {
+        ms.push(m)
+      }
+      return ms
+    })
+    expect(models.length).toBe(0)
+
+    ScanModel.EXPIRE_EPOCH_FIELD = undefined
+  }
+
+  async testWrite () {
+    const models = await db.Transaction.run(async tx => {
+      const scan = tx.scan(ScanModel)
+      const ms = []
+      for await (const m of scan.run(1)) {
+        ms.push(m)
+      }
+      expect(tx.__writeBatcher.__allModels.length).toBe(1)
+
+      ms[0].ts--
+      return ms
+    })
+    expect(models.length).toBe(1)
+  }
+
+  async testInconsistentRead () {
+    const ret = await db.Transaction.run(async tx => {
+      const scan = tx.scan(ScanModel, { inconsistentRead: true })
+      return scan.__setupParams().ConsistentRead
+    })
+    expect(ret).toBe(false)
   }
 }
 
@@ -1417,6 +1576,7 @@ runTests(
   NewModelTest,
   OptDefaultModelTest,
   OptionalFieldConditionTest,
+  ScanTest,
   SimpleModelTest,
   TTLTest,
   WriteBatcherTest,

@@ -25,6 +25,7 @@ This library is used to interact with the DynamoDB NoSQL database. It provides h
       - [Batch Read](#batch-read)
     - [Write](#write)
     - [Delete](#delete)
+    - [Scan](#scan)
   - [Performance](#performance)
     - [DAX](#dax)
     - [Blind Writes](#blind-writes)
@@ -608,6 +609,28 @@ For improved performance, data can be updated without being read from database f
 Items can be deleted from the database via `tx.delete()`. The delete method accepts models or keys as parameters. For example, `tx.delete(model1, key1, model2, ...keys, key2)`.
 
 For models that were read from server via `tx.get()`, if the model turns out to be missing on server when the transaction commits, an exception is thrown. Otherwise, deletion on missing items will be treated as noop.
+
+### Scan
+Items in a DB table can be scanned (read one by one) using `tx.scan()`. The scan method returns a handle for conducting a scan operation. The handle provides two flavors of APIs: paginator & generator.
+
+The paginator API is supported by `fetch(n)`. It takes the number of items to return (`n`) and a nextToken as parameters, and returns a maximum of **n** items along with a token for the next page of items.
+```javascript <!-- embed:../test/unit-test-dynamodb-model.js:section:example scan start:example scan end -->
+      const scan = tx.scan(ScanModel)
+      const [page1, nextToken1] = await scan.fetch(2)
+      const [page2, nextToken2] = await scan.fetch(10, nextToken1)
+```
+
+The generator API is supported by `run(n)`. It also takes the number of items to return as a parameter, and only stops when **n** items are returned, or all items in the table are read.
+```javascript <!-- embed:../test/unit-test-dynamodb-model.js:scope:testScanRunFew:Transaction.run -->
+    const ret = await db.Transaction.run(async tx => {
+      const scan = tx.scan(ScanModel)
+      const models = []
+      for await (const model of scan.run(3)) {
+        models.push(model)
+      }
+      return models
+    })
+```
 
 ## Performance
 
