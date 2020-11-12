@@ -833,11 +833,9 @@ class GetArgsParserTest extends BaseTest {
     const id1 = uuidv4()
     const id2 = uuidv4()
     keys.push(SimpleModel.key(id1), SimpleModel.key(id2))
-    expect(async () => {
-      const result = await db.__private.getWithArgs(params,
-        (key) => key.encodedKeys)
-      expect(result).toStrictEqual([{ _id: id1 }, { _id: id2 }])
-    }).not.toThrow()
+    const result = await db.__private.getWithArgs(params,
+      (keys) => keys.map(key => key.encodedKeys))
+    expect(result).toStrictEqual([{ _id: id1 }, { _id: id2 }])
 
     keys.push(1)
     await expect(db.__private.getWithArgs(params)).rejects
@@ -845,11 +843,9 @@ class GetArgsParserTest extends BaseTest {
 
     keys.splice(2, 1)
     params.push({})
-    expect(async () => {
-      const result = await db.__private.getWithArgs(params,
-        (key) => key.encodedKeys)
-      expect(result).toStrictEqual([{ _id: id1 }, { _id: id2 }])
-    }).not.toThrow()
+    const result1 = await db.__private.getWithArgs(params,
+      (keys) => keys.map(key => key.encodedKeys))
+    expect(result1).toStrictEqual([{ _id: id1 }, { _id: id2 }])
 
     params.push(1)
     await expect(db.__private.getWithArgs(params)).rejects
