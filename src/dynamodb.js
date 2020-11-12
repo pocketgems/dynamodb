@@ -2130,12 +2130,26 @@ class Transaction {
         continue
       }
       const key = keys[idx]
-      const model = new key.Cls(
+      let model = new key.Cls(
         ITEM_SOURCE.GET,
         !data.Item,
         data.Item || key.vals)
+
+      if (model.__hasExpired) {
+        if (params.createIfMissing) {
+          model = new key.Cls(
+            ITEM_SOURCE.GET,
+            true,
+            key.vals)
+        } else {
+          model = undefined
+        }
+      }
+
       models[idx] = model
-      this.__writeBatcher.track(model)
+      if (model) {
+        this.__writeBatcher.track(model)
+      }
     }
     return models
   }
@@ -2185,7 +2199,10 @@ class Transaction {
       for (const [modelClsName, items] of Object.entries(responses)) {
         const Cls = modelClsLookup[modelClsName]
         for (const item of items) {
-          unorderedModels.push(new Cls(ITEM_SOURCE.GET, false, item))
+          const tempModel = new Cls(ITEM_SOURCE.GET, false, item)
+          if (!tempModel.__hasExpired) {
+            unorderedModels.push(tempModel)
+          }
         }
       }
 

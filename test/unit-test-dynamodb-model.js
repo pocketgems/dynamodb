@@ -1377,6 +1377,37 @@ class TTLTest extends BaseTest {
 
     NoTTLModel.EXPIRE_EPOCH_FIELD = undefined
   }
+
+  async testBatchGetExpired () {
+    const currentTime = Math.ceil(new Date().getTime() / 1000)
+
+    const id = uuidv4()
+    await db.Transaction.run(tx => {
+      tx.create(NoTTLModel, {
+        id,
+        expirationTime: currentTime - 10000,
+        doubleTime: 11223
+      })
+    })
+    // Turn on ttl locally now
+    NoTTLModel.EXPIRE_EPOCH_FIELD = 'expirationTime'
+
+    const result = await db.Transaction.run(tx => {
+      return tx.get([
+        NoTTLModel.key(id), NoTTLModel.key(uuidv4())
+      ], { inconsistentRead: false })
+    })
+    expect(result).toStrictEqual([undefined, undefined])
+
+    const result1 = await db.Transaction.run(tx => {
+      return tx.get([
+        NoTTLModel.key(id), NoTTLModel.key(uuidv4())
+      ], { inconsistentRead: true })
+    })
+    expect(result1).toStrictEqual([undefined, undefined])
+
+    NoTTLModel.EXPIRE_EPOCH_FIELD = undefined
+  }
 }
 
 runTests(
