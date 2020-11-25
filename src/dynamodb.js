@@ -2716,7 +2716,14 @@ function makeCreateUnittestResourceFunc (dynamoDB) {
       await dynamoDB.updateTimeToLive({
         TableName: params.TableName,
         TimeToLiveSpecification: ttlSpec
-      })
+      }).promise().catch(
+        /* istanbul ignore next */
+        err => {
+          if (err.message !== 'TimeToLive is already enabled') {
+            throw err
+          }
+        }
+      )
     }
   }
 }
