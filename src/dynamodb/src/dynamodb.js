@@ -4,7 +4,7 @@ const deepeq = require('deep-equal')
 const deepcopy = require('rfdc')()
 
 const AsyncEmitter = require('./async-emitter')
-const S = require('./schema')
+const S = require('../../schema/src/schema')
 
 /**
  * @namespace Errors
@@ -2756,21 +2756,32 @@ function setup (config) {
   const awsConfig = loadOptionDefaults(config.awsConfig,
     DefaultConfig.awsConfig)
 
-  const AWS = require('aws-sdk')
-  const dynamoDB = new AWS.DynamoDB(awsConfig)
   let documentClient
-
   const inDebugger = !!Number(process.env.INDEBUGGER)
+
   /* istanbul ignore if */
-  if (config.enableDAX &&
-      !inDebugger &&
-      process.env.DAX_ENDPOINT) {
-    const AwsDaxClient = require('amazon-dax-client')
-    awsConfig.endpoints = [process.env.DAX_ENDPOINT]
-    const daxDB = new AwsDaxClient(awsConfig)
-    documentClient = new AWS.DynamoDB.DocumentClient({ service: daxDB })
+  if (process.env.NODE_ENV === 'webpack') {
+    assert(false, 'not implemented')
   } else {
-    documentClient = new AWS.DynamoDB.DocumentClient({ service: dynamoDB })
+    const AWS = require('aws-sdk')
+    const dynamoDB = new AWS.DynamoDB(awsConfig)
+
+    /* istanbul ignore if */
+    if (config.enableDAX &&
+        !inDebugger &&
+        process.env.DAX_ENDPOINT) {
+      const AwsDaxClient = require('amazon-dax-client')
+      awsConfig.endpoints = [process.env.DAX_ENDPOINT]
+      const daxDB = new AwsDaxClient(awsConfig)
+      documentClient = new AWS.DynamoDB.DocumentClient({ service: daxDB })
+    } else {
+      documentClient = new AWS.DynamoDB.DocumentClient({ service: dynamoDB })
+    }
+
+    if (inDebugger) {
+      // For creating tables in debug environments
+      Model.createUnittestResource = makeCreateUnittestResourceFunc(dynamoDB)
+    }
   }
 
   // Make DynamoDB clients available to these classes
@@ -2784,11 +2795,6 @@ function setup (config) {
     Cls.documentClient = documentClient
     Cls.prototype.documentClient = documentClient
   })
-
-  if (inDebugger) {
-    // For creating tables in debug environments
-    Model.createUnittestResource = makeCreateUnittestResourceFunc(dynamoDB)
-  }
 
   const exportAsClass = {
     Model,
