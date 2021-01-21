@@ -168,6 +168,7 @@ function checkUnexpectedOptions (options, defaults) {
 }
 
 function loadOptionDefaults (options, defaults) {
+  // istanbul ignore next
   options = options || {}
   checkUnexpectedOptions(options, defaults)
   const retOptions = Object.assign({}, defaults)
@@ -931,7 +932,8 @@ class Model {
     const ret = {
       TableName: this.fullTableName,
       AttributeDefinitions: attrs,
-      KeySchema: keys
+      KeySchema: keys,
+      BillingMode: 'PAY_PER_REQUEST'
     }
 
     if (this.EXPIRE_EPOCH_FIELD) {
@@ -1529,7 +1531,7 @@ class Model {
     // value rather than a map of key component names to values
     assert.ok(this.__KEY_ORDER,
       `model ${this.name} one-time setup was not done (remember to export ` +
-      'the model and in unit tests remember to call createUnittestResource()')
+      'the model and in unit tests remember to call createResource()')
     const pKeyOrder = this.__KEY_ORDER.partition
     if (pKeyOrder.length === 1 && !this.__KEY_ORDER.sort.length) {
       const pFieldName = pKeyOrder[0]
@@ -2695,17 +2697,13 @@ class Transaction {
   }
 }
 
-function makeCreateUnittestResourceFunc (dynamoDB) {
+function makeCreateResourceFunc (dynamoDB) {
   return async function () {
     this.__doOneTimeModelPrep()
     const params = this.__getResourceDefinition()
     const ttlSpec = params.TimeToLiveSpecification
     delete params.TimeToLiveSpecification
 
-    params.ProvisionedThroughput = {
-      ReadCapacityUnits: 2,
-      WriteCapacityUnits: 2
-    }
     await dynamoDB.createTable(params).promise().catch(err => {
       /* istanbul ignore if */
       if (err.code !== 'ResourceInUseException') {
@@ -2730,11 +2728,9 @@ function makeCreateUnittestResourceFunc (dynamoDB) {
 
 /* istanbul ignore next */
 const DefaultConfig = {
-  awsConfig: {
-    region: 'us-west-2',
-    endpoint: process.env.DYNAMO_ENDPT || ''
-  },
-  enableDAX: true
+  dynamoDBClient: undefined,
+  dynamoDBDocumentClient: undefined,
+  enableDynamicResourceCreation: false
 }
 
 /**
@@ -2745,46 +2741,28 @@ const DefaultConfig = {
  * Setup the DynamoDB library before returning symbols clients can use.
  *
  * @param {Object} [config] Configurations for the library
- * @param {Object} [config.awsConfig] Config supported by AWS client.
- * @param {Boolean} [config.enableDAX=true] Whether to use DAX or plain
- *   DynamoDB.
+ * @param {Object} [config.dynamoDBClient=undefined] AWS DynamoDB Client used
+ *   to manage table resources. Required when enableDynamicResourceCreation is
+ *   true.
+ * @param {String} [config.dynamoDBDocumentClient] AWS DynamoDB document client
+ *   used to interact with db items.
+ * @param {Boolean} [config.enableDynamicResourceCreation=false] Wether to
+ *   enable dynamic table resource creations.
  * @returns {Object} Symbols that clients of this library can use.
  * @private
  */
 function setup (config) {
   config = loadOptionDefaults(config, DefaultConfig)
-  const awsConfig = loadOptionDefaults(config.awsConfig,
-    DefaultConfig.awsConfig)
 
-  let documentClient
-  const inDebugger = !!Number(process.env.INDEBUGGER)
-
-  /* istanbul ignore if */
-  if (process.env.NODE_ENV === 'webpack') {
-    assert(false, 'not implemented')
-  } else {
-    const AWS = require('aws-sdk')
-    const dynamoDB = new AWS.DynamoDB(awsConfig)
-
-    /* istanbul ignore if */
-    if (config.enableDAX &&
-        !inDebugger &&
-        process.env.DAX_ENDPOINT) {
-      const AwsDaxClient = require('amazon-dax-client')
-      awsConfig.endpoints = [process.env.DAX_ENDPOINT]
-      const daxDB = new AwsDaxClient(awsConfig)
-      documentClient = new AWS.DynamoDB.DocumentClient({ service: daxDB })
-    } else {
-      documentClient = new AWS.DynamoDB.DocumentClient({ service: dynamoDB })
-    }
-
-    if (inDebugger) {
-      // For creating tables in debug environments
-      Model.createUnittestResource = makeCreateUnittestResourceFunc(dynamoDB)
-    }
+  if (config.enableDynamicResourceCreation) {
+    assert(config.dynamoDBClient,
+      'Must provide dynamoDBClient when enableDynamicResourceCreation is on')
+    Model.createResource = makeCreateResourceFunc(
+      config.dynamoDBClient)
   }
 
-  // Make DynamoDB clients available to these classes
+  // Make DynamoDB document client available to these classes
+  const documentClient = config.dynamoDBDocumentClient
   const clsWithDBAccess = [
     Model,
     Transaction,
@@ -2814,7 +2792,7 @@ function setup (config) {
   }
 
   const toExport = Object.assign({}, exportAsClass)
-  if (inDebugger) {
+  if (Number(process.env.INDEBUGGER)) {
     toExport.__private = {
       __Field,
       __WriteBatcher,
@@ -2830,4 +2808,5 @@ function setup (config) {
   }
   return toExport
 }
-module.exports = setup()
+
+module.exports = setup

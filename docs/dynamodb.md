@@ -104,7 +104,7 @@ class RaceResult extends db.Model {
 Access each component of a key just like any other field:
 ```javascript <!-- embed:../test/unit-test-dynamodb.js:scope:DBReadmeTest:testKeys -->
   async testKeys () {
-    await RaceResult.createUnittestResource()
+    await RaceResult.createResource()
     await db.Transaction.run(async tx => {
       const raceResult = await tx.get(
         RaceResult,

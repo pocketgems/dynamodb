@@ -54,14 +54,14 @@ class ModelWithComplexFields extends db.Model {
 // correctly (and continues to do so after any library changes)
 class DBReadmeTest extends BaseTest {
   async beforeAll () {
-    await Order.createUnittestResource()
-    await RaceResult.createUnittestResource()
-    await ModelWithFields.createUnittestResource()
-    await ModelWithComplexFields.createUnittestResource()
+    await Order.createResource()
+    await RaceResult.createResource()
+    await ModelWithFields.createResource()
+    await ModelWithComplexFields.createResource()
   }
 
   async testMinimalExample () {
-    await Order.createUnittestResource()
+    await Order.createResource()
     const id = uuidv4()
     await db.Transaction.run(tx => {
       const order = tx.create(Order, { id, product: 'coffee', quantity: 1 })
@@ -84,7 +84,7 @@ class DBReadmeTest extends BaseTest {
   }
 
   async testKeys () {
-    await RaceResult.createUnittestResource()
+    await RaceResult.createResource()
     await db.Transaction.run(async tx => {
       const raceResult = await tx.get(
         RaceResult,
@@ -96,7 +96,7 @@ class DBReadmeTest extends BaseTest {
   }
 
   async testFields () {
-    await ModelWithComplexFields.createUnittestResource()
+    await ModelWithComplexFields.createResource()
     async function _check (how, expErr, values) {
       const id = uuidv4()
       const expBool = values.anOptBool
@@ -190,7 +190,7 @@ class DBReadmeTest extends BaseTest {
   }
 
   async testSchemaEnforcement () {
-    await ModelWithFields.createUnittestResource()
+    await ModelWithFields.createResource()
     const id = uuidv4()
     await db.Transaction.run(tx => {
       // fields are checked immediately when creating a new item; this throws
@@ -262,7 +262,7 @@ class DBReadmeTest extends BaseTest {
   }
 
   async testCustomMethods () {
-    await OrderWithPrice.createUnittestResource()
+    await OrderWithPrice.createResource()
     await db.Transaction.run(tx => {
       const id = uuidv4()
       const order = tx.create(OrderWithPrice, {
@@ -278,7 +278,7 @@ class DBReadmeTest extends BaseTest {
     class Guestbook extends db.Model {
       static FIELDS = { names: S.arr(S.str) }
     }
-    await Guestbook.createUnittestResource()
+    await Guestbook.createResource()
     const id = uuidv4()
     await db.Transaction.run(tx => {
       tx.create(Guestbook, { id, names: [] })
@@ -325,12 +325,12 @@ class DBReadmeTest extends BaseTest {
       static KEY = { resort: S.str }
       static FIELDS = { numSkiers: S.int.min(0).default(0) }
     }
-    await SkierStats.createUnittestResource()
+    await SkierStats.createResource()
     class LiftStats extends db.Model {
       static KEY = { resort: S.str }
       static FIELDS = { numLiftRides: S.int.min(0).default(0) }
     }
-    await LiftStats.createUnittestResource()
+    await LiftStats.createResource()
 
     async function liftRideTaken (resort, isNewSkier) {
       await db.Transaction.run(async tx => {
@@ -486,7 +486,7 @@ class DBReadmeTest extends BaseTest {
 
       static FIELDS = { epoch: S.int }
     }
-    await LastUsedFeature.createUnittestResource()
+    await LastUsedFeature.createResource()
     await db.Transaction.run(tx => {
       const ret = tx.createOrPut(LastUsedFeature,
         // these are the values we expect (must include all key components);
@@ -602,7 +602,7 @@ class DBReadmeTest extends BaseTest {
     class StringKeyWithNullBytes extends db.Model {
       static KEY = { id: S.obj().prop('raw', S.str) }
     }
-    await StringKeyWithNullBytes.createUnittestResource()
+    await StringKeyWithNullBytes.createResource()
     const strWithNullByte = 'I can contain \0, no pr\0blem!'
     await expect(db.Transaction.run(tx => {
       const item = tx.create(StringKeyWithNullBytes, {
@@ -620,7 +620,7 @@ class DBReadmeTest extends BaseTest {
       static KEY = { store: S.str }
       static SORT_KEY = { customer: S.str }
     }
-    await CustomerData.createUnittestResource()
+    await CustomerData.createResource()
     await db.Transaction.run(tx => {
       tx.create(CustomerData, { store: 'Wallymart', customer: uuidv4() })
     })
@@ -651,7 +651,7 @@ class DBReadmeTest extends BaseTest {
     class Currency extends Inventory {
       static INVENTORY_ITEM_TYPE = 'money'
     }
-    await Currency.createUnittestResource()
+    await Currency.createResource()
     class Weapon extends Inventory {
       static INVENTORY_ITEM_TYPE = 'weapon'
       static FIELDS = {
@@ -659,7 +659,7 @@ class DBReadmeTest extends BaseTest {
         weaponSkillLevel: S.int
       }
     }
-    await Weapon.createUnittestResource()
+    await Weapon.createResource()
 
     // both items will be stored in the Inventory; both will also be stored on
     // the same database node since they share the same partition key (userID)
@@ -683,7 +683,7 @@ class DBReadmeTest extends BaseTest {
     class WebsiteHitCounter extends db.Model {
       static FIELDS = { count: S.int.min(0) }
     }
-    await WebsiteHitCounter.createUnittestResource()
+    await WebsiteHitCounter.createResource()
 
     async function slowlyIncrement (id) {
       return db.Transaction.run(async tx => {

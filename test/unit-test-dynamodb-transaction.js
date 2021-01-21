@@ -56,8 +56,8 @@ class QuickTransactionTest extends BaseTest {
 
   async beforeAll () {
     await super.beforeAll()
-    await TransactionModel.createUnittestResource()
-    await TransactionModelWithRequiredField.createUnittestResource()
+    await TransactionModel.createResource()
+    await TransactionModelWithRequiredField.createResource()
     this.oldTransactionOptions = db.Transaction.prototype.defaultOptions
     const newOptions = Object.assign({}, this.oldTransactionOptions)
     Object.assign(newOptions, { retries: 1, initialBackoff: 20 })
@@ -125,8 +125,8 @@ class KeyOnlyModel2 extends KeyOnlyModel {
 
 class TransactionEdgeCaseTest extends BaseTest {
   async beforeAll () {
-    await KeyOnlyModel.createUnittestResource()
-    await KeyOnlyModel2.createUnittestResource()
+    await KeyOnlyModel.createResource()
+    await KeyOnlyModel2.createResource()
   }
 
   async afterEach () {
