@@ -2635,12 +2635,6 @@ class Transaction {
         if (errorMessages.length) {
           if (allErrors.length === 1) {
             // if there was only one error, just rethrow it
-            /* istanbul ignore next */
-            if (allErrors[0].statusCode !== undefined) {
-              // don't propagate the statusCode field outside of this library
-              // (it has special meaning to fastify)
-              delete allErrors[0].statusCode
-            }
             throw allErrors[0]
           } else {
             // if there were multiple errors, combine it into one error which
@@ -2671,7 +2665,7 @@ class Transaction {
    * Runs a function in transaction, using specified parameters.
    *
    * If a non-retryable error is thrown while running the transaction, it will
-   * be re-raised (with its statusCode field removed).
+   * be re-raised.
    *
    * @param {TransactionOptions} [options]
    * @param {Function} func the closure to run.
