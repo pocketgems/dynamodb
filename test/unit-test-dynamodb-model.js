@@ -1565,6 +1565,84 @@ class ScanTest extends BaseTest {
   }
 }
 
+class DiffTest extends BaseTest {
+  async beforeAll () {
+    await super.beforeAll()
+    await JSONModel.createResource()
+    this.modelID = uuidv4()
+    await db.Transaction.run(async tx => {
+      await tx.get(JSONModel, {
+        id: this.modelID,
+        objNoDefaultRequired: { ab: 11 },
+        arrNoDefaultRequired: []
+      }, { createIfMissing: true })
+    })
+  }
+
+  async testGetNewModel () {
+    const id = uuidv4()
+    const result = await db.Transaction.run(async tx => {
+      const m = await tx.get(JSONModel,
+        {
+          id,
+          objNoDefaultRequired: { ab: 123 },
+          arrNoDefaultRequired: [{ cd: 12 }]
+        },
+        { createIfMissing: true })
+      expect(m.getField('arrNoDefaultNoRequired').accessed).toBe(false)
+      const data = m.getDiff()
+      // getDiff should not mark fields as accessed so optimistic lock in TX
+      // is not affected.
+      expect(m.getField('arrNoDefaultNoRequired').accessed).toBe(false)
+      return data
+    })
+    expect(result).toStrictEqual({
+      before: {
+        _id: undefined,
+        arrDefaultNoRequired: undefined,
+        arrDefaultRequired: undefined,
+        arrNoDefaultNoRequired: undefined,
+        arrNoDefaultRequired: undefined,
+        objDefaultNoRequired: undefined,
+        objDefaultRequired: undefined,
+        objNoDefaultNoRequired: undefined,
+        objNoDefaultRequired: undefined
+      },
+      after: {
+        _id: id,
+        arrDefaultNoRequired: [1, 2],
+        arrDefaultRequired: [],
+        arrNoDefaultNoRequired: undefined,
+        arrNoDefaultRequired: [{ cd: 12 }],
+        objDefaultNoRequired: { a: 1 },
+        objDefaultRequired: {},
+        objNoDefaultNoRequired: undefined,
+        objNoDefaultRequired: { ab: 123 }
+      }
+    })
+  }
+
+  async testGetExistingModel () {
+    const result = await db.Transaction.run(async tx => {
+      const m = await tx.get(JSONModel, this.modelID)
+      return m.getDiff()
+    })
+    const expectation = {
+      _id: this.modelID,
+      arrDefaultNoRequired: [1, 2],
+      arrDefaultRequired: [],
+      arrNoDefaultNoRequired: undefined,
+      arrNoDefaultRequired: [],
+      objDefaultNoRequired: { a: 1 },
+      objDefaultRequired: {},
+      objNoDefaultNoRequired: undefined,
+      objNoDefaultRequired: { ab: 11 }
+    }
+    expect(result.before).toStrictEqual(expectation)
+    expect(result.after).toStrictEqual(expectation)
+  }
+}
+
 runTests(
   BadModelTest,
   ConditionCheckTest,
@@ -1580,5 +1658,6 @@ runTests(
   SimpleModelTest,
   TTLTest,
   WriteBatcherTest,
-  WriteTest
+  WriteTest,
+  DiffTest
 )

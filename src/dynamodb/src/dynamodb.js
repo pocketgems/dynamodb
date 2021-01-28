@@ -1679,6 +1679,23 @@ class Model {
       this.constructor.__hasSortKey() ? this.__db_attrs._sk.__value : undefined
     )
   }
+
+  /**
+   * Return before and after snapshots of the model, all fields included.
+   */
+  getDiff () {
+    const before = {}
+    const after = {}
+    for (const [name, field] of Object.entries(this.__db_attrs)) {
+      before[name] = field.__initialValue
+      after[name] = field.__value
+    }
+    if (this.__toBeDeleted) {
+      return { before, after: {} }
+    } else {
+      return { before, after }
+    }
+  }
 }
 
 /**
@@ -1985,6 +2002,13 @@ class __WriteBatcher {
     }
     this.__allModels.push(model)
     this.__toCheck[model] = model
+  }
+
+  /**
+   * Return all tracked models.
+   */
+  get trackedModels () {
+    return Object.values(this.__allModels)
   }
 
   /**
@@ -2688,6 +2712,26 @@ class Transaction {
       throw new InvalidParameterError('args', 'should be ([options,] func)')
     }
     return new Transaction(opts).__run(func)
+  }
+
+  /**
+   * Return before and after snapshots of all relevant models.
+   */
+  getModelDiffs () {
+    const allBefore = []
+    const allAfter = []
+    for (const model of this.__writeBatcher.trackedModels) {
+      if (!model.getDiff) {
+        continue
+      }
+      const { before, after } = model.getDiff()
+      allBefore.push(before)
+      allAfter.push(after)
+    }
+    return {
+      before: allBefore,
+      after: allAfter
+    }
   }
 }
 

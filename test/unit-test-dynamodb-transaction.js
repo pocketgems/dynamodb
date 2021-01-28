@@ -1179,6 +1179,126 @@ class TransactionDeleteTest extends QuickTransactionTest {
   }
 }
 
+class ModelDiffsTest extends BaseTest {
+  async testNonexistent () {
+    const id = uuidv4()
+    const result = await db.Transaction.run(async tx => {
+      await tx.get(TransactionModel, id)
+      return tx.getModelDiffs()
+    })
+    expect(result.before).toStrictEqual([])
+    expect(result.after).toStrictEqual([])
+  }
+
+  async testGet () {
+    const id = uuidv4()
+    const result = await db.Transaction.run(async tx => {
+      const m = await tx.get(TransactionModel, id, { createIfMissing: true })
+      m.field1 = 321
+      return tx.getModelDiffs()
+    })
+    const expectation = {
+      _id: undefined,
+      field1: undefined,
+      field2: undefined,
+      arrField: undefined,
+      objField: undefined
+    }
+    expect(result.before[0]).toStrictEqual(expectation)
+
+    expectation._id = id
+    expectation.field1 = 321
+    expect(result.after[0]).toStrictEqual(expectation)
+  }
+
+  async __helperTestGet (func) {
+    const ids = [uuidv4(), uuidv4()]
+    const result = await db.Transaction.run(async tx => {
+      await func(tx, ids)
+      return tx.getModelDiffs()
+    })
+    const expectation = {
+      _id: undefined,
+      field1: undefined,
+      field2: undefined,
+      arrField: undefined,
+      objField: undefined
+    }
+    expect(result.before[0]).toStrictEqual(expectation)
+    expect(result.before[1]).toStrictEqual(expectation)
+
+    // before after snapshots are not sorted, but they should all exist
+    delete expectation._id
+    for (const after of result.after) {
+      expect(ids).toContain(after._id)
+      delete after._id
+      expect(after).toStrictEqual(expectation)
+    }
+  }
+
+  async testMultipleGets () {
+    await this.__helperTestGet(async (tx, ids) => {
+      return Promise.all(ids.map(id => {
+        return tx.get(TransactionModel, id, { createIfMissing: true })
+      }))
+    })
+  }
+
+  async testDelete () {
+    const id = uuidv4()
+    // Blind delete
+    const result = await db.Transaction.run(async tx => {
+      await tx.delete(TransactionModel.key({ id }))
+      return tx.getModelDiffs()
+    })
+    expect(result).toStrictEqual({
+      before: [{
+        _id: undefined,
+        arrField: undefined,
+        field1: undefined,
+        field2: undefined,
+        objField: undefined
+      }],
+      after: [{}]
+    })
+
+    // Create model
+    await db.Transaction.run(async tx => {
+      await tx.get(TransactionModel, { id, field1: 1 },
+        { createIfMissing: true })
+    })
+    const result2 = await db.Transaction.run(async tx => {
+      const m = await tx.get(TransactionModel, id)
+      await tx.delete(m)
+      return tx.getModelDiffs()
+    })
+    expect(result2).toStrictEqual({
+      before: [{
+        _id: id,
+        arrField: undefined,
+        field1: 1,
+        field2: undefined,
+        objField: undefined
+      }],
+      after: [{}]
+    })
+  }
+
+  async testTransactGet () {
+    await this.__helperTestGet(async (tx, ids) => {
+      return tx.get(ids.map(id => TransactionModel.data({ id })),
+        { createIfMissing: true })
+    })
+  }
+
+  async testBatchGet () {
+    await this.__helperTestGet(async (tx, ids) => {
+      return tx.get(ids.map(id => TransactionModel.data({ id })),
+        { createIfMissing: true, inconsistentRead: true })
+    })
+  }
+}
+
 runTests(
   ParameterTest,
   TransactionBackoffTest,
@@ -1188,5 +1308,6 @@ runTests(
   TransactionGetTest,
   TransactionReadOnlyTest,
   TransactionRetryTest,
-  TransactionWriteTest
+  TransactionWriteTest,
+  ModelDiffsTest
 )
