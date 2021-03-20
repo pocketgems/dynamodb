@@ -382,6 +382,24 @@ class TransactionGetTest extends QuickTransactionTest {
 
     db.Model.__getParams = originalFunc
   }
+
+  async testGetMissingThenCreate () {
+    let id = uuidv4()
+    const ret = await db.Transaction.run(async tx => {
+      const m1 = await tx.get(TransactionModel, id)
+      const m2 = await tx.get(TransactionModel, id, { createIfMissing: true })
+      return [m1, m2]
+    })
+    expect(ret[0]).toBe(undefined)
+    expect(ret[1]._id).toBe(id)
+
+    id = uuidv4()
+    const fut = db.Transaction.run(async tx => {
+      await tx.get(TransactionModel, id)
+      tx.create(TransactionModel, { id })
+    })
+    await expect(fut).resolves.not.toThrow()
+  }
 }
 
 class TransactionWriteTest extends QuickTransactionTest {
@@ -1179,6 +1197,97 @@ class TransactionDeleteTest extends QuickTransactionTest {
   }
 }
 
+class TransactionCacheModelsTest extends BaseTest {
+  async testGetOne () {
+    const id = uuidv4()
+    const ret = await db.Transaction.run({ cacheModels: true }, async tx => {
+      const m1 = await tx.get(TransactionModel, id, { createIfMissing: true })
+      const m2 = await tx.get(TransactionModel, id)
+      return [m1, m2]
+    })
+    expect(ret[0]._id).toBe(ret[1]._id)
+  }
+
+  async testGetMissing () {
+    const id = uuidv4()
+    const ret = await db.Transaction.run({ cacheModels: true }, async tx => {
+      const m1 = await tx.get(TransactionModel, id)
+      const m2 = await tx.get(TransactionModel, id, { createIfMissing: true })
+      return [m1, m2]
+    })
+    expect(ret[0]).toBe(undefined)
+    expect(ret[1]._id).toBe(id)
+  }
+
+  async testGetMany () {
+    const helper = async (inconsistentRead) => {
+      const id = uuidv4()
+      const ret = await db.Transaction.run({ cacheModels: true }, async tx => {
+        const opts = { createIfMissing: true, inconsistentRead }
+        const m2 = await tx.get(TransactionModel, id, opts)
+        const ms = await tx.get([
+          TransactionModel.data({ id: uuidv4() }),
+          TransactionModel.data({ id })
+        ], opts)
+        return [ms[1], m2]
+      })
+      expect(ret[0]._id).toBe(ret[1]._id)
+    }
+    await helper(true) // batchGet
+    await helper(false) // transactGet
+  }
+
+  async testDeletedModels () {
+    const id = uuidv4()
+    let fut = db.Transaction.run({ cacheModels: true }, async tx => {
+      const opts = { createIfMissing: true }
+      const model = await tx.get(TransactionModel.data({ id }), opts)
+      tx.delete(model)
+      await tx.get(TransactionModel.key({ id }))
+    })
+    await expect(fut).rejects.toThrow('Model is not a valid cached model')
+
+    fut = db.Transaction.run({ cacheModels: true }, async tx => {
+      const opts = { createIfMissing: true }
+      tx.delete(TransactionModel.key({ id }))
+      await tx.get(TransactionModel, id, opts)
+    })
+    await expect(fut).rejects.toThrow('Model is not a valid cached model')
+  }
+
+  async testPutModels () {
+    const id = uuidv4()
+    const fut = db.Transaction.run({ cacheModels: true }, async tx => {
+      tx.createOrPut(TransactionModel,
+        { id },
+        { id: id, field1: 3 }
+      )
+      await tx.get(TransactionModel.key({ id }))
+    })
+    await expect(fut).rejects.toThrow('Model is not a valid cached model')
+  }
+
+  async testCreateModels () {
+    const id = uuidv4()
+    const fut = db.Transaction.run({ cacheModels: true }, async tx => {
+      tx.create(TransactionModel, { id })
+      await tx.get(TransactionModel.key({ id }))
+    })
+    await expect(fut).rejects.toThrow('Model is not a valid cached model')
+  }
+
+  async testPersistedChanges () {
+    const id = uuidv4()
+    const res = await db.Transaction.run({ cacheModels: true }, async tx => {
+      const model = await tx.get(TransactionModel.data({ id }),
+        { createIfMissing: true })
+      model.field1 = 1.1
+      return tx.get(TransactionModel.key({ id }))
+    })
+    expect(res.field1).toBe(1.1)
+  }
+}
+
 class ModelDiffsTest extends BaseTest {
   async testNonexistent () {
     const id = uuidv4()
@@ -1309,5 +1418,6 @@ runTests(
   TransactionReadOnlyTest,
   TransactionRetryTest,
   TransactionWriteTest,
+  TransactionCacheModelsTest,
   ModelDiffsTest
 )

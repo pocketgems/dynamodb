@@ -38,6 +38,7 @@ This library is used to interact with the DynamoDB NoSQL database. It provides h
   - [Table Creation & Persistence](#table-creation--persistence)
   - [Sort Keys](#sort-keys)
   - [Overlapping Models](#overlapping-models)
+  - [Repeated Reads](#repeated-reads)
 - [Library Collaborator's Guide](#library-collaborators-guide)
   - [Conventions](#conventions)
   - [AOL](#aol)
@@ -378,7 +379,6 @@ await db.Transaction.run(retryOptions, async tx => {
 // fail
 ```
 
-
 ### Read-Only
 You can ensure a transaction does not make any database changes by setting the
 `readOnly` option to true, or calling `tx.makeReadOnly()`:
@@ -593,10 +593,6 @@ const [order1, order2, raceResult] = await tx.get([
   requests, especially when data can be read from [DAX](#DAX). This operation
   is faster than a consistent batch read, but it does not guarantee a
   consistent snapshot and only provides eventual consistency.
-
-Note: Any given item can only be fetched once during a transaction. It is an
-error to try to fetch the same data twice.
-
 
 ### Write
 To modify data in the database, simply modify fields on an item created by
@@ -916,6 +912,64 @@ tx.create(Weapon, {
 })
 ```
 
+## Repeated Reads
+By default, reading an item twice in a single transaction is treated as an
+exception.
+```javascript
+await db.Transaction.run(async tx => {
+  await tx.get(SomeModel, "model id")
+  // await tx.get(SomeModel, "model id") // throws exception
+})
+```
+
+In some occasions, we may need to allow the same item to be read more than
+once. For example, a transaction may be handling a batch of operations (action
+pattern with batching), where individual operation might read and update the
+same item.
+```javascript
+const operation = async (tx) => {
+  const model = await tx.get(SomeModel, "some id")
+  model.intField += 1
+}
+
+const operations = [operation, operation]
+
+await db.Transaction.run(async tx => {
+  for (const op of operations) {
+    // Second iteration will throw
+    await op(tx)
+  }
+})
+```
+
+To allow reading the same item more than once, a `cacheModels` option can be
+toggled on. In this mode, when an item is first read, it is cached by the
+transaction, and the transaction will return the cached model for any
+subsequent reads.
+```javascript
+await db.Transaction.run({ cacheModels: true },async tx => {
+  // This transaction will complete ok
+  for (const op of operations) {
+    await op(tx)
+  }
+})
+```
+
+Any modifications made to the cached item will be stored along with the item,
+so subsequent reads will see the previous updates.
+ ```javascript
+await db.Transaction.run({ cacheModels: true },async tx => {
+  const model = await tx.get(SomeModel, "some id")
+  model.intField = 123
+
+  const cachedModel = await tx.get(SomeModel, "some id")
+  expect(cachedModel.intField).toBe(123)
+})
+```
+
+If [an operation other than read](#operations) was done on the item (e.g.
+delete, or create, etc.), a subsequent attempt to read the item will result in
+an exception regardless of the cacheModels flag value.
 
 # Library Collaborator's Guide
 

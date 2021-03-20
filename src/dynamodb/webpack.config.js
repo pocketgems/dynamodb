@@ -8,7 +8,7 @@ module.exports = {
     filename: 'dynamodb.js',
     path: path.resolve(__dirname, 'dist'),
     libraryTarget: 'commonjs2'
-},
+  },
   mode: 'production',
   target: 'node',
   module: {

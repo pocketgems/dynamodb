@@ -3,8 +3,9 @@ const assert = require('assert')
 const deepeq = require('deep-equal')
 const deepcopy = require('rfdc')()
 
-const AsyncEmitter = require('./async-emitter')
 const S = require('../../schema/src/schema')
+
+const AsyncEmitter = require('./async-emitter')
 
 /**
  * @namespace Errors
@@ -107,6 +108,17 @@ class InvalidModelDeletionError extends GenericModelError {
   constructor (table, _id, _sk) {
     super('Tried to delete model with outdated / invalid conditions',
       table, _id, _sk)
+  }
+}
+
+/**
+ * Thrown when an attempt to get a model that is deleted or created in a
+ * transaction where cachedModels option is on.
+ */
+class InvalidCachedModelError extends GenericModelError {
+  constructor (model) {
+    super('Model is not a valid cached model',
+      model.constructor.fullTableName, model._id, model._sk)
   }
 }
 
@@ -714,11 +726,11 @@ class Data extends Key {
 // sentinel values for different item creation methods
 const ITEM_SOURCE = {
   CREATE: { isCreate: true },
-  GET: { isGet: true },
-  UPDATE: { isUpdate: true },
   CREATE_OR_PUT: { isCreateOrPut: true },
   DELETE: { isDelete: true }, // Delete by key creates a local model
-  SCAN: { isScan: true }
+  GET: { isGet: true },
+  SCAN: { isScan: true },
+  UPDATE: { isUpdate: true }
 }
 const ITEM_SOURCES = new Set(Object.values(ITEM_SOURCE))
 
@@ -1993,10 +2005,12 @@ class __WriteBatcher {
    * @param {Model} model A model to track.
    */
   track (model) {
-    if (this.__toCheck[model] !== undefined) {
+    const trackedModel = this.__toCheck[model]
+    if (trackedModel !== undefined) {
       if (model.__src.isDelete) {
         throw new ModelDeletedTwiceError(model)
-      } else {
+      } else if (!(model.__src.isGet || model.__src.isCreate) ||
+                 !(trackedModel instanceof NonExistentItem)) {
         throw new ModelCreatedTwiceError(model)
       }
     }
@@ -2080,21 +2094,22 @@ class __WriteBatcher {
   /**
    * Find a model with the same TableName and Key from a list of models
    * @param {String} tableName
-   * @param {Object} key { _id: '', _sk: '' }
+   * @param {Object} key { _id: { S: '' }, _sk: { S: '' } }
    */
   __getModel (tableName, key) {
     const id = Object.values(key._id)[0]
     const sk = key._sk ? Object.values(key._sk)[0] : undefined
-    let ret
+    return this.getModel(tableName, id, sk)
+  }
+
+  getModel (tableName, id, sk) {
     for (const model of this.__allModels) {
       if (model.__fullTableName === tableName &&
           model._id === id &&
           model._sk === sk) {
-        ret = model
-        break
+        return model
       }
     }
-    return ret
   }
 
   __extractError (request, response) {
@@ -2172,6 +2187,13 @@ class Transaction {
    *   after the first attempt fails and before first retry happens.
    * @property {Number} [maxBackoff=10000] In milliseconds, max delay
    *   between retries. Must be larger than 200.
+   * @property {Number} [cacheModels=false] Whether to cache models already
+   *   retrieved from the database. When off, getting a model with the same key
+   *   the second time in the same transaction results in an error. When on,
+   *   `get`ting the same key simply returns the cached model. Previous
+   *   modifications done to the model are reflected in the returned model. If
+   *   the model key was used in some API other than "get", an error will
+   *   result.
    */
 
   /**
@@ -2182,7 +2204,8 @@ class Transaction {
       readOnly: false,
       retries: 3,
       initialBackoff: 500,
-      maxBackoff: 10000
+      maxBackoff: 10000,
+      cacheModels: false
     }
   }
 
@@ -2441,17 +2464,79 @@ class Transaction {
             'must pass a Key to tx.get() when createIfMissing is not true')
         }
       }
-      // fetch the data in bulk if more than 1 item was requested
-      if (argIsArray) {
-        if (!params.inconsistentRead) {
-          return this.__transactGetItems(arg, params)
-        } else {
-          return this.__batchGetItems(arg, params)
+      const cachedModels = []
+      let keysOrDataToGet = []
+      if (this.options.cacheModels) {
+        for (const keyOrData of arr) {
+          const cachedModel = this.__writeBatcher.getModel(
+            keyOrData.Cls.fullTableName,
+            keyOrData.encodedKeys._id,
+            keyOrData.encodedKeys._sk
+          )
+          if (cachedModel) {
+            if (!cachedModel.__src.isGet || cachedModel.__toBeDeleted) {
+              throw new InvalidCachedModelError(cachedModel)
+            }
+            cachedModels.push(cachedModel)
+          } else {
+            keysOrDataToGet.push(keyOrData)
+          }
         }
       } else {
-        // just fetch the one item that was requested
-        return this.__getItem(arg, params)
+        keysOrDataToGet = arr
       }
+      // fetch the data in bulk if more than 1 item was requested
+      const fetchedModels = []
+      if (keysOrDataToGet.length > 0) {
+        if (argIsArray) {
+          if (!params.inconsistentRead) {
+            fetchedModels.push(
+              ...await this.__transactGetItems(keysOrDataToGet, params))
+          } else {
+            fetchedModels.push(
+              ...await this.__batchGetItems(keysOrDataToGet, params))
+          }
+        } else {
+          // just fetch the one item that was requested
+          fetchedModels.push(await this.__getItem(keysOrDataToGet[0], params))
+        }
+      }
+
+      let ret = []
+      if (this.options.cacheModels) {
+        const findModel = (tableName, id, sk) => {
+          for (let index = 0; index < keysOrDataToGet.length; index++) {
+            const toGetKeyOrData = keysOrDataToGet[index]
+            if (tableName === toGetKeyOrData.Cls.fullTableName &&
+              id === toGetKeyOrData.encodedKeys._id &&
+              sk === toGetKeyOrData.encodedKeys._sk) {
+              return fetchedModels[index]
+            }
+          }
+
+          for (const model of cachedModels) {
+            // istanbul ignore else
+            if (tableName === model.constructor.fullTableName &&
+              id === model._id &&
+              sk === model._sk) {
+              return model
+            }
+          }
+        }
+        for (const keyOrData of arr) {
+          ret.push(findModel(
+            keyOrData.Cls.fullTableName,
+            keyOrData.encodedKeys._id,
+            keyOrData.encodedKeys._sk
+          ))
+        }
+      } else {
+        // UnorderedModels is really ordered when cacheModels is disabled
+        // don't sort to save time
+        ret = fetchedModels
+      }
+
+      return argIsArray ? ret : ret[0]
     })
   }
 
@@ -2820,6 +2905,7 @@ function setup (config) {
     InvalidFieldError,
     InvalidModelDeletionError,
     InvalidModelUpdateError,
+    InvalidCachedModelError,
     InvalidOptionsError,
     InvalidParameterError,
     ModelCreatedTwiceError,
