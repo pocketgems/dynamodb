@@ -2236,12 +2236,14 @@ class Transaction {
    * All events transactions may emit.
    *
    * POST_COMMIT: When a transaction is committed. Do clean up,
-   *              summery, post process here. Handler has the signature of
-   *              (error) => {}. When error is undefined, the transaction
-   *              committed successfully, else the transaction failed.
+   *              summery, post process here.
+   * TX_FAILED: When a transaction failed permanently (either by failing all
+   *            retries, or getting a non-retryable error). Handler has the
+   *            signature of (error) => {}.
    */
   static EVENTS = {
-    POST_COMMIT: 'postCommit'
+    POST_COMMIT: 'postCommit',
+    TX_FAILED: 'txFailed'
   }
 
   addEventHandler (event, handler) {
@@ -2744,13 +2746,19 @@ class Transaction {
         if (errorMessages.length) {
           if (allErrors.length === 1) {
             // if there was only one error, just rethrow it
-            throw allErrors[0]
+            const e = allErrors[0]
+            await this.__eventEmitter.emit(this.constructor.EVENTS.TX_FAILED,
+              e)
+            throw e
           } else {
             // if there were multiple errors, combine it into one error which
             // summarizes all of the failures
-            throw new TransactionFailedError(
+            const e = new TransactionFailedError(
               ['Multiple Non-retryable Errors: ', ...errorMessages].join('\n'),
               err)
+            await this.__eventEmitter.emit(this.constructor.EVENTS.TX_FAILED,
+              e)
+            throw e
           }
         } else {
           console.log(`Transaction commit attempt ${tryCnt} failed with ` +
@@ -2761,7 +2769,9 @@ class Transaction {
         // note: this exact message is checked and during load testing this
         // error will not be sent to Sentry; if this message changes, please
         // update make-app.js too
-        throw new TransactionFailedError('Too much contention.')
+        const err = new TransactionFailedError('Too much contention.')
+        await this.__eventEmitter.emit(this.constructor.EVENTS.FAILURE, err)
+        throw err
       }
       const offset = Math.floor(Math.random() * millisBackOff * 0.2) -
         millisBackOff * 0.1 // +-0.1 backoff as jitter to spread out conflicts
