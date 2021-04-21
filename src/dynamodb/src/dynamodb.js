@@ -1032,7 +1032,7 @@ class Model {
    * @returns {BooleanField|ArrayField|ObjectField|NumberField|StringField}
    */
   getField (name) {
-    assert.ok(!name.startsWith('_'), 'may not access internal computed fields')
+    assert(!name.startsWith('_'), 'may not access internal computed fields')
     return this.__db_attrs[name] || this.__non_db_attrs[name]
   }
 
@@ -1137,7 +1137,7 @@ class Model {
       // However, when items are setup from updateItem method, we pretend the
       // items to be not new. Hence, the condition will never be satisfied.
       // conditions.push('attribute_exists(_id)')
-      assert.fail('This should be unreachable unless something is broken.')
+      assert(false, 'This should be unreachable unless something is broken.')
     }
 
     const item = {}
@@ -2039,7 +2039,7 @@ class __WriteBatcher {
    * @returns {Boolean} whether any model is written to DB.
    */
   async commit (expectWrites) {
-    assert.ok(!this.resolved, 'Already wrote models.')
+    assert(!this.resolved, 'Already wrote models.')
     this.resolved = true
 
     for (const model of this.__allModels) {
