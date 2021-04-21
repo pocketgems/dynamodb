@@ -2254,11 +2254,11 @@ class Transaction {
     TX_FAILED: 'txFailed'
   }
 
-  addEventHandler (event, handler) {
+  addEventHandler (event, handler, name = undefined) {
     if (!Object.values(this.constructor.EVENTS).includes(event)) {
       throw new Error(`Unsupported event ${event}`)
     }
-    this.__eventEmitter.once(event, handler)
+    this.__eventEmitter.once(event, handler, name)
   }
 
   /**
@@ -2732,7 +2732,7 @@ class Transaction {
    * @access private
    */
   async __run (func) {
-    if (!(func instanceof Function)) {
+    if (!(func instanceof Function || typeof func === 'function')) {
       throw new InvalidParameterError('func', 'must be a function / closure')
     }
 
@@ -2825,16 +2825,17 @@ class Transaction {
   /**
    * Return before and after snapshots of all relevant models.
    */
-  getModelDiffs () {
+  getModelDiffs (filter = () => true) {
     const allBefore = []
     const allAfter = []
     for (const model of this.__writeBatcher.trackedModels) {
-      if (!model.getDiff) {
+      if (!model.getDiff || !filter(model)) {
         continue
       }
       const { before, after } = model.getDiff()
-      allBefore.push(before)
-      allAfter.push(after)
+      const key = model.constructor.name
+      allBefore.push({ [key]: before })
+      allAfter.push({ [key]: after })
     }
     return {
       before: allBefore,
@@ -2921,6 +2922,7 @@ function setup (config) {
   })
 
   const exportAsClass = {
+    S,
     Model,
     Transaction,
 
@@ -2950,7 +2952,8 @@ function setup (config) {
         NumberField,
         ObjectField,
         StringField
-      ]
+      ],
+      ITEM_SOURCE
     }
   }
   return toExport
