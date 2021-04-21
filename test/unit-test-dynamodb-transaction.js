@@ -1290,6 +1290,18 @@ class TransactionCacheModelsTest extends BaseTest {
 }
 
 class ModelDiffsTest extends BaseTest {
+  get defaultExpectation () {
+    return {
+      TransactionModel: {
+        _id: undefined,
+        field1: undefined,
+        field2: undefined,
+        arrField: undefined,
+        objField: undefined
+      }
+    }
+  }
+
   async testNonexistent () {
     const id = uuidv4()
     const result = await db.Transaction.run(async tx => {
@@ -1307,17 +1319,11 @@ class ModelDiffsTest extends BaseTest {
       m.field1 = 321
       return tx.getModelDiffs()
     })
-    const expectation = {
-      _id: undefined,
-      field1: undefined,
-      field2: undefined,
-      arrField: undefined,
-      objField: undefined
-    }
+    const expectation = this.defaultExpectation
     expect(result.before[0]).toStrictEqual(expectation)
 
-    expectation._id = id
-    expectation.field1 = 321
+    expectation.TransactionModel._id = id
+    expectation.TransactionModel.field1 = 321
     expect(result.after[0]).toStrictEqual(expectation)
   }
 
@@ -1327,19 +1333,15 @@ class ModelDiffsTest extends BaseTest {
       await func(tx, ids)
       return tx.getModelDiffs()
     })
-    const expectation = {
-      _id: undefined,
-      field1: undefined,
-      field2: undefined,
-      arrField: undefined,
-      objField: undefined
-    }
+    let expectation = this.defaultExpectation
     expect(result.before[0]).toStrictEqual(expectation)
     expect(result.before[1]).toStrictEqual(expectation)
 
     // before after snapshots are not sorted, but they should all exist
+    expectation = expectation.TransactionModel
     delete expectation._id
-    for (const after of result.after) {
+    for (const entry of result.after) {
+      const after = entry.TransactionModel
       expect(ids).toContain(after._id)
       delete after._id
       expect(after).toStrictEqual(expectation)
@@ -1361,15 +1363,12 @@ class ModelDiffsTest extends BaseTest {
       await tx.delete(TransactionModel.key({ id }))
       return tx.getModelDiffs()
     })
+    const expectation = this.defaultExpectation
     expect(result).toStrictEqual({
-      before: [{
-        _id: undefined,
-        arrField: undefined,
-        field1: undefined,
-        field2: undefined,
-        objField: undefined
-      }],
-      after: [{}]
+      before: [expectation],
+      after: [{
+        TransactionModel: {}
+      }]
     })
 
     // Create model
@@ -1382,15 +1381,13 @@ class ModelDiffsTest extends BaseTest {
       await tx.delete(m)
       return tx.getModelDiffs()
     })
+    expectation.TransactionModel._id = id
+    expectation.TransactionModel.field1 = 1
     expect(result2).toStrictEqual({
-      before: [{
-        _id: id,
-        arrField: undefined,
-        field1: 1,
-        field2: undefined,
-        objField: undefined
-      }],
-      after: [{}]
+      before: [expectation],
+      after: [{
+        TransactionModel: {}
+      }]
     })
   }
 
