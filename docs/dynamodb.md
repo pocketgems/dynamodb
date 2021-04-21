@@ -967,6 +967,15 @@ await db.Transaction.run({ cacheModels: true },async tx => {
 })
 ```
 
+Repeated reads can be enabled during a transaction because transactions track all referenced items. Call `enableModelCache` to turn it on.
+```javascript
+await db.Transaction.run(async tx => {
+  ...
+  tx.enableModelCache()
+  ...
+})
+```
+
 If [an operation other than read](#operations) was done on the item (e.g.
 delete, or create, etc.), a subsequent attempt to read the item will result in
 an exception regardless of the cacheModels flag value.

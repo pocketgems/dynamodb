@@ -2721,6 +2721,11 @@ class Transaction {
     this.options.readOnly = true
   }
 
+  /** Enables model cache */
+  enableModelCache () {
+    this.options.cacheModels = true
+  }
+
   /**
    * Runs a closure in transaction.
    * @param {Function} func the closure to run

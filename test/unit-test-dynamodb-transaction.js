@@ -1222,7 +1222,8 @@ class TransactionCacheModelsTest extends BaseTest {
   async testGetMany () {
     const helper = async (inconsistentRead) => {
       const id = uuidv4()
-      const ret = await db.Transaction.run({ cacheModels: true }, async tx => {
+      const ret = await db.Transaction.run(async tx => {
+        tx.enableModelCache()
         const opts = { createIfMissing: true, inconsistentRead }
         const m2 = await tx.get(TransactionModel, id, opts)
         const ms = await tx.get([
