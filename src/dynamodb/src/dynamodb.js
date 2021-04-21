@@ -791,6 +791,9 @@ class Model {
     Object.seal(this)
   }
 
+  __finalize () {
+  }
+
   __addField (idx, name, opts, vals) {
     const val = vals[name]
     const valSpecified = Object.hasOwnProperty.call(vals, name)
@@ -824,6 +827,10 @@ class Model {
         field.set(val)
       }
     })
+  }
+
+  static __getFields () {
+    return this.FIELDS
   }
 
   /**
@@ -876,7 +883,7 @@ class Model {
     const fieldsByKeyType = {
       HASH: keyComponents.partition,
       RANGE: keyComponents.sort,
-      '': this.FIELDS
+      '': this.__getFields()
     }
     const proto = this.prototype
 
@@ -1975,6 +1982,7 @@ class __WriteBatcher {
       throw new Error('Attempting to write an unchanged model ' +
         model.toString())
     }
+    model.__finalize()
     this.__toCheck[model] = false
 
     let action
