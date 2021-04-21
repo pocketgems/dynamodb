@@ -11,7 +11,6 @@
   "license": "unlicensed",
   "dependencies": {
     "amazon-dax-client": "^1.2.5",
-    "assert": "^2.0.0",
     "aws-sdk": "^2.829.0",
     "deep-equal": "^2.0.5",
     "rfdc": "^1.1.4",
@@ -19,7 +18,9 @@
   },
   "devDependencies": {
     "@babel/core": "^7.12.10",
+    "@babel/plugin-proposal-class-properties": "^7.12.1",
     "babel-loader": "^8.2.2",
+    "license-webpack-plugin": "^2.3.17",
     "webpack": "^5.13.0",
     "webpack-cli": "^4.3.1"
   }
