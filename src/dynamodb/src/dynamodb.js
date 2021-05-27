@@ -71,7 +71,10 @@ class TransactionFailedError extends Error {
   }
 }
 
-/** Thrown when there's some error with a particular model. */
+/**
+ * Thrown when there's some error with a particular model.
+ * @memberof Errors
+ */
 class GenericModelError extends Error {
   constructor (msg, table, _id, _sk) {
     const skStr = (_sk !== undefined) ? ` _sk=${_sk}` : ''
@@ -84,6 +87,7 @@ class GenericModelError extends Error {
 /**
  * Thrown when a model is to be created, but DB already has an item with the
  * same key.
+ * @memberof Errors
  */
 class ModelAlreadyExistsError extends GenericModelError {
   constructor (table, _id, _sk) {
@@ -93,6 +97,7 @@ class ModelAlreadyExistsError extends GenericModelError {
 
 /**
  * Thrown when a model is to be updated, but condition check failed.
+ * @memberof Errors
  */
 class InvalidModelUpdateError extends GenericModelError {
   constructor (table, _id, _sk) {
@@ -103,6 +108,7 @@ class InvalidModelUpdateError extends GenericModelError {
 
 /**
  * Thrown when a model is to be deleted, but condition check failed.
+ * @memberof Errors
  */
 class InvalidModelDeletionError extends GenericModelError {
   constructor (table, _id, _sk) {
@@ -114,6 +120,7 @@ class InvalidModelDeletionError extends GenericModelError {
 /**
  * Thrown when an attempt to get a model that is deleted or created in a
  * transaction where cachedModels option is on.
+ * @memberof Errors
  */
 class InvalidCachedModelError extends GenericModelError {
   constructor (model) {
@@ -124,6 +131,7 @@ class InvalidCachedModelError extends GenericModelError {
 
 /**
  * Thrown when a model is being created more than once.
+ * @memberof Errors
  */
 class ModelCreatedTwiceError extends GenericModelError {
   constructor (model) {
@@ -135,6 +143,7 @@ class ModelCreatedTwiceError extends GenericModelError {
 
 /**
  * Thrown when a model is being deleted more than once.
+ * @memberof Errors
  */
 class ModelDeletedTwiceError extends GenericModelError {
   constructor (model) {
@@ -146,6 +155,7 @@ class ModelDeletedTwiceError extends GenericModelError {
 
 /**
  * Thrown when a tx tries to write when it was marked read-only.
+ * @memberof Errors
  */
 class WriteAttemptedInReadOnlyTxError extends Error {
   constructor (table, _id, _sk) {
@@ -736,15 +746,11 @@ const ITEM_SOURCES = new Set(Object.values(ITEM_SOURCE))
 
 /**
  * The base class for modeling data.
- * @public
- *
- * @property {Boolean} isNew Whether the item exists on server.
  */
 class Model {
   /**
    * Create a representation of a database Item. Should only be used by the
    * library.
-   * @private
    */
   constructor (src, isNew, vals) {
     this.isNew = !!isNew
@@ -791,6 +797,9 @@ class Model {
     Object.seal(this)
   }
 
+  /**
+   * Hook for finalizing a model before writing to database
+   */
   __finalize () {
   }
 
@@ -1627,6 +1636,7 @@ class Model {
   /**
    * Checks if the model has expired due to TTL.
    *
+   * @private
    * @return true if TTL is turned on for the model, and there is a expiration
    *   time set for the current model, and the expiration time is smaller than
    *   current time.
@@ -1754,6 +1764,10 @@ class NonExistentItem {
   }
 }
 
+/**
+ * DataBase iterator. Supports query and scan operations.
+ * @private
+ */
 class __DBIterator {
   static OPERATION_NAME = undefined
 
@@ -1794,7 +1808,7 @@ class __DBIterator {
    *   It is returned from a previous call to __getBatch. When nextToken is
    *   undefined, the function will go from the start of the DB table.
    *
-   * @return {[items, nextToken]} A tuple of (items, nextToken). When nextToken
+   * @return {Tuple(Array<Model>, String)} A tuple of (items, nextToken). When nextToken
    *   is undefined, the end of the DB table has been reached.
    */
   async __getBatch (n, nextToken = undefined) {
@@ -1833,7 +1847,7 @@ class __DBIterator {
    *   It is returned from a previous call to fetch. When nextToken is
    *   undefined, the function will go from the start of the DB table.
    *
-   * @return {[items, nextToken]} A tuple of (items, nextToken). When nextToken
+   * @return {Tuple(Array<Model>, String)} A tuple of (items, nextToken). When nextToken
    *   is undefined, the end of the DB table has been reached.
    */
   async fetch (n, nextToken = undefined) {
@@ -1878,6 +1892,9 @@ class __DBIterator {
   }
 }
 
+/**
+ * Scan handle for constructing filter expressions
+ */
 class Scan extends __DBIterator {
   static OPERATION_NAME = 'scan'
 }
@@ -1934,6 +1951,7 @@ async function getWithArgs (args, callback) {
     const params = args1.length === 1 ? args1[0] : undefined
     return callback(first, params)
   } else {
+    console.log(JSON.stringify(args))
     throw new InvalidParameterError('args',
       'Expecting Model or Key or [Key] as the first argument')
   }
@@ -2663,7 +2681,7 @@ class Transaction {
    * If a model is read from database, but it did not exist when deleting the
    * item, an exception is raised.
    *
-   * @param {...<Key|Model>} args Keys and Models
+   * @param {List<Key|Model>} args Keys and Models
    */
   delete (...args) {
     for (const a of args) {

@@ -53,7 +53,7 @@ is composed of one or more _Fields_. Each item uniquely identified by a
 
 ## Minimal Example
 Define a new table like this:
-```javascript <!-- embed:../test/unit-test-dynamodb.js:scope:Order -->
+```javascript <!-- embed:../test/unit-test-dynamodb-doc.js:scope:Order -->
 class Order extends db.Model {
   static FIELDS = {
     product: S.str,
@@ -69,7 +69,7 @@ tx.create(Order, { id, product: 'coffee', quantity: 1 })
 ```
 
 Later, we can retrieve it from the database and modify it:
-```javascript <!-- embed:../test/unit-test-dynamodb.js:scope:DBReadmeTest:testMinimalExample:Example -->
+```javascript <!-- embed:../test/unit-test-dynamodb-doc.js:scope:DBReadmeTest:testMinimalExample:Example -->
     // Example
     await db.Transaction.run(async tx => {
       const order = await tx.get(Order, id)
@@ -93,7 +93,7 @@ changed.
 You can override the default and define your key to be composed of one _or
 more_ fields with arbitrary
 [Todea schema](./schema.md)s (`R`):
-```javascript <!-- embed:../test/unit-test-dynamodb.js:scope:RaceResult -->
+```javascript <!-- embed:../test/unit-test-dynamodb-doc.js:scope:RaceResult -->
 class RaceResult extends db.Model {
   static KEY = {
     raceID: S.int,
@@ -103,7 +103,7 @@ class RaceResult extends db.Model {
 ```
 
 Access each component of a key just like any other field:
-```javascript <!-- embed:../test/unit-test-dynamodb.js:scope:DBReadmeTest:testKeys -->
+```javascript <!-- embed:../test/unit-test-dynamodb-doc.js:scope:DBReadmeTest:testKeys -->
   async testKeys () {
     await RaceResult.createResource()
     await db.Transaction.run(async tx => {
@@ -136,7 +136,7 @@ the same key.
 ### Fields
 Fields are pieces of data attached to an item. They are defined similar to
 `KEY`:
-```javascript <!-- embed:../test/unit-test-dynamodb.js:scope:ModelWithFields -->
+```javascript <!-- embed:../test/unit-test-dynamodb-doc.js:scope:ModelWithFields -->
 class ModelWithFields extends db.Model {
   static FIELDS = {
     someInt: S.int.min(0),
@@ -160,7 +160,7 @@ Fields can be configured to be optional, immutable and/or have default values:
          field is required.
     * The default value is _not_ assigned to an optional field that is missing
       when it is fetched from the database.
-```javascript <!-- embed:../test/unit-test-dynamodb.js:scope:ModelWithComplexFields -->
+```javascript <!-- embed:../test/unit-test-dynamodb-doc.js:scope:ModelWithComplexFields -->
 class ModelWithComplexFields extends db.Model {
   static FIELDS = {
     aNonNegInt: S.int.min(0),
@@ -171,7 +171,7 @@ class ModelWithComplexFields extends db.Model {
   }
 }
 ```
-```javascript <!-- embed:../test/unit-test-dynamodb.js:section:example1122start:example1122end -->
+```javascript <!-- embed:../test/unit-test-dynamodb-doc.js:section:example1122start:example1122end -->
       // can omit the optional field
       const item = tx.create(ModelWithComplexFields, {
         id: uuidv4(),
@@ -264,7 +264,7 @@ The schema is checked as follows:
 As you've noticed, key components and fields are simply accessed by their names
 (e.g., `raceResult.runnerName` or `order.product`). You can also define
 instance methods on your models to provide additional functionality:
-```javascript <!-- embed:../test/unit-test-dynamodb.js:scope:OrderWithPrice -->
+```javascript <!-- embed:../test/unit-test-dynamodb-doc.js:scope:OrderWithPrice -->
 class OrderWithPrice extends db.Model {
   static FIELDS = {
     quantity: S.int,
