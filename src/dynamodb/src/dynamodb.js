@@ -2139,6 +2139,13 @@ class __WriteBatcher {
   }
 
   __extractError (request, response) {
+    // istanbul ignore if
+    if (response.httpResponse.body === undefined) {
+      const { statusCode, statusMessage } = response.httpResponse
+      console.log(`error code ${statusCode}, message ${statusMessage}`)
+      return
+    }
+
     const responseBody = response.httpResponse.body.toString()
     const reasons = JSON.parse(responseBody).CancellationReasons
     assert(reasons, 'error body missing reasons: ' + responseBody)
