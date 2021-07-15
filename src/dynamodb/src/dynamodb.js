@@ -792,6 +792,11 @@ class Model {
     Object.seal(this)
   }
 
+  static register (registrator) {
+    this.__doOneTimeModelPrep()
+    registrator.registerModel(this)
+  }
+
   /**
    * Hook for finalizing a model before writing to database
    */
