@@ -43,12 +43,12 @@ class BadModelTest extends BaseTest {
     class BadModel extends db.Model {
       static SORT_KEY = { isNew: S.str }
     }
-    this.check(BadModel, /this name is reserved/)
+    this.check(BadModel, /field name is reserved/)
 
     class BadModel2 extends db.Model {
       static SORT_KEY = { getField: S.str }
     }
-    this.check(BadModel2, /shadows another name/)
+    this.check(BadModel2, /shadows a property name/)
   }
 
   testIDName () {
@@ -231,7 +231,7 @@ class NewModelTest extends BaseTest {
       const model = tx.create(SimpleModel, { id })
       expect(model.id).toBe(id)
       expect(model.id).toBe(SimpleModel.__encodeCompoundValueToString(
-        SimpleModel.__KEY_ORDER.partition, { id }))
+        SimpleModel.__keyOrder.partition, { id }))
       expect(model.isNew).toBe(true)
       tx.__reset() // Don't write anything, cause it will fail.
       return 321
@@ -298,7 +298,7 @@ class IDSchemaTest extends BaseTest {
 
     // IDs are checked when keys are created too
     expect(() => cls.key('bad')).toThrow(S.ValidationError)
-    const keyOrder = cls.__KEY_ORDER.partition
+    const keyOrder = cls.__keyOrder.partition
     expect(() => cls.__encodeCompoundValueToString(keyOrder, { id: 'X' }))
       .toThrow(S.ValidationError)
     expect(cls.key('xyz').encodedKeys).toEqual({ _id: 'xyz' })
@@ -308,7 +308,7 @@ class IDSchemaTest extends BaseTest {
 
   async testCompoundID () {
     const compoundID = { year: 1900, make: 'Honda', upc: uuidv4() }
-    const keyOrder = CompoundIDModel.__KEY_ORDER.partition
+    const keyOrder = CompoundIDModel.__keyOrder.partition
     const id = CompoundIDModel.__encodeCompoundValueToString(
       keyOrder, compoundID)
     function check (entity) {
@@ -407,7 +407,7 @@ class WriteTest extends BaseTest {
     params = m1.__updateParams()
     expect(params).not.toHaveProperty(CONDITION_EXPRESSION_STR)
     expect(params).not.toHaveProperty(UPDATE_EXPRESSION_STR)
-    expect(m1.__db_attrs._id.accessed).toBe(false)
+    expect(m1.__attrs.id.accessed).toBe(false)
   }
 
   async testWriteSetToUndefinedProp () {
@@ -1565,7 +1565,7 @@ class ScanTest extends BaseTest {
   }
 }
 
-class DiffTest extends BaseTest {
+class SnapshotTest extends BaseTest {
   async beforeAll () {
     await super.beforeAll()
     await JSONModel.createResource()
@@ -1590,9 +1590,12 @@ class DiffTest extends BaseTest {
         },
         { createIfMissing: true })
       expect(m.getField('arrNoDefaultNoRequired').accessed).toBe(false)
-      const data = m.getDiff()
-      // getDiff should not mark fields as accessed so optimistic lock in TX
-      // is not affected.
+      const data = {
+        before: m.getSnapshot({ initial: true, dbKeys: true }),
+        after: m.getSnapshot({ dbKeys: true })
+      }
+      // getSnapshot should not mark fields as accessed so optimistic lock in
+      // TX is not affected.
       expect(m.getField('arrNoDefaultNoRequired').accessed).toBe(false)
       return data
     })
@@ -1625,7 +1628,10 @@ class DiffTest extends BaseTest {
   async testGetExistingModel () {
     const result = await db.Transaction.run(async tx => {
       const m = await tx.get(JSONModel, this.modelID)
-      return m.getDiff()
+      return {
+        before: m.getSnapshot({ initial: true, dbKeys: true }),
+        after: m.getSnapshot({ dbKeys: true })
+      }
     })
     const expectation = {
       _id: this.modelID,
@@ -1640,6 +1646,33 @@ class DiffTest extends BaseTest {
     }
     expect(result.before).toStrictEqual(expectation)
     expect(result.after).toStrictEqual(expectation)
+  }
+
+  async testRangeKey () {
+    await db.Transaction.run(async tx => {
+      const id = uuidv4()
+      const m = await tx.get(RangeKeyModel, { id, rangeKey: 1, n: 1 }, { createIfMissing: true })
+      expect(m.getSnapshot({ initial: true, dbKeys: true })).toStrictEqual({
+        _id: undefined,
+        _sk: undefined,
+        n: undefined
+      })
+      expect(m.getSnapshot({ initial: true })).toStrictEqual({
+        id: undefined,
+        rangeKey: undefined,
+        n: undefined
+      })
+      expect(m.getSnapshot({ dbKeys: true })).toStrictEqual({
+        _id: id,
+        _sk: '1',
+        n: 1
+      })
+      expect(m.getSnapshot({})).toStrictEqual({
+        id: id,
+        rangeKey: 1,
+        n: 1
+      })
+    })
   }
 }
 
@@ -1656,8 +1689,8 @@ runTests(
   OptionalFieldConditionTest,
   ScanTest,
   SimpleModelTest,
+  SnapshotTest,
   TTLTest,
   WriteBatcherTest,
-  WriteTest,
-  DiffTest
+  WriteTest
 )

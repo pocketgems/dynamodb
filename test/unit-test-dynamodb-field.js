@@ -174,66 +174,69 @@ class CommonFieldTest extends BaseTest {
   }
 
   testHashKeyImmutable () {
-    let field = db.__private.NumberField({ keyType: 'HASH' })
+    let field = db.__private.NumberField({ keyType: 'PARTITION' })
     expect(field.immutable).toBe(true)
 
     expect(() => {
-      db.__private.NumberField({ keyType: 'HASH', immutable: false })
+      db.__private.NumberField({ keyType: 'PARTITION', immutable: false })
     }).toThrow(db.InvalidOptionsError)
 
-    field = db.__private.NumberField({ keyType: 'HASH', immutable: true })
+    field = db.__private.NumberField({ keyType: 'PARTITION', immutable: true })
     expect(field.immutable).toBe(true)
 
-    field = db.__private.NumberField({ keyType: 'RANGE' })
+    field = db.__private.NumberField({ keyType: 'SORT' })
     expect(field.immutable).toBe(true)
 
     expect(() => {
-      db.__private.NumberField({ keyType: 'RANGE', immutable: false })
+      db.__private.NumberField({ keyType: 'SORT', immutable: false })
     }).toThrow(db.InvalidOptionsError)
 
-    field = db.__private.NumberField({ keyType: 'RANGE', immutable: true })
+    field = db.__private.NumberField({ keyType: 'SORT', immutable: true })
     expect(field.immutable).toBe(true)
   }
 
   testKeyNoDefault () {
-    let field = db.__private.NumberField({ keyType: 'HASH' })
+    let field = db.__private.NumberField({ keyType: 'PARTITION' })
     expect(field.default).toBe(undefined)
 
     expect(() => {
-      db.__private.NumberField({ keyType: 'HASH', default: 1 })
+      db.__private.NumberField({ keyType: 'PARTITION', default: 1 })
     }).toThrow(db.InvalidOptionsError)
 
-    field = db.__private.NumberField({ keyType: 'RANGE' })
+    field = db.__private.NumberField({ keyType: 'SORT' })
     expect(field.default).toBe(undefined)
 
     // sort keys can have defaults
-    field = db.__private.NumberField({ keyType: 'RANGE', default: 1 })
+    field = db.__private.NumberField({ keyType: 'SORT', default: 1 })
     expect(field.default).toBe(1)
   }
 
   testKeyRequired () {
-    let field = db.__private.NumberField({ keyType: 'HASH' })
+    let field = db.__private.NumberField({ keyType: 'PARTITION' })
     expect(field.optional).toBe(false)
 
-    field = db.__private.NumberField({ keyType: 'HASH' })
-    expect(field.optional).toBe(false)
-
-    expect(() => {
-      db.__private.NumberField({ keyType: 'HASH', optional: true })
-    }).toThrow(db.InvalidOptionsError)
-    field = db.__private.NumberField({ keyType: 'HASH', optional: undefined })
-    expect(field.optional).toBe(false)
-
-    field = db.__private.NumberField({ keyType: 'RANGE' })
-    expect(field.optional).toBe(false)
-
-    field = db.__private.NumberField({ keyType: 'RANGE', optional: false })
+    field = db.__private.NumberField({ keyType: 'PARTITION' })
     expect(field.optional).toBe(false)
 
     expect(() => {
-      db.__private.NumberField({ keyType: 'RANGE', optional: true })
+      db.__private.NumberField({ keyType: 'PARTITION', optional: true })
     }).toThrow(db.InvalidOptionsError)
-    field = db.__private.NumberField({ keyType: 'RANGE', optional: undefined })
+    field = db.__private.NumberField({
+      keyType: 'PARTITION',
+      optional: undefined
+    })
+    expect(field.optional).toBe(false)
+
+    field = db.__private.NumberField({ keyType: 'SORT' })
+    expect(field.optional).toBe(false)
+
+    field = db.__private.NumberField({ keyType: 'SORT', optional: false })
+    expect(field.optional).toBe(false)
+
+    expect(() => {
+      db.__private.NumberField({ keyType: 'SORT', optional: true })
+    }).toThrow(db.InvalidOptionsError)
+    field = db.__private.NumberField({ keyType: 'SORT', optional: undefined })
     expect(field.optional).toBe(false)
   }
 
@@ -415,7 +418,7 @@ class RepeatedFieldTest extends BaseTest {
   testNonExistAttributeConditionValue () {
     // Make sure attribute_not_exist() is generated for keys even if they are
     // not read
-    let field = this.fieldFactory({ keyType: 'HASH' })
+    let field = this.fieldFactory({ keyType: 'PARTITION' })
     field.name = 'myField'
     expect(field.__conditionExpression('')).toStrictEqual(
       [`attribute_not_exists(${field.__awsName})`, {}])

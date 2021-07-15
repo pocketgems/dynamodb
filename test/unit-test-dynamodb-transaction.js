@@ -190,8 +190,8 @@ class TransactionEdgeCaseTest extends BaseTest {
           _id: idToWrite.id,
           _sk: 'y'
         },
-        ConditionExpression: 'attribute_not_exists(#0)',
-        ExpressionAttributeNames: { '#0': '_id' }
+        ConditionExpression: 'attribute_not_exists(#_id)',
+        ExpressionAttributeNames: { '#_id': '_id' }
       }
     })
     expect(checkExpr).toEqual({
@@ -201,8 +201,8 @@ class TransactionEdgeCaseTest extends BaseTest {
           _id: idToRead.id,
           _sk: 'x'
         },
-        ConditionExpression: 'attribute_not_exists(#0)',
-        ExpressionAttributeNames: { '#0': '_id' }
+        ConditionExpression: 'attribute_not_exists(#_id)',
+        ExpressionAttributeNames: { '#_id': '_id' }
       }
     })
   }
@@ -699,7 +699,7 @@ class TransactionWriteTest extends QuickTransactionTest {
     const newVal = Math.floor(Math.random() * 9999999)
     await db.Transaction.run(async tx => {
       const original = {}
-      Object.keys(TransactionModel.__VIS_ATTRS).forEach(fieldName => {
+      Object.keys(TransactionModel._attrs).forEach(fieldName => {
         const val = origModel[fieldName]
         if (val !== undefined) {
           original[fieldName] = val

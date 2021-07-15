@@ -215,13 +215,13 @@ function loadOptionDefaults (options, defaults) {
 class __Field {
   static __validateFieldOptions (modelName, keyType, fieldName, schema) {
     if (fieldName.startsWith('_')) {
-      if (fieldName !== '_sk' && fieldName !== '_id') {
-        throw new InvalidFieldError(
-          fieldName, 'property names may not start with "_"')
-      }
+      throw new InvalidFieldError(
+        fieldName, 'property names may not start with "_"')
     }
 
-    assert.ok(schema.isTodeaSchema, 'must be Todea schema')
+    assert(['PARTITION', 'SORT', undefined].includes(keyType),
+      'keyType must be one of \'PARTITION\', \'SORT\' or undefined')
+    assert(schema.isTodeaSchema, 'must be Todea schema')
     const compiledSchema = schema.getValidatorAndJSONSchema(
       `${modelName}.${fieldName}`)
     schema = compiledSchema.jsonSchema
@@ -243,9 +243,9 @@ class __Field {
         'the default value cannot be set to undefined')
     }
     if (isKey) {
-      if (hasDefault && keyType === 'HASH') {
+      if (hasDefault && keyType === 'PARTITION') {
         throw new InvalidOptionsError('default',
-          'No defaults for partition keys. It just doesn\'t make sense.')
+          'No defaults for partition keys.') // It just doesn\'t make sense.
       }
       if (schema.readOnly === false) {
         throw new InvalidOptionsError('immutable',
@@ -264,8 +264,8 @@ class __Field {
 
   /**
    * @typedef {Object} FieldOptions
-   * @property {'HASH'|'RANGE'} [keyType=undefined] If specified, the field is
-   *   a key. Use 'HASH' for a partition key. Use 'RANGE' for a sort key.
+   * @property {'PARTITION'|'SORT'} [keyType=undefined] If specified, the field is
+   *   a key. Use 'PARTITION' for a partition key. Use 'SORT' for a sort key.
    *   When keyType is specified, other options are forced to be
    *   { optional: false, immutable: true, default: undefined }. If user
    *   supplied values that conflicts with those values, InvalidOptionsError
@@ -766,32 +766,27 @@ class Model {
     // track whether this item has been marked for deletion
     this.__toBeDeleted = src.isDelete
 
-    // __db_attrs has a __Field subclass object for each attribute to be
-    // written to the database. There is one attribute for each entry in
-    // FIELDS, plus an _id field (the partition key) and optionally an _sk
-    // field (the optional sort key).
-    this.__db_attrs = {}
-    // __non_db_attrs has a __Field subclass object for each key component
-    this.__non_db_attrs = {}
+    // __attrs has a __Field subclass object for each non-key attribute.
+    this.__attrs = {}
 
-    // make sure val is populated with both the encoded keys (_id and _sk) as
-    // well as each key components (i.e., the keys in KEY and SORT_KEYS)
-    this.constructor.__setupKey(true, vals)
-    if (this.constructor.__hasSortKey()) {
-      this.constructor.__setupKey(false, vals)
+    // Decode _id and _sk that are stored in DB into key components that are
+    // in KEY and SORT_KEY.
+    const setupKey = (attrName, keyOrder, vals) => {
+      const attrVal = vals[attrName]
+      if (attrVal === undefined) {
+        return
+      }
+
+      delete vals[attrName]
+      Object.assign(vals, this.constructor.__decodeCompoundValueFromString(
+        keyOrder, attrVal, attrName))
     }
+    setupKey('_id', this.constructor.__keyOrder.partition, vals)
+    setupKey('_sk', this.constructor.__keyOrder.sort, vals)
 
     // add user-defined fields from FIELDS & key components from KEY & SORT_KEY
     let fieldIdx = 0
-    const _idFieldOpts = __Field.__validateFieldOptions(
-      this.constructor.name, 'HASH', '_id', S.str.min(1))
-    this.__addField(fieldIdx++, '_id', _idFieldOpts, vals)
-    if (this.constructor.__hasSortKey()) {
-      const _skFieldOpts = __Field.__validateFieldOptions(
-        this.constructor.name, 'RANGE', '_sk', S.str.min(1))
-      this.__addField(fieldIdx++, '_sk', _skFieldOpts, vals)
-    }
-    for (const [name, opts] of Object.entries(this.constructor.__VIS_ATTRS)) {
+    for (const [name, opts] of Object.entries(this.constructor._attrs)) {
       this.__addField(fieldIdx++, name, opts, vals)
     }
     Object.seal(this)
@@ -820,14 +815,7 @@ class Model {
       isForDelete: this.__src.isDelete
     })
     Object.seal(field)
-    this[name] = field
-    if (!opts.keyType || name === '_id' || name === '_sk') {
-      // key fields are implicitly included in the "_id" or "_sk" field;
-      // they are otherwise ignored!
-      this.__db_attrs[name] = field
-    } else {
-      this.__non_db_attrs[name] = field
-    }
+    this.__attrs[name] = field
     Object.defineProperty(this, name, {
       get: (...args) => {
         return field.get()
@@ -842,6 +830,89 @@ class Model {
     return this.FIELDS
   }
 
+  static __validatedSchema () {
+    if (Object.constructor.hasOwnProperty.call(this, '__CACHED_SCHEMA')) {
+      return this.__CACHED_SCHEMA
+    }
+
+    if (!this.KEY) {
+      throw new InvalidFieldError('KEY', 'the partition key is required')
+    }
+    if (this.KEY.isTodeaSchema || this.KEY.schema) {
+      throw new InvalidFieldError('KEY', 'must define key component name(s)')
+    }
+    if (Object.keys(this.KEY).length === 0) {
+      throw new InvalidFieldError('KEY', '/at least one partition key field/')
+    }
+    if (this.SORT_KEY?.isTodeaSchema || this.SORT_KEY?.schema) {
+      throw new InvalidFieldError('SORT_KEY',
+        'must define key component name(s)')
+    }
+
+    // cannot use the names of non-static Model members (only need to list
+    // those that are defined by the constructor; those which are on the
+    // prototype are enforced automatically)
+    const reservedNames = new Set(['isNew'])
+    const proto = this.prototype
+    const ret = {}
+    for (const schema of [this.KEY, this.SORT_KEY ?? {}, this.__getFields()]) {
+      for (const [key, val] of Object.entries(schema)) {
+        if (ret[key]) {
+          throw new InvalidFieldError(
+            key, 'property name cannot be used more than once')
+        }
+        if (reservedNames.has(key)) {
+          throw new InvalidFieldError(
+            key, 'field name is reserved and may not be used')
+        }
+        if (key in proto) {
+          throw new InvalidFieldError(key, 'shadows a property name')
+        }
+        ret[key] = val
+      }
+    }
+    if (this.EXPIRE_EPOCH_FIELD) {
+      const todeaSchema = ret[this.EXPIRE_EPOCH_FIELD]
+      if (!todeaSchema) {
+        throw new GenericModelError(
+          'EXPIRE_EPOCH_FIELD must refer to an existing field',
+          this.name
+        )
+      }
+      const schema = todeaSchema.jsonSchema()
+      if (!['integer', 'number'].includes(schema.type)) {
+        throw new GenericModelError(
+          'EXPIRE_EPOCH_FIELD must refer to an integer or double field',
+          this.name
+        )
+      }
+      if (schema.optional) {
+        throw new GenericModelError(
+          'EXPIRE_EPOCH_FIELD must refer to a required field',
+          this.name
+        )
+      }
+    }
+    this.__CACHED_SCHEMA = S.obj(ret)
+    return this.__CACHED_SCHEMA
+  }
+
+  static get schema () {
+    return this.__validatedSchema()
+  }
+
+  static get __keyOrder () {
+    if (Object.constructor.hasOwnProperty.call(this, '__CACHED_KEY_ORDER')) {
+      return this.__CACHED_KEY_ORDER
+    }
+    this.__validatedSchema() // use side effect to validate schema
+    this.__CACHED_KEY_ORDER = {
+      partition: Object.keys(this.KEY).sort(),
+      sort: Object.keys(this.SORT_KEY || {}).sort()
+    }
+    return this.__CACHED_KEY_ORDER
+  }
+
   /**
    * Check that field names don't overlap, etc.
    */
@@ -854,93 +925,25 @@ class Model {
     }
     this.__setupDone = true
 
-    // put key into the standard, non-shorthand format
-    const keyComponents = {}
-    function defineKey (kind, opts) {
-      if (!opts) {
-        if (kind === 'partition') {
-          throw new InvalidFieldError('KEY', 'the partition key is required')
-        } else {
-          keyComponents[kind] = {}
-        }
-      } else if (opts.isTodeaSchema || opts.schema) {
-        throw new InvalidFieldError('key', 'must define key component name(s)')
-      } else {
-        keyComponents[kind] = opts
-      }
-    }
-    defineKey('partition', this.KEY)
-    defineKey('sort', this.SORT_KEY)
-
-    // determine the order for the component(s) of each key type
-    this.__KEY_ORDER = {}
-    for (const [keyType, values] of Object.entries(keyComponents)) {
-      const keyComponentNames = Object.keys(values)
-      keyComponentNames.sort()
-      this.__KEY_ORDER[keyType] = keyComponentNames
-    }
-    if (!this.__KEY_ORDER.partition.length) {
-      throw new InvalidFieldError(
-        'KEY', 'must define at least one partition key field')
-    }
-    this.__KEY_COMPONENT_NAMES = new Set()
-
-    // cannot use the names of non-static Model members (only need to list
-    // those that are defined by the constructor; those which are on the
-    // prototype are enforced automatically)
-    const reservedNames = new Set(['isNew'])
-    const fieldsByKeyType = {
-      HASH: keyComponents.partition,
-      RANGE: keyComponents.sort,
-      '': this.__getFields()
-    }
-    const proto = this.prototype
-
-    // __VIS_ATTRS maps the name of attributes that are visible to users of
+    // _attrs maps the name of attributes that are visible to users of
     // this model. This is the combination of attributes (keys) defined by KEY,
     // SORT_KEY and FIELDS.
-    this.__VIS_ATTRS = {}
-    for (const [keyType, props] of Object.entries(fieldsByKeyType)) {
-      for (const [fieldName, schema] of Object.entries(props)) {
-        if (this.__VIS_ATTRS[fieldName]) {
-          throw new InvalidFieldError(
-            fieldName, 'property name cannot be used more than once')
-        }
-        const finalFieldOpts = __Field.__validateFieldOptions(
-          this.name, keyType || undefined, fieldName, schema)
-        this.__VIS_ATTRS[fieldName] = finalFieldOpts
-        if (keyType) {
-          this.__KEY_COMPONENT_NAMES.add(fieldName)
-        }
-        if (reservedNames.has(fieldName)) {
-          throw new InvalidFieldError(
-            fieldName, 'this name is reserved and may not be used')
-        }
-        if (fieldName in proto) {
-          throw new InvalidFieldError(fieldName, 'shadows another name')
-        }
+    this._attrs = {}
+    this.__KEY_COMPONENT_NAMES = new Set()
+    const partitionKeys = new Set(this.__keyOrder.partition)
+    const sortKeys = new Set(this.__keyOrder.sort)
+    for (const [fieldName, schema] of Object.entries(this.schema.objectSchemas)) {
+      let keyType
+      if (partitionKeys.has(fieldName)) {
+        keyType = 'PARTITION'
+      } else if (sortKeys.has(fieldName)) {
+        keyType = 'SORT'
       }
-    }
-
-    if (this.EXPIRE_EPOCH_FIELD) {
-      const attr = this.__VIS_ATTRS[this.EXPIRE_EPOCH_FIELD]
-      if (!attr) {
-        throw new GenericModelError(
-          'EXPIRE_EPOCH_FIELD must refer to an existing field',
-          this.name
-        )
-      }
-      if (!['integer', 'number'].includes(attr.schema.type)) {
-        throw new GenericModelError(
-          'EXPIRE_EPOCH_FIELD must refer to an integer or double field',
-          this.name
-        )
-      }
-      if (attr.optional) {
-        throw new GenericModelError(
-          'EXPIRE_EPOCH_FIELD must refer to a required field',
-          this.name
-        )
+      const finalFieldOpts = __Field.__validateFieldOptions(
+        this.name, keyType || undefined, fieldName, schema)
+      this._attrs[fieldName] = finalFieldOpts
+      if (keyType) {
+        this.__KEY_COMPONENT_NAMES.add(fieldName)
       }
     }
   }
@@ -952,7 +955,7 @@ class Model {
     const keys = [{ AttributeName: '_id', KeyType: 'HASH' }]
 
     // if we have a sort key attribute, it always "_sk" and of type string
-    if (this.__KEY_ORDER.sort.length) {
+    if (this.__keyOrder.sort.length > 0) {
       attrs.push({ AttributeName: '_sk', AttributeType: 'S' })
       keys.push({ AttributeName: '_sk', KeyType: 'RANGE' })
     }
@@ -1005,11 +1008,33 @@ class Model {
    */
   static FIELDS = {}
 
-  /**
-   * Returns true if this object has a sort key.
-   */
-  static __hasSortKey () {
-    return this.__KEY_ORDER.sort.length > 0
+  get _id () {
+    return this.__getKey(this.constructor.__keyOrder.partition)
+  }
+
+  get _sk () {
+    return this.__getKey(this.constructor.__keyOrder.sort)
+  }
+
+  __getKey (keyOrder) {
+    return this.constructor.__encodeCompoundValueToString(
+      keyOrder, new Proxy(this, {
+        get: (target, prop, receiver) => {
+          return target.getField(prop).__value
+        }
+      })
+    )
+  }
+
+  get __encodedKey () {
+    const ret = {
+      _id: this._id
+    }
+    const sk = this._sk
+    if (sk) {
+      ret._sk = sk
+    }
+    return ret
   }
 
   /**
@@ -1017,18 +1042,18 @@ class Model {
    * _sk if model has a sort key).
    * Verifies that the keys are valid (i.e., they match the required schema).
    * @param {Object} vals map of field names to values
-   * @returns map of _id and (if hasSortKey()) _sk attribute values
+   * @returns map of _id (and _sk attribute values)
    */
   static __computeKeyAttrMap (vals) {
     // compute and validate the partition attribute
     const keyAttrs = {
-      _id: this.__encodeCompoundValueToString(this.__KEY_ORDER.partition, vals)
+      _id: this.__encodeCompoundValueToString(this.__keyOrder.partition, vals)
     }
 
     // add and validate the sort attribute, if any
-    if (this.__hasSortKey()) {
+    if (this.__keyOrder.sort.length > 0) {
       keyAttrs._sk = this.__encodeCompoundValueToString(
-        this.__KEY_ORDER.sort, vals
+        this.__keyOrder.sort, vals
       )
     }
     return keyAttrs
@@ -1042,7 +1067,7 @@ class Model {
    */
   getField (name) {
     assert(!name.startsWith('_'), 'may not access internal computed fields')
-    return this.__db_attrs[name] || this.__non_db_attrs[name]
+    return this.__attrs[name]
   }
 
   /**
@@ -1086,7 +1111,7 @@ class Model {
     Object.keys(data).forEach(key => {
       if (this.__KEY_COMPONENT_NAMES.has(key)) {
         keyComponents[key] = data[key]
-      } else if (this.__VIS_ATTRS[key]) {
+      } else if (this._attrs[key]) {
         modelData[key] = data[key]
       } else {
         throw new InvalidParameterError('data', 'unknown field ' + key)
@@ -1149,27 +1174,27 @@ class Model {
       assert(false, 'This should be unreachable unless something is broken.')
     }
 
-    const item = {}
+    const item = this.__encodedKey
     const accessedFields = []
     let exprCount = 0
-    Object.keys(this.__db_attrs).forEach(key => {
-      const field = this.__db_attrs[key]
+    for (const [key, field] of Object.entries(this.__attrs)) {
       field.validate()
 
+      if (field.keyType) {
+        continue
+      }
       if (field.__value !== undefined) {
         // Not having undefined keys effectively removes them.
         // Also saves some bandwidth.
         item[key] = deepcopy(field.__value)
       }
 
-      if (field.keyType === undefined) {
-        // Put works by overriding the entire item,
-        // all fields needs to be written.
-        // No need to check for field.accessed, pretend everything is accessed,
-        // except for keys, since they don't change
-        accessedFields.push(field)
-      }
-    })
+      // Put works by overriding the entire item,
+      // all fields needs to be written.
+      // No need to check for field.accessed, pretend everything is accessed,
+      // except for keys, since they don't change
+      accessedFields.push(field)
+    }
 
     let conditionExpr
     const exprAttrNames = {}
@@ -1256,15 +1281,14 @@ class Model {
     const conditions = []
     const exprAttrNames = {}
     const exprValues = {}
-    const itemKey = {}
+    const itemKey = this.__encodedKey
     const sets = []
     const removes = []
     const accessedFields = []
     let exprCount = 0
 
     const isUpdate = this.__src.isUpdate
-    Object.keys(this.__db_attrs).forEach(key => {
-      const field = this.__db_attrs[key]
+    for (const field of Object.values(this.__attrs)) {
       const omitInUpdate = isUpdate && field.get() === undefined
       const doValidate = (shouldValidate === undefined || shouldValidate) &&
         !omitInUpdate
@@ -1272,16 +1296,15 @@ class Model {
         field.validate()
       }
 
-      if (field.keyType !== undefined) {
-        itemKey[field.name] = field.__value
-        return
+      if (field.keyType) {
+        continue
       }
 
       if (omitInUpdate) {
         // When init method is UPDATE, not all required fields are present in the
         // model: we only write parts of the model.
         // Hence we exclude any fields that are not part of the update.
-        return
+        continue
       }
 
       const exprKey = `:_${exprCount++}`
@@ -1299,9 +1322,8 @@ class Model {
       if (set || remove) {
         exprAttrNames[field.__awsName] = field.name
       }
-    })
+    }
 
-    const idField = this.__db_attrs._id
     if (this.isNew) {
       const [cond, names, vals] = this.__nonexistentModelCondition()
       conditions.push(cond)
@@ -1309,8 +1331,8 @@ class Model {
       Object.assign(exprValues, vals)
     } else {
       if (isUpdate) {
-        conditions.push(`attribute_exists(${idField.__awsName})`)
-        exprAttrNames[idField.__awsName] = idField.name
+        conditions.push('attribute_exists(#_id)')
+        exprAttrNames['#_id'] = '_id'
       }
 
       for (const field of accessedFields) {
@@ -1360,25 +1382,17 @@ class Model {
   }
 
   __deleteParams () {
-    const itemKey = {}
-    Object.keys(this.__db_attrs).forEach(key => {
-      const field = this.__db_attrs[key]
-      if (field.keyType !== undefined) {
-        itemKey[field.name] = field.__value
-      }
-    })
-
+    const itemKey = this.__encodedKey
     const ret = {
       TableName: this.__fullTableName,
       Key: itemKey
     }
     if (!this.isNew) {
-      const idField = this.__db_attrs._id
       const conditions = [
-        `attribute_exists(${idField.__awsName})`
+        'attribute_exists(#_id)'
       ]
       const attrNames = {
-        [idField.__awsName]: idField.name
+        '#_id': '_id'
       }
       const conditionCheckParams = this.__updateParams(false)
       if (conditionCheckParams.ConditionExpression) {
@@ -1403,7 +1417,7 @@ class Model {
   __isMutated () {
     return this.isNew ||
       this.__toBeDeleted ||
-      Object.values(this.__db_attrs).reduce(
+      Object.values(this.__attrs).reduce(
         (result, field) => {
           return result || field.mutated
         },
@@ -1430,30 +1444,6 @@ class Model {
     return undefined
   }
 
-  static __setupKey (isPartitionKey, vals) {
-    let attrName, keyOrderKey
-    if (isPartitionKey) {
-      attrName = '_id'
-      keyOrderKey = 'partition'
-    } else {
-      attrName = '_sk'
-      keyOrderKey = 'sort'
-    }
-    const keyOrder = this.__KEY_ORDER[keyOrderKey]
-    if (!vals[attrName]) {
-      // if the computed field is missing, compute it
-      vals[attrName] = this.__encodeCompoundValueToString(
-        keyOrder, vals)
-    } else {
-      // if the components of the computed field are missing, compute them
-      /* istanbul ignore else */
-      if (vals[keyOrder[0]] === undefined) {
-        Object.assign(vals, this.__decodeCompoundValueFromString(
-          keyOrder, vals[attrName], attrName))
-      }
-    }
-  }
-
   /**
    * Returns the string representation for the given compound values.
    *
@@ -1465,10 +1455,13 @@ class Model {
    *   fields (they will be ignored)
    */
   static __encodeCompoundValueToString (keyOrder, values) {
+    if (keyOrder.length === 0) {
+      return undefined
+    }
     const pieces = []
     for (var i = 0; i < keyOrder.length; i++) {
       const fieldName = keyOrder[i]
-      const fieldOpts = this.__VIS_ATTRS[fieldName]
+      const fieldOpts = this._attrs[fieldName]
       const givenValue = values[fieldName]
       if (givenValue === undefined) {
         throw new InvalidFieldError(fieldName, 'must be provided')
@@ -1511,7 +1504,7 @@ class Model {
     for (let i = 0; i < pieces.length; i++) {
       const piece = pieces[i]
       const fieldName = keyOrder[i]
-      const fieldOpts = this.__VIS_ATTRS[fieldName]
+      const fieldOpts = this._attrs[fieldName]
       const valueType = schemaTypeToJSTypeMap[fieldOpts.schema.type]
       if (valueType === String) {
         compoundID[fieldName] = piece
@@ -1557,11 +1550,11 @@ class Model {
   static __splitKeysAndDataWithPreprocessing (vals) {
     // if we only have one key component, then the `_id` **MAY** just be the
     // value rather than a map of key component names to values
-    assert.ok(this.__KEY_ORDER,
+    assert.ok(this.__keyOrder,
       `model ${this.name} one-time setup was not done (remember to export ` +
       'the model and in unit tests remember to call createResource()')
-    const pKeyOrder = this.__KEY_ORDER.partition
-    if (pKeyOrder.length === 1 && !this.__KEY_ORDER.sort.length) {
+    const pKeyOrder = this.__keyOrder.partition
+    if (pKeyOrder.length === 1 && this.__keyOrder.sort.length === 0) {
       const pFieldName = pKeyOrder[0]
       if (!(vals instanceof Object) || !vals[pFieldName]) {
         vals = { [pFieldName]: vals }
@@ -1664,10 +1657,9 @@ class Model {
    *   does not exist on server.
    */
   __nonexistentModelCondition () {
-    const idField = this.__db_attrs._id
-    let condition = `attribute_not_exists(${idField.__awsName})`
+    let condition = 'attribute_not_exists(#_id)'
     const attrNames = {
-      [idField.__awsName]: idField.name
+      '#_id': '_id'
     }
     let attrValues
     if (this.constructor.EXPIRE_EPOCH_FIELD) {
@@ -1704,26 +1696,47 @@ class Model {
   toString () {
     return makeItemString(
       this.constructor,
-      this.__db_attrs._id.__value,
-      this.constructor.__hasSortKey() ? this.__db_attrs._sk.__value : undefined
+      this._id,
+      this._sk
     )
   }
 
   /**
-   * Return before and after snapshots of the model, all fields included.
+   * Return snapshot of the model, all fields included.
+   * @param {Object} params
+   * @param {Boolean} params.initial Whether to return the initial state
+   * @param {Boolean} params.dbKeys Whether to return _id and _sk instead of
+   *   raw key fields.
    */
-  getDiff () {
-    const before = {}
-    const after = {}
-    for (const [name, field] of Object.entries(this.__db_attrs)) {
-      before[name] = field.__initialValue
-      after[name] = field.__value
+  getSnapshot ({ initial = false, dbKeys = false }) {
+    if (initial === false && this.__toBeDeleted) {
+      return {}
     }
-    if (this.__toBeDeleted) {
-      return { before, after: {} }
-    } else {
-      return { before, after }
+
+    const ret = {}
+    if (dbKeys) {
+      if (!initial || !this.isNew) {
+        Object.assign(ret, this.__encodedKey)
+      } else {
+        ret._id = undefined
+        if (this._sk) {
+          ret._sk = undefined
+        }
+      }
     }
+    for (const [name, field] of Object.entries(this.__attrs)) {
+      if (field.keyType) {
+        if (dbKeys) {
+          continue
+        }
+      }
+      if (initial) {
+        ret[name] = field.__initialValue
+      } else {
+        ret[name] = field.__value
+      }
+    }
+    return ret
   }
 }
 
@@ -2605,7 +2618,7 @@ class Transaction {
     })
 
     Object.keys(updated).forEach(key => {
-      if (Cls.__VIS_ATTRS[key].keyType !== undefined) {
+      if (Cls._attrs[key].keyType !== undefined) {
         throw new InvalidParameterError(
           'updated', 'must not contain key fields')
       }
@@ -2854,10 +2867,11 @@ class Transaction {
     const allBefore = []
     const allAfter = []
     for (const model of this.__writeBatcher.trackedModels) {
-      if (!model.getDiff || !filter(model)) {
+      if (!model.getSnapshot || !filter(model)) {
         continue
       }
-      const { before, after } = model.getDiff()
+      const before = model.getSnapshot({ initial: true, dbKeys: true })
+      const after = model.getSnapshot({ initial: false, dbKeys: true })
       const key = model.constructor.name
       allBefore.push({ [key]: before })
       allAfter.push({ [key]: after })
