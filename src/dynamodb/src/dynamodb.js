@@ -1330,10 +1330,12 @@ class Model {
     }
 
     if (this.isNew) {
-      const [cond, names, vals] = this.__nonexistentModelCondition()
-      conditions.push(cond)
-      Object.assign(exprAttrNames, names)
-      Object.assign(exprValues, vals)
+      if (!this.__src.isCreateOrPut) {
+        const [cond, names, vals] = this.__nonexistentModelCondition()
+        conditions.push(cond)
+        Object.assign(exprAttrNames, names)
+        Object.assign(exprValues, vals)
+      }
     } else {
       if (isUpdate) {
         conditions.push('attribute_exists(#_id)')
@@ -1751,6 +1753,12 @@ class Model {
 class NonExistentItem {
   constructor (key) {
     this.key = key
+  }
+
+  get __src () {
+    return {
+      isGet: true
+    }
   }
 
   __isMutated () {

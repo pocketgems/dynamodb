@@ -836,7 +836,7 @@ class TransactionWriteTest extends QuickTransactionTest {
     const fut = db.Transaction.run(async tx => {
       tx.createOrPut(
         TransactionModel,
-        { id: name, field1: 123123 },
+        { id: name, field1: 123123 }, // initial value doesn't match
         {
           field2: 111,
           arrField: undefined,
@@ -849,7 +849,7 @@ class TransactionWriteTest extends QuickTransactionTest {
     await db.Transaction.run(async tx => {
       tx.createOrPut(
         TransactionModel,
-        { id: name, field1: 9988234 },
+        { id: name, field1: 9988234 }, // initial value ok
         {
           field2: 111,
           arrField: undefined,
@@ -860,6 +860,33 @@ class TransactionWriteTest extends QuickTransactionTest {
     model = await txGet(name)
     expect(model.field1).toBe(9988234)
     expect(model.field2).toBe(111)
+  }
+
+  async testTransactionalCreateOrPut () {
+    const ids = [uuidv4(), uuidv4()]
+    const helper = async (value) => {
+      await db.Transaction.run(async tx => {
+        for (const id of ids) {
+          tx.createOrPut(
+            TransactionModel,
+            { id },
+            {
+              field1: value,
+              field2: 111,
+              arrField: undefined,
+              objField: undefined
+            }
+          )
+        }
+      })
+      for (const id of ids) {
+        const model = await txGet(id)
+        expect(model).toBeDefined()
+        expect(model.field1).toBe(value)
+      }
+    }
+    await helper(1)
+    await helper(2)
   }
 
   async testUpdatePartialModel () {
@@ -1212,11 +1239,14 @@ class TransactionCacheModelsTest extends BaseTest {
     const id = uuidv4()
     const ret = await db.Transaction.run({ cacheModels: true }, async tx => {
       const m1 = await tx.get(TransactionModel, id)
-      const m2 = await tx.get(TransactionModel, id, { createIfMissing: true })
-      return [m1, m2]
+      // Repeatedly getting a missing item should also work
+      const m2 = await tx.get(TransactionModel, id)
+      const m3 = await tx.get(TransactionModel, id, { createIfMissing: true })
+      return [m1, m2, m3]
     })
     expect(ret[0]).toBe(undefined)
-    expect(ret[1]._id).toBe(id)
+    expect(ret[1]).toBe(undefined)
+    expect(ret[2]._id).toBe(id)
   }
 
   async testGetMany () {
@@ -1257,6 +1287,7 @@ class TransactionCacheModelsTest extends BaseTest {
   }
 
   async testPutModels () {
+    // Models created with createOrPut cannot be read and modified afterwards
     const id = uuidv4()
     const fut = db.Transaction.run({ cacheModels: true }, async tx => {
       tx.createOrPut(TransactionModel,
