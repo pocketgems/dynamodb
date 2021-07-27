@@ -1038,6 +1038,112 @@ class WriteBatcherTest extends BaseTest {
   }
 }
 
+class DefaultsTest extends BaseTest {
+  /**
+   * Verify that nested defaults are applied
+   * to saved models
+   */
+  async testNestedDefaultsOnSave () {
+    class NestedDefaultsModel extends db.Model {
+      static FIELDS = {
+        arr: S.arr(S.obj({
+          int: S.int,
+          str: S.str.default('butterfly')
+        }))
+      }
+    }
+    await NestedDefaultsModel.createResource()
+    const id = uuidv4()
+
+    await db.Transaction.run(async tx => {
+      await tx.create(NestedDefaultsModel, {
+        id: id,
+        arr: [{ int: 2 }, { int: 3 }]
+      })
+    })
+
+    await db.Transaction.run(async tx => {
+      const result = await tx.get(NestedDefaultsModel, id)
+      expect(result.arr).toEqual([
+        {
+          int: 2,
+          str: 'butterfly'
+        },
+        {
+          int: 3,
+          str: 'butterfly'
+        }
+      ])
+    })
+  }
+
+  /**
+   * Verify that nested schemas with 'undefined' as default
+   * do not pass validation
+   */
+  async testNestedDefaultValidation () {
+    class NestedDefaultsModel extends db.Model {
+      static FIELDS = {
+        arr: S.arr(S.obj({
+          str: S.str.default(undefined)
+        }))
+      }
+    }
+
+    expect(async () => await NestedDefaultsModel.createResource())
+      .rejects
+      .toThrow('No default value can be set to undefined')
+  }
+
+  /**
+   * Verify that nested defaults are applied
+   * when retrieving models
+   */
+  async testNestedDefaultsOnGet () {
+    const fields = {
+      arr: S.arr(S.obj({
+        int: S.int,
+        str: S.str.default('butterfly')
+      }))
+    }
+
+    class NestedDefaultsModel extends db.Model {
+      static FIELDS = fields
+    }
+
+    await NestedDefaultsModel.createResource()
+    const id = uuidv4()
+
+    await db.Transaction.run(async tx => {
+      await tx.create(NestedDefaultsModel, {
+        id: id,
+        arr: [{ int: 2 }, { int: 3 }]
+      })
+    })
+
+    fields.arr.itemsSchema.__isLocked = false
+    fields.arr.itemsSchema.prop('newField', S.str.default('newDefault'))
+    delete NestedDefaultsModel.__setupDone
+    NestedDefaultsModel.__doOneTimeModelPrep()
+
+    await db.Transaction.run(async tx => {
+      const result = await tx.get(NestedDefaultsModel, id)
+      expect(result.arr).toEqual([
+        {
+          int: 2,
+          str: 'butterfly',
+          newField: 'newDefault'
+        },
+        {
+          int: 3,
+          str: 'butterfly',
+          newField: 'newDefault'
+        }
+      ])
+    })
+  }
+}
+
 class OptDefaultModelTest extends BaseTest {
   async testFieldWhichIsBothOptionalAndDefault () {
     class OptDefaultModel extends db.Model {
@@ -1679,6 +1785,7 @@ class SnapshotTest extends BaseTest {
 runTests(
   BadModelTest,
   ConditionCheckTest,
+  DefaultsTest,
   ErrorTest,
   GetArgsParserTest,
   IDSchemaTest,

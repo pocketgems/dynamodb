@@ -222,6 +222,13 @@ class __Field {
     assert(['PARTITION', 'SORT', undefined].includes(keyType),
       'keyType must be one of \'PARTITION\', \'SORT\' or undefined')
     assert(schema.isTodeaSchema, 'must be Todea schema')
+
+    schema.traverseSchema((schema) => {
+      if (schema.hasDefault() && schema.getDefault() === undefined) {
+        throw new InvalidFieldError(fieldName, 'No default value can be set to undefined')
+      }
+    })
+
     const compiledSchema = schema.getValidatorAndJSONSchema(
       `${modelName}.${fieldName}`)
     schema = compiledSchema.jsonSchema
@@ -238,10 +245,6 @@ class __Field {
     assert.ok(FieldCls, `unsupported field type ${options.schema.type}`)
 
     const hasDefault = Object.prototype.hasOwnProperty.call(schema, 'default')
-    if (hasDefault && options.default === undefined) {
-      throw new InvalidFieldError(fieldName,
-        'the default value cannot be set to undefined')
-    }
     if (isKey) {
       if (hasDefault && keyType === 'PARTITION') {
         throw new InvalidOptionsError('default',
