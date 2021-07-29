@@ -1238,7 +1238,10 @@ class Model {
         Object.assign(exprValues, vals)
       }
     } else {
-      const conditions = []
+      const conditions = [
+        'attribute_exists(#_id)'
+      ]
+      exprAttrNames['#_id'] = '_id'
       for (const field of accessedFields) {
         const exprKey = `:_${exprCount++}`
         const [condition, vals] = field.__conditionExpression(exprKey)
@@ -1340,10 +1343,8 @@ class Model {
         Object.assign(exprValues, vals)
       }
     } else {
-      if (isUpdate) {
-        conditions.push('attribute_exists(#_id)')
-        exprAttrNames['#_id'] = '_id'
-      }
+      conditions.push('attribute_exists(#_id)')
+      exprAttrNames['#_id'] = '_id'
 
       for (const field of accessedFields) {
         const exprKey = `:_${exprCount++}`
@@ -1398,19 +1399,14 @@ class Model {
       Key: itemKey
     }
     if (!this.isNew) {
-      const conditions = [
-        'attribute_exists(#_id)'
-      ]
-      const attrNames = {
-        '#_id': '_id'
-      }
+      const conditions = []
+      const attrNames = {}
+      // Since model is not new, conditionCheckParams will always have contents
       const conditionCheckParams = this.__updateParams(false)
-      if (conditionCheckParams.ConditionExpression) {
-        conditions.push(conditionCheckParams.ConditionExpression)
-        Object.assign(attrNames, conditionCheckParams.ExpressionAttributeNames)
-        ret.ExpressionAttributeValues =
+      conditions.push(conditionCheckParams.ConditionExpression)
+      Object.assign(attrNames, conditionCheckParams.ExpressionAttributeNames)
+      ret.ExpressionAttributeValues =
           conditionCheckParams.ExpressionAttributeValues
-      }
 
       ret.ConditionExpression = conditions.join(' AND ')
       ret.ExpressionAttributeNames = attrNames
@@ -1447,11 +1443,9 @@ class Model {
   __conditionCheckParams () {
     assert.ok(this.isNew || !this.__isMutated(),
       'Model is mutated, write it instead!')
-    const ret = this.__updateParams(false)
-    if (ret.ConditionExpression) {
-      return ret
-    }
-    return undefined
+    // Since model cannot be new, conditionCheckExpression will never be empty
+    // (_id must exist)
+    return this.__updateParams(false)
   }
 
   /**

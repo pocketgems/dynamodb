@@ -1074,6 +1074,38 @@ class TransactionConditionCheckTest extends QuickTransactionTest {
       checkModel(model2)
     })
   }
+
+  async testModelExistence () {
+    // Even if a model was only read, but no properties are accessed, a
+    // condition should be generated when the tx commits
+    const __WriteBatcher = db.__private.__WriteBatcher
+    const spy = jest.spyOn(__WriteBatcher.prototype, 'transactWrite')
+    const id = uuidv4()
+
+    // Non-existent model
+    await db.Transaction.run(async tx => {
+      await tx.get(TransactionModel, uuidv4())
+      await tx.create(TransactionModel, { id })
+    })
+    expect(spy).toHaveBeenCalledTimes(1)
+    let callArgs = spy.mock.calls[0]
+    expect(callArgs.length).toBe(1)
+    expect(callArgs[0].TransactItems[1].ConditionCheck.ConditionExpression)
+      .toBe('attribute_not_exists(#_id)')
+
+    spy.mockReset()
+    // Existing model
+    await db.Transaction.run(async tx => {
+      await tx.get(TransactionModel, id)
+      await tx.create(TransactionModel, { id: uuidv4() })
+    })
+    expect(spy).toHaveBeenCalledTimes(1)
+    callArgs = spy.mock.calls[0]
+    expect(callArgs.length).toBe(1)
+    expect(callArgs[0].TransactItems[1].ConditionCheck.ConditionExpression)
+      .toBe('attribute_exists(#_id)')
+    spy.mockRestore()
+  }
 }
 
 class TransactionDeleteTest extends QuickTransactionTest {

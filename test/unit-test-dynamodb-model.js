@@ -399,13 +399,13 @@ class WriteTest extends BaseTest {
     // Building block for strong Transaction isolation levels
     const m1 = await txGet(BasicModel, this.modelName)
     let params = m1.__updateParams()
-    expect(params).not.toHaveProperty(CONDITION_EXPRESSION_STR)
+    expect(params.ConditionExpression).toBe('attribute_exists(#_id)')
     expect(params).not.toHaveProperty(UPDATE_EXPRESSION_STR)
 
     // Make sure no fields are "accessed" while getting params
     m1.__putParams()
     params = m1.__updateParams()
-    expect(params).not.toHaveProperty(CONDITION_EXPRESSION_STR)
+    expect(params.ConditionExpression).toBe('attribute_exists(#_id)')
     expect(params).not.toHaveProperty(UPDATE_EXPRESSION_STR)
     expect(m1.__attrs.id.accessed).toBe(false)
   }
@@ -453,13 +453,15 @@ class WriteTest extends BaseTest {
   async testNoLockOption () {
     const model = await txGet(BasicModel, this.modelName)
     model.getField('noRequiredNoDefault').incrementBy(1)
-    expect(model.__updateParams()).not.toHaveProperty(CONDITION_EXPRESSION_STR)
+    expect(model.__updateParams().ExpressionAttributeNames)
+      .not.toContain('noRequiredNoDefault')
   }
 
   async testPutNoLock () {
     const model = await txGet(BasicModel, this.modelName)
     model.getField('noRequiredNoDefault').incrementBy(1)
-    expect(model.__putParams()).not.toHaveProperty(CONDITION_EXPRESSION_STR)
+    expect(model.__putParams().ExpressionAttributeNames)
+      .not.toContain('noRequiredNoDefault')
   }
 
   async testRetry () {
@@ -509,7 +511,8 @@ class ConditionCheckTest extends BaseTest {
 
   async testConditionCheckUnchangedModel () {
     const m1 = await txGet(BasicModel, this.modelName)
-    expect(m1.__conditionCheckParams()).toStrictEqual(undefined)
+    expect(m1.__conditionCheckParams().ConditionExpression)
+      .toBe('attribute_exists(#_id)')
   }
 
   async testReadonlyModel () {
@@ -517,7 +520,7 @@ class ConditionCheckTest extends BaseTest {
     m1.noRequiredNoDefault // eslint-disable-line no-unused-expressions
     const awsName = m1.getField('noRequiredNoDefault').__awsName
     expect(m1.__conditionCheckParams()).toHaveProperty('ConditionExpression',
-      `attribute_not_exists(${awsName})`)
+      `attribute_exists(#_id) AND attribute_not_exists(${awsName})`)
   }
 }
 
@@ -893,11 +896,14 @@ class WriteBatcherTest extends BaseTest {
       const update = data.TransactItems[0].Update
       // we never read the old value on model1, so our update should NOT be
       // conditioned on the old value
-      expect(update.ConditionExpression).toBe(undefined)
+      if (update) {
+        expect(update.ConditionExpression).toBe('attribute_exists(#_id)')
+      }
       const awsName = model1.getField('noRequiredNoDefault').__awsName
       expect(update.UpdateExpression).toBe(`SET ${awsName}=:_0`)
       const condition = data.TransactItems[1].ConditionCheck
-      expect(condition.ConditionExpression).toBe(`${awsName}=:_1`)
+      expect(condition.ConditionExpression)
+        .toBe(`attribute_exists(#_id) AND ${awsName}=:_1`)
       throw new Error(msg)
     })
     batcher.documentClient.transactWrite = mock
