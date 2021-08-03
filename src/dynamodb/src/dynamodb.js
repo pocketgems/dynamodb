@@ -2831,7 +2831,7 @@ class Transaction {
         // error will not be sent to Sentry; if this message changes, please
         // update make-app.js too
         const err = new TransactionFailedError('Too much contention.')
-        await this.__eventEmitter.emit(this.constructor.EVENTS.FAILURE, err)
+        await this.__eventEmitter.emit(this.constructor.EVENTS.TX_FAILED, err)
         throw err
       }
       const offset = Math.floor(Math.random() * millisBackOff * 0.2) -
