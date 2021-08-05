@@ -9,7 +9,8 @@ class AsyncEmitter {
     const handlers = this.handlers[event] || {}
     this.handlers[event] = handlers
     if (handlers[handlerName]) {
-      throw new Error('Handler with the same name already exists')
+      throw new Error(
+        `Handler with the same name ${handlerName} already exists`)
     }
     handlers[handlerName] = handler
     return handlerName

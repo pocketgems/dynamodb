@@ -73,10 +73,10 @@ class BadModelTest extends BaseTest {
     }
     IDCanBePartOfACompoundPartitionKey.__doOneTimeModelPrep()
 
-    class IDDoesntHaveToBeAString extends db.Model {
+    class IDDoesNotHaveToBeAString extends db.Model {
       static KEY = { id: S.double }
     }
-    IDDoesntHaveToBeAString.__doOneTimeModelPrep()
+    IDDoesNotHaveToBeAString.__doOneTimeModelPrep()
 
     class IDCanBeASortKeyName extends db.Model {
       static KEY = { x: S.double }
@@ -156,7 +156,7 @@ class SimpleModelTest extends BaseTest {
   async testFieldNotExtendable () {
     await expect(db.Transaction.run(tx => {
       const item = tx.create(SimpleModel, { id: uuidv4() })
-      item.id.weCannotAddProperitesToFieldsOnModels = undefined
+      item.id.weCannotAddPropertiesToFieldsOnModels = undefined
     })).rejects.toThrow(TypeError)
   }
 
@@ -186,14 +186,14 @@ class SimpleModelTest extends BaseTest {
   async testNoExtension () {
     const model = await txGet(SimpleModel, uuidv4())
     expect(() => {
-      model.someprop = 1
+      model.someProp = 1
     }).toThrow()
   }
 
   async testIdImmutable () {
     const model = await txGet(SimpleModel, uuidv4())
     expect(() => {
-      model.id = 'somethingelse'
+      model.id = 'someThingElse'
     }).toThrow()
   }
 
@@ -860,12 +860,12 @@ class WriteBatcherTest extends BaseTest {
   async beforeAll () {
     await BasicModel.createResource()
     this.modelNames = [uuidv4(), uuidv4()]
-    const futs = this.modelNames.map(name => {
+    const promises = this.modelNames.map(name => {
       return txGet(BasicModel, name, (m) => {
         m.noRequiredNoDefault = 0
       })
     })
-    await Promise.all(futs)
+    await Promise.all(promises)
   }
 
   async testUntrackedWrite () {
@@ -1178,7 +1178,7 @@ class OptDefaultModelTest extends BaseTest {
     const idSpecifyAll = uuidv4()
     const idUndef = uuidv4()
     await db.Transaction.run(tx => {
-      // can just use the defaults (specificy no field values)
+      // can just use the defaults (specify no field values)
       check(tx.create(OptDefaultModel, { id: idSpecifyNothing }),
         7, undefined, 7)
 
@@ -1250,7 +1250,7 @@ class OptDefaultModelTest extends BaseTest {
         8, 11, undefined)
     })
     await db.Transaction.run(async tx => {
-      // verify the db was updated by doing a blind update dependednt on it
+      // verify the db was updated by doing a blind update dependent on it
       await tx.update(OptDefaultModel2,
         { id: idSpecifyNothing, def2: 8 }, { def: 100 })
     })
@@ -1268,7 +1268,7 @@ class OptDefaultModelTest extends BaseTest {
       item.def = 3
     })
     await db.Transaction.run(async tx => {
-      // verify the db was updated by doing a blind update dependednt on it
+      // verify the db was updated by doing a blind update dependent on it
       await tx.update(OptDefaultModel2,
         { id: idUndef, def: 3, def2: 8 }, { opt2: 101 })
     })
