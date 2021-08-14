@@ -1055,7 +1055,11 @@ class DefaultsTest extends BaseTest {
         arr: S.arr(S.obj({
           int: S.int,
           str: S.str.default('butterfly')
-        }))
+        })),
+        obj: S.obj({
+          int: S.int.default(2),
+          str: S.str.default('shoe')
+        }).default({})
       }
     }
     await NestedDefaultsModel.createResource()
@@ -1080,6 +1084,12 @@ class DefaultsTest extends BaseTest {
           str: 'butterfly'
         }
       ])
+
+      // obj defaults should be applied top-down
+      expect(result.obj).toEqual({
+        int: 2,
+        str: 'shoe'
+      })
     })
   }
 
