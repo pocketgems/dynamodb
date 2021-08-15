@@ -1,6 +1,7 @@
 const assert = require('assert')
 
 const AsyncEmitter = require('./async-emitter')
+const AWSError = require('./aws-error')
 const { Data } = require('./data')
 const {
   InvalidCachedModelError,
@@ -220,7 +221,9 @@ class __WriteBatcher {
     request.on('extractError', (response) => {
       this.__extractError(request, response)
     })
-    return request.promise()
+    return request.promise().catch(e => {
+      throw new AWSError('transactWrite', e)
+    })
   }
 
   /**
@@ -401,6 +404,11 @@ class Transaction {
   async __getItem (key, params) {
     const getParams = key.Cls.__getParams(key.encodedKeys, params)
     const data = await this.documentClient.get(getParams).promise()
+      .catch(
+        // istanbul ignore next
+        e => {
+          throw new AWSError('get', e)
+        })
     if (!params.createIfMissing && !data.Item) {
       this.__writeBatcher.track(new NonExistentItem(key))
       return undefined
@@ -439,7 +447,10 @@ class Transaction {
     }
     const data = await this.documentClient.transactGet({
       TransactItems: txItems
-    }).promise()
+    }).promise().catch(
+      // istanbul ignore next
+      e => { throw new AWSError('transactGet', e) }
+    )
     const responses = data.Responses
     const models = []
     for (let idx = 0; idx < keys.length; idx++) {
@@ -511,7 +522,10 @@ class Transaction {
 
       const data = await this.documentClient.batchGet({
         RequestItems: reqItems
-      }).promise()
+      }).promise().catch(
+        // istanbul ignore next
+        e => { throw new AWSError('batchGet', e) }
+      )
 
       // Merge results
       const responses = data.Responses

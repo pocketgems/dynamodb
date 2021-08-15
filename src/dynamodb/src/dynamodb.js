@@ -2,6 +2,7 @@ const assert = require('assert')
 
 const S = require('../../schema/src/schema')
 
+const AWSError = require('./aws-error')
 const {
   InvalidCachedModelError,
   InvalidFieldError,
@@ -45,9 +46,10 @@ function makeCreateResourceFunc (dynamoDB) {
     await dynamoDB.createTable(params).promise().catch(err => {
       /* istanbul ignore if */
       if (err.code !== 'ResourceInUseException') {
-        throw err
+        throw new AWSError('createTable', err)
       }
     })
+
     if (ttlSpec) {
       await dynamoDB.updateTimeToLive({
         TableName: params.TableName,
@@ -56,7 +58,7 @@ function makeCreateResourceFunc (dynamoDB) {
         /* istanbul ignore next */
         err => {
           if (err.message !== 'TimeToLive is already enabled') {
-            throw err
+            throw new AWSError('updateTTL', err)
           }
         }
       )

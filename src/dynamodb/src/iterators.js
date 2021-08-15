@@ -1,4 +1,6 @@
+const AWSError = require('./aws-error')
 const { ITEM_SOURCE } = require('./utils')
+
 /**
  * DataBase iterator. Supports query and scan operations.
  * @private
@@ -58,6 +60,10 @@ class __DBIterator {
     }
     const op = this.constructor.OPERATION_NAME
     const result = await this.documentClient[op](this.__fetchParams).promise()
+      .catch(
+        // istanbul ignore next
+        e => { throw new AWSError(op, e) }
+      )
 
     const models = result.Items.map(item => {
       const m = new this.__ModelCls(ITEM_SOURCE.SCAN, false, item)

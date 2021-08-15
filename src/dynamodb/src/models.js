@@ -4,6 +4,7 @@ const deepcopy = require('rfdc')()
 
 const S = require('../../schema/src/schema')
 
+const AWSError = require('./aws-error')
 const { Data } = require('./data')
 const {
   GenericModelError,
@@ -878,7 +879,10 @@ class Model {
     let millisBackOff = 40
     for (let tryCnt = 0; tryCnt <= retries; tryCnt++) {
       try {
-        await this.documentClient[method](params).promise()
+        await this.documentClient[method](params).promise().catch(
+          // istanbul ignore next
+          e => { throw new AWSError('write model', e) }
+        )
         return
       } catch (error) {
         if (!error.retryable) {
