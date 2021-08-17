@@ -996,7 +996,7 @@ class Model {
    */
   getSnapshot ({ initial = false, dbKeys = false }) {
     if (initial === false && this.__toBeDeleted) {
-      return {}
+      return undefined
     }
 
     const ret = {}
@@ -1045,17 +1045,15 @@ class NonExistentItem {
   }
 
   __conditionCheckParams () {
-    const key = this.key
-    const model = new key.Cls(ITEM_SOURCE.GET, true, key.keyComponents)
-    const [
-      condition, attrNames, attrValues
-    ] = model.__nonexistentModelCondition()
+    const condition = 'attribute_not_exists(#_id)'
+    const attrNames = {
+      '#_id': '_id'
+    }
     return {
       TableName: this.key.Cls.fullTableName,
       Key: this.key.encodedKeys,
       ConditionExpression: condition,
-      ExpressionAttributeNames: attrNames,
-      ExpressionAttributeValues: attrValues
+      ExpressionAttributeNames: attrNames
     }
   }
 
@@ -1066,6 +1064,10 @@ class NonExistentItem {
   toString () {
     return makeItemString(
       this.key.Cls, this.key.encodedKeys._id, this.key.encodedKeys._sk)
+  }
+
+  getSnapshot () {
+    return undefined
   }
 }
 

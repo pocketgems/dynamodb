@@ -392,7 +392,12 @@ class Transaction {
     if (!Object.values(this.constructor.EVENTS).includes(event)) {
       throw new Error(`Unsupported event ${event}`)
     }
-    this.__eventEmitter.once(event, handler, name)
+    // istanbul ignore next
+    assert(name === undefined || !name.startsWith('_'),
+      'Event name must not start with "_"')
+    this.__eventIndex = (this.__eventIndex ?? 0) + 1
+    this.__eventEmitter.once(event, handler,
+      name ?? `_generatedName${this.__eventIndex}`)
   }
 
   /**
@@ -454,12 +459,13 @@ class Transaction {
     const responses = data.Responses
     const models = []
     for (let idx = 0; idx < keys.length; idx++) {
+      const key = keys[idx]
       const data = responses[idx]
       if ((!params || !params.createIfMissing) && !data.Item) {
+        this.__writeBatcher.track(new NonExistentItem(key))
         models[idx] = undefined
         continue
       }
-      const key = keys[idx]
       let model = new key.Cls(
         ITEM_SOURCE.GET,
         !data.Item,
@@ -479,6 +485,8 @@ class Transaction {
       models[idx] = model
       if (model) {
         this.__writeBatcher.track(model)
+      } else {
+        this.__writeBatcher.track(new NonExistentItem(key))
       }
     }
     return models
@@ -570,11 +578,14 @@ class Transaction {
     }
 
     // Now track models, so everything is in expected order.
-    models.forEach(model => {
+    for (let index = 0; index < models.length; index++) {
+      const model = models[index]
       if (model) {
         this.__writeBatcher.track(model)
+      } else {
+        this.__writeBatcher.track(new NonExistentItem(keys[index]))
       }
-    })
+    }
     return models
   }
 
@@ -974,14 +985,16 @@ class Transaction {
     const allBefore = []
     const allAfter = []
     for (const model of this.__writeBatcher.trackedModels) {
-      if (!model.getSnapshot || !filter(model)) {
+      // istanbul ignore if
+      if (!filter(model)) {
         continue
       }
       const before = model.getSnapshot({ initial: true, dbKeys: true })
       const after = model.getSnapshot({ initial: false, dbKeys: true })
-      const key = model.constructor.name
-      allBefore.push({ [key]: before })
-      allAfter.push({ [key]: after })
+      const modelName = model.key ? model.key.Cls.name : model.constructor.name
+      const key = model.key ? model.key.encodedKeys : model.__encodedKey
+      allBefore.push({ [modelName]: { ...key, data: before } })
+      allAfter.push({ [modelName]: { ...key, data: after } })
     }
     return {
       before: allBefore,

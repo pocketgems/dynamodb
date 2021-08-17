@@ -255,10 +255,12 @@ class TransactionGetTest extends QuickTransactionTest {
   async _testMultipleGet (inconsistentRead) {
     const newName = uuidv4()
     const [m1, m2] = await db.Transaction.run(async (tx) => {
-      return tx.get([
+      const ret = await tx.get([
         TransactionModel.key(this.modelName),
         TransactionModel.key(newName)
       ], { inconsistentRead })
+      expect(tx.__writeBatcher.trackedModels.length).toBe(2)
+      return ret
     })
     expect(m1.id).toBe(this.modelName)
     expect(m2).toBe(undefined)
@@ -1357,10 +1359,13 @@ class ModelDiffsTest extends BaseTest {
     return {
       TransactionModel: {
         _id: undefined,
-        field1: undefined,
-        field2: undefined,
-        arrField: undefined,
-        objField: undefined
+        data: {
+          _id: undefined,
+          field1: undefined,
+          field2: undefined,
+          arrField: undefined,
+          objField: undefined
+        }
       }
     }
   }
@@ -1371,8 +1376,18 @@ class ModelDiffsTest extends BaseTest {
       await tx.get(TransactionModel, id)
       return tx.getModelDiffs()
     })
-    expect(result.before).toStrictEqual([])
-    expect(result.after).toStrictEqual([])
+    expect(result.before).toStrictEqual([{
+      TransactionModel: {
+        _id: id,
+        data: undefined
+      }
+    }])
+    expect(result.after).toStrictEqual([{
+      TransactionModel: {
+        _id: id,
+        data: undefined
+      }
+    }])
   }
 
   async testGet () {
@@ -1383,10 +1398,11 @@ class ModelDiffsTest extends BaseTest {
       return tx.getModelDiffs()
     })
     const expectation = this.defaultExpectation
+    expectation.TransactionModel._id = id
     expect(result.before[0]).toStrictEqual(expectation)
 
-    expectation.TransactionModel._id = id
-    expectation.TransactionModel.field1 = 321
+    expectation.TransactionModel.data._id = id
+    expectation.TransactionModel.data.field1 = 321
     expect(result.after[0]).toStrictEqual(expectation)
   }
 
@@ -1397,14 +1413,16 @@ class ModelDiffsTest extends BaseTest {
       return tx.getModelDiffs()
     })
     let expectation = this.defaultExpectation
+    expectation.TransactionModel._id = ids[0]
     expect(result.before[0]).toStrictEqual(expectation)
+    expectation.TransactionModel._id = ids[1]
     expect(result.before[1]).toStrictEqual(expectation)
 
     // before after snapshots are not sorted, but they should all exist
-    expectation = expectation.TransactionModel
+    expectation = expectation.TransactionModel.data
     delete expectation._id
     for (const entry of result.after) {
-      const after = entry.TransactionModel
+      const after = entry.TransactionModel.data
       expect(ids).toContain(after._id)
       delete after._id
       expect(after).toStrictEqual(expectation)
@@ -1427,10 +1445,14 @@ class ModelDiffsTest extends BaseTest {
       return tx.getModelDiffs()
     })
     const expectation = this.defaultExpectation
+    expectation.TransactionModel._id = id
     expect(result).toStrictEqual({
       before: [expectation],
       after: [{
-        TransactionModel: {}
+        TransactionModel: {
+          _id: id,
+          data: undefined
+        }
       }]
     })
 
@@ -1444,12 +1466,15 @@ class ModelDiffsTest extends BaseTest {
       await tx.delete(m)
       return tx.getModelDiffs()
     })
-    expectation.TransactionModel._id = id
-    expectation.TransactionModel.field1 = 1
+    expectation.TransactionModel.data._id = id
+    expectation.TransactionModel.data.field1 = 1
     expect(result2).toStrictEqual({
       before: [expectation],
       after: [{
-        TransactionModel: {}
+        TransactionModel: {
+          _id: id,
+          data: undefined
+        }
       }]
     })
   }
