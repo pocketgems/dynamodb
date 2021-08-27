@@ -1412,20 +1412,25 @@ class ModelDiffsTest extends BaseTest {
       await func(tx, ids)
       return tx.getModelDiffs()
     })
-    let expectation = this.defaultExpectation
-    expectation.TransactionModel._id = ids[0]
-    expect(result.before[0]).toStrictEqual(expectation)
-    expectation.TransactionModel._id = ids[1]
-    expect(result.before[1]).toStrictEqual(expectation)
 
-    // before after snapshots are not sorted, but they should all exist
-    expectation = expectation.TransactionModel.data
-    delete expectation._id
-    for (const entry of result.after) {
-      const after = entry.TransactionModel.data
-      expect(ids).toContain(after._id)
-      delete after._id
-      expect(after).toStrictEqual(expectation)
+    // confirm _ids appropriately added for before/after snapshots.
+    const expectedModels = [this.defaultExpectation, this.defaultExpectation]
+    expectedModels[0].TransactionModel._id = ids[0]
+    expectedModels[1].TransactionModel._id = ids[1]
+    expect(result.before.length).toEqual(2)
+    expect(result.before).toEqual(expect.arrayContaining(expectedModels))
+
+    expectedModels[0].TransactionModel.data._id = ids[0]
+    expectedModels[1].TransactionModel.data._id = ids[1]
+    expect(result.after.length).toEqual(2)
+    expect(result.after).toEqual(expect.arrayContaining(expectedModels))
+
+    // verify that no additional properties were included/excluded.
+    for (const entry of [...result.before, ...result.after]) {
+      // already validated _id, so we can safely set.
+      entry.TransactionModel._id = undefined
+      entry.TransactionModel.data._id = undefined
+      expect(entry).toStrictEqual(this.defaultExpectation)
     }
   }
 
