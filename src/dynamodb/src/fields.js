@@ -48,7 +48,7 @@ class __Field {
       optional: schema.optional === true,
       immutable: isKey || schema.readOnly === true,
       default: schema.default,
-      validateOrDie: compiledSchema.validateOrDie
+      assertValid: compiledSchema.assertValid
     }
     const FieldCls = SCHEMA_TYPE_TO_FIELD_CLASS_MAP[options.schema.type]
     assert.ok(FieldCls, `unsupported field type ${options.schema.type}`)

@@ -18,7 +18,7 @@ function validateValue (fieldName, opts, val) {
   }
 
   // validate the value against the provided schema
-  opts.validateOrDie(val)
+  opts.assertValid(val)
   return valueType
 }
 
