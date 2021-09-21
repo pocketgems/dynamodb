@@ -15,7 +15,7 @@ const {
   TransactionFailedError,
   WriteAttemptedInReadOnlyTxError
 } = require('./errors')
-const { Scan } = require('./iterators')
+const { Query, Scan } = require('./iterators')
 const { Key } = require('./key')
 const { Model, NonExistentItem } = require('./models')
 const { sleep, ITEM_SOURCE, loadOptionDefaults } = require('./utils')
@@ -837,15 +837,27 @@ class Transaction {
 
   /**
    * Create a handle for applications to scan DB items.
-   * @param {Model} Cls A model class.
-   * @param {Object} options
-   * @param {Object} options.inconsistentRead Whether to do a strong consistent
-   *   read. Default to false.
-   * @return Scan handle. See {@link Scan} for details.
+   * @param {Model} ModelCls A model class.
+   * @param {IteratorOptions} params.options Iterator options
+   * @return Scan handle. See {@link __DBIterator} for details.
    */
-  scan (Cls, options) {
+  scan (ModelCls, options) {
     return new Scan({
-      Cls,
+      ModelCls,
+      writeBatcher: this.__writeBatcher,
+      options
+    })
+  }
+
+  /**
+   * Create a handle for applications to query DB items.
+   * @param {Model} ModelCls A model class.
+   * @param {IteratorOptions} params.options Iterator options
+   * @return Query handle. See {@link __DBIterator} for details.
+   */
+  query (ModelCls, options) {
+    return new Query({
+      ModelCls,
       writeBatcher: this.__writeBatcher,
       options
     })

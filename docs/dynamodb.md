@@ -1,5 +1,6 @@
 # Data Modeling library <!-- omit in toc -->
-This library is used to interact with the DynamoDB NoSQL database. It provides high-level abstractions to structure data and prevent race conditions.
+This library is used to interact with the DynamoDB NoSQL database. It provides
+high-level abstractions to structure data and prevent race conditions.
 
 - [Core Concepts](#core-concepts)
   - [Minimal Example](#minimal-example)
@@ -25,7 +26,16 @@ This library is used to interact with the DynamoDB NoSQL database. It provides h
       - [Batch Read](#batch-read)
     - [Write](#write)
     - [Delete](#delete)
+    - [Query](#query)
+      - [Filter](#filter)
+      - [Execution](#execution)
+      - [Sorting](#sorting)
+      - [Read Consistency](#read-consistency-1)
+      - [Lazy Filter](#lazy-filter)
     - [Scan](#scan)
+      - [Execution](#execution-1)
+      - [Sharding](#sharding)
+      - [Read Consistency](#read-consistency-2)
   - [Performance](#performance)
     - [DAX](#dax)
     - [Blind Writes](#blind-writes)
@@ -125,7 +135,8 @@ value because this:
      once. If the ID was a random value, we could accidentally create two race
      results for one runner in the same race.
   1. Enables us efficiently construct the ID from relevant information (e.g.,
-     to check if a runner finished a specific race). If the ID was was a random value, we'd have to do some sort of search to figure out the ID associated
+     to check if a runner finished a specific race). If the ID was was a random
+     value, we'd have to do some sort of search to figure out the ID associated
      with a given race ID and runner name (slow because this would involve a
      database query instead of a simple local computation!).
 
@@ -213,7 +224,8 @@ still be missing the value.
 
 The schema is checked as follows:
   1. When a field's value is changed, it is validated. If a value is a
-     reference (e.g., an object or array), then changing a value inside the reference does _not_ trigger a validation check.
+     reference (e.g., an object or array), then changing a value inside the
+     reference does _not_ trigger a validation check.
 ```javascript
          // fields are checked immediately when creating a new item; this throws
          // S.ValidationError because someInt should be an integer
@@ -356,7 +368,9 @@ creating a new request for the database:
 
 
 ### Retries
-When a transaction fails due to contention, it will retry after a short, random delay. Randomness helps prevent conflicting transactions from conflicting again when they retry. Transaction retry behaviors can be customized:
+When a transaction fails due to contention, it will retry after a short, random
+delay. Randomness helps prevent conflicting transactions from conflicting again
+when they retry. Transaction retry behaviors can be customized:
 ```javascript
 const retryOptions = {
   retries: 4, // 1 initial run + up to 4 retry attempts = max 5 total attempts
@@ -437,7 +451,8 @@ This sequence is possible:
   1. The request to read lift stats complete: `numLiftRides=1` _!!!_
   1. Our application code thinks there was one lift ride taken, but no skiers.
 
-To ensure this does not occur, use `db.get()` to fetch both items in a single request:
+To ensure this does not occur, use `db.get()` to fetch both items in a single
+request:
 ```javascript
 const [skierStats, liftStats] = await tx.get([
   SkierStats.key(resort),
@@ -446,7 +461,8 @@ const [skierStats, liftStats] = await tx.get([
 // Caution: Don't pass inconsistentRead=true if you need a consistent snapshot!
 ```
 
-Under the hood, when multiple items are fetched with strong consistency, DynamoDB's `transactGetItems` API is called to prevent races mentioned above.
+Under the hood, when multiple items are fetched with strong consistency,
+DynamoDB's `transactGetItems` API is called to prevent races mentioned above.
 
 
 ### Warning: Side Effects
@@ -471,7 +487,8 @@ the transaction never completes successfully!
 
 
 ### Per-request transaction
-Each request handled by our [API Definition library](api.md) is wrapped in a transaction. Read more about it [here](api.md#database-transactions).
+Each request handled by our [API Definition library](api.md) is wrapped in a
+transaction. Read more about it [here](api.md#database-transactions).
 
 
 ## Operations
@@ -599,37 +616,204 @@ To modify data in the database, simply modify fields on an item created by
 `tx.create()` or fetched by `tx.get()`. When the transaction commits, all
 changes will be written to the database automatically.
 
-For improved performance, data can be updated without being read from database first. See details in [blind writes](#blind-writes).
+For improved performance, data can be updated without being read from database
+first. See details in [blind writes](#blind-writes).
 
 ### Delete
-Items can be deleted from the database via `tx.delete()`. The delete method accepts models or keys as parameters. For example, `tx.delete(model1, key1, model2, ...keys, key2)`.
+Items can be deleted from the database via `tx.delete()`. The delete method
+accepts models or keys as parameters. For example,
+`tx.delete(model1, key1, model2, ...keys, key2)`.
 
-For models that were read from server via `tx.get()`, if the model turns out to be missing on server when the transaction commits, an exception is thrown. Otherwise, deletion on missing items will be treated as noop.
+For models that were read from server via `tx.get()`, if the model turns out to
+be missing on server when the transaction commits, an exception is thrown.
+Otherwise, deletion on missing items will be treated as noop.
+
+### Query
+Query enables accessing items in a DB table with the same partition key.
+Transaction context `tx` provides `query` method that return a handle for
+adding filters and execute the query.
+```javascript <!-- embed:../test/unit-test-dynamodb-iterators.js:section:example queryHandle start:example queryHandle end -->
+      const query = tx.query(QueryModel)
+```
+
+#### Filter
+Queries require equality filters on every partition key, otherwise when a
+query is executed an exception will result. Consider a model with 2 partition
+keys `id1` and `id2`:
+```javascript <!-- embed:../test/unit-test-dynamodb-iterators.js:scope:TestModel -->
+class TestModel extends db.Model {
+  static KEY = {
+    id1: S.str,
+    id2: S.int
+  }
+
+  static SORT_KEY = {
+    sk1: S.str,
+    sk2: S.str
+  }
+
+  static FIELDS = {
+    field1: S.str,
+    field2: S.str
+  }
+}
+```
+
+The required equality filters are added with the following code
+```javascript <!-- embed:../test/unit-test-dynamodb-iterators.js:section:example equality filter start:example equality filter end -->
+    query.id1('xyz')
+    query.id2(321)
+```
+
+Optionally, sort keys can be filtered with matching conditions below:
+```javascript
+query.sk1('==', '123') // sk1 equals '123'
+query.sk1('>', '123') // sk1 is larger than '123'
+query.sk1('>=', '123') // sk1 is larger than or equal to '123'
+query.sk1('<', '123') // sk1 is smaller than '123'
+query.sk1('<=', '123') // sk1 is smaller than or equal to '123'
+query.sk1('prefix', '123') // sk1 starts with 123
+query.sk1('between', '123', '234') // sk1 is between '123' and '234
+```
+
+Filter expressions support method chaining
+```javascript <!-- embed:../test/unit-test-dynamodb-iterators.js:section:example filter chaining start:example filter chaining end -->
+    query1.id1('xyz').id2(123).sk1('>', '1')
+```
+
+#### Execution
+Queries can be executed using the paginator API and generator API:
+- The paginator API is supported by `fetch(n)`. It takes the number of items to
+  return (`n`) and a nextToken as parameters, and returns a maximum of **n**
+  items along with a token for the next page of items.
+
+  Input `n` is required. The value of `n` can be arbitrarily large (until
+  memory on the service node is depleted from caching fetched items locally),
+  because `fetch` makes several calls to the underlying DynamoDB service to
+  aggregate `n` items before returning. However, large `n` also means more
+  requests are issued under the hood resulting in increased latency before the
+  aggregated results are made available to the application code. Hence, as a
+  best practice, `n` should be kept relatively small, e.g. a few tens to a few
+  hundreds, to make sure the results are returned quickly without consuming too
+  much memory on server.
+
+  Input `nextToken` is optional. When it's omitted or undefined, paginator will
+  start from the beginning of the table. To proceed to the next page of
+  results, the `nextToken` value returned from the previous `fetch` call must
+  be passed back in. When there are no more items to be returned, the
+  `nextToken` returned will be `undefined`. Make sure to terminate pagination
+  when `nextToken` is undefined, else the pagination will restart from the
+  beginning of the table again, resulting in an infinite loop.
+
+```javascript <!-- embed:../test/unit-test-dynamodb-iterators.js:section:example queryFetch start:example queryFetch end -->
+      const [results1, nextToken1] = await query.fetch(1)
+      const [results2, nextToken2] = await query.fetch(999, nextToken1)
+      expect(nextToken2).toBeUndefined()
+```
+
+- The generator API is supported by `run(n)`. It also takes the number of items
+  to return as a parameter, and only stops when **n** items are returned, or
+  all items in the table are read.
+```javascript <!-- embed:../test/unit-test-dynamodb-iterators.js:scope:async testLazyFilter:for await -->
+      for await (const data of query.run(10)) {
+        ret.push(data)
+      }
+```
+
+  Similar to paginator API, `n` is required and can be arbitrarily large, but
+  the same best practices are applicable here too. Note worthily, generator
+  fetches items in small batches to reduce networking overhead. This means some
+  items may be fetched from the database but never get processed by application
+  code if the generator is stopped early.
+
+#### Sorting
+Query results are sorted by sort keys in ascending order by default. Returning
+items in descending order requires enabling `descending` option when creating
+the query handle.
+```javascript <!-- embed:../test/unit-test-dynamodb-iterators.js:section:example descending start:example descending end -->
+      const query = tx.query(QueryModel, { descending: true })
+```
+
+#### Read Consistency
+By default, query returns strongly consistent data that makes sure *only*
+transactions committed before query started are reflected in the items returned
+from query. Disabling strong consistency can improve performance.
+```javascript <!-- embed:../test/unit-test-dynamodb-iterators.js:section:example inconsistentQuery start:example inconsistentQuery end -->
+      const query = tx.query(QueryModel, { inconsistentRead: true })
+      query.id1('123').id2('123')
+```
+
+#### Lazy Filter
+The term "lazy filter" comes from the fact that filters on non-key fields are
+applied after items are read from the database and before they're returned to
+the machine running application code. Lazy filter is disallowed by default
+since they lead to increased cost (additional data is read from the database)
+compared to querying against purposefully setup Indexes.
+
+However, lazy filters are still supported to allow flexibility in constructing
+queries while avoiding setting up many dedicated Indexes. To allow lazy
+filters, the query handle must be created with `allowLazyFilter` option turned
+on.
+```javascript <!-- embed:../test/unit-test-dynamodb-iterators.js:section:example lazyFilter start:example lazyFilter end -->
+      const query = tx.query(QueryModel, { allowLazyFilter: true })
+```
+
+Lazy filters support all filter conditions except "prefix", and add support
+for inequality condition "!=".
 
 ### Scan
-Items in a DB table can be scanned (read one by one) using `tx.scan()`. The scan method returns a handle for conducting a scan operation. The handle provides two flavors of APIs: paginator & generator.
+A scan accesses all items in a table one by one. Transaction context
+`tx` provides `scan` method that returns a handle for conducting a scan
+operation.
+```javascript <!-- embed:../test/unit-test-dynamodb-iterators.js:section:scanHandle start:scanHandle end -->
+      const scan = tx.scan(ScanModel)
+```
 
-The paginator API is supported by `fetch(n)`. It takes the number of items to return (`n`) and a nextToken as parameters, and returns a maximum of **n** items along with a token for the next page of items.
-```javascript <!-- embed:../test/unit-test-dynamodb-model.js:section:example scan start:example scan end -->
+#### Execution
+A scan is executed using paginator and generator APIs similar to [query's execution APIs](#execution)
+- Paginator API
+```javascript <!-- embed:../test/unit-test-dynamodb-iterators.js:section:example scan start:example scan end -->
       const scan = tx.scan(ScanModel)
       const [page1, nextToken1] = await scan.fetch(2)
       const [page2, nextToken2] = await scan.fetch(10, nextToken1)
 ```
 
-The generator API is supported by `run(n)`. It also takes the number of items to return as a parameter, and only stops when **n** items are returned, or all items in the table are read.
-```javascript <!-- embed:../test/unit-test-dynamodb-model.js:scope:testScanRunFew:Transaction.run -->
-    const ret = await db.Transaction.run(async tx => {
-      const scan = tx.scan(ScanModel)
-      const models = []
+- Generator API
+```javascript <!-- embed:../test/unit-test-dynamodb-iterators.js:scope:testScanRunFew:for await -->
       for await (const model of scan.run(3)) {
         models.push(model)
       }
-      return models
+```
+
+#### Sharding
+A sharded scan enables multiple machines to scan through non-overlapping
+sections of an entire table in parallel. It can greatly reduce the overall
+processing time of a scan. Sharded scan is enabled by 2 options `shardIndex`
+and `shardCount`.
+- shardCount specifies the number of sections to split a table into
+- shardIndex specifies which section of a table to scan through.
+
+For example, a sharded scan using 2 machines will need to set `shardCount` to 2
+and use 0 as the `shardIndex` on one machine and use 1 as the `shardIndex` on
+the other.
+```javascript <!-- embed:../test/unit-test-dynamodb-iterators.js:scope:testSharding:Transaction -->
+    await db.Transaction.run(async tx => {
+      const scan = tx.scan(ScanModel, { shardCount: 2, shardIndex: 0 })
+      return scan.fetch(10)
+    })
+```
+
+#### Read Consistency
+By default, a scan returns strongly consistent data. Disabling strong
+consistency can improve performance and reduce cost by 50%.
+```javascript <!-- embed:../test/unit-test-dynamodb-iterators.js:scope:testInconsistentRead:scanRet  -->
+    const scanRet = await db.Transaction.run(async tx => {
+      const scan = tx.scan(ScanModel, { inconsistentRead: true })
+      return scan.__setupParams().ConsistentRead
     })
 ```
 
 ## Performance
-
 ### DAX
 With [DAX](https://aws.amazon.com/dynamodb/dax/) enabled (the default),
 inconsistent reads can resolve within 10ms as opposed to the consistent
@@ -651,7 +835,8 @@ included in the old values. Failure to do so may result in race condition bugs.
 
 Similarly, items can be blindly created or overwritten with `createOrPut`
 method. This is useful when we don't care about the previous value (if any).
-For example, maybe we're tracking whether a customer has used a particular feature or not. When they use it, we may just want to blindly record it:
+For example, maybe we're tracking whether a customer has used a particular
+feature or not. When they use it, we may just want to blindly record it:
 ```javascript
 class LastUsedFeature extends db.Model {
   static KEY = {
@@ -761,7 +946,6 @@ tx.create(StringKeyWithNullBytes, {
 })
 ```
 
-
 ## Nested Transactions are NOT Nested
 Nested transactions like this should be avoided:
 ```javascript
@@ -776,11 +960,22 @@ The inner transaction, if it commits, will commit first. If the outer
 transaction is retried, the inner transaction _will be run additional times_.
 
 ## Time To Live
-DynamoDB supports Time-To-Live (TTL) per item. When the current timestamp reaches an item's TTL, the item is automatically removed from the database without incurring additional costs. This is useful when some data can be safely removed based on how long they have been stored. For example, to remember places I've visited in the past 7 days, I can store each place as a DB item and set the TTL to be 7 days from the current time. To retrieve places I can easily scan all places in the database without filtering data.
+DynamoDB supports Time-To-Live (TTL) per item. When the current timestamp
+reaches an item's TTL, the item is automatically removed from the database
+without incurring additional costs. This is useful when some data can be safely
+removed based on how long they have been stored. For example, to remember
+places I've visited in the past 7 days, I can store each place as a DB item and
+set the TTL to be 7 days from the current time. To retrieve places I can easily
+scan all places in the database without filtering data.
 
-A model can have one integer or double field to store an epoch timestamp in seconds as the expiration time. The field is designated via the `EXPIRE_EPOCH_FIELD` property. The field must be non-optional integer or double type.
+A model can have one integer or double field to store an epoch timestamp in
+seconds as the expiration time. The field is designated via the
+`EXPIRE_EPOCH_FIELD` property. The field must be non-optional integer or double
+type.
 
-NOTE: When the timestamp is more than 5 years in the past, the item will not be removed.So to keep an item indefinitely in a TTL enabled table, you may safely set the TTL field to 0.
+NOTE: When the timestamp is more than 5 years in the past, the item will not be
+removed.So to keep an item indefinitely in a TTL enabled table, you may safely
+set the TTL field to 0.
 
 ```javascript <!-- embed:../test/unit-test-dynamodb-model.js:scope:TTLModel -->
 class TTLModel extends db.Model {
@@ -797,16 +992,15 @@ class TTLModel extends db.Model {
 
 ## Unsupported DynamoDB Features
 This library does not yet support:
-   - Query
-   - Scan
    - Indexing
 
 
 ## Table Creation & Persistence
-When the localhost server runs, it generates `config/resources.yml` based
-on the models you've defined (make sure to export them from your service!).
-On localhost, the data persists until you shut down the service. If you add new
-models or change a model (particularly its key structure), you will need to restart your service to incorporate the changes.
+When the localhost server runs, it generates `config/resources.yml` based on
+the models you've defined (make sure to export them from your service!). On
+localhost, the data persists until you shut down the service. If you add new
+models or change a model (particularly its key structure), you will need to
+restart your service to incorporate the changes.
 
 Along the same lines, keep in mind that the localhost database is _not_ cleared
 in between test runs. Any data added to the localhost database will remain
@@ -838,14 +1032,16 @@ The key which uniquely identifies an item in a table has two components:
 
 Accessing many small items from the same table with the same partition key but
 different sort keys is just as efficient as lumping them all into one large
-item. Performance will be better when you only need to access a subset of these smaller items.
+item. Performance will be better when you only need to access a subset of these
+smaller items.
 
 This is better than using different partition keys (or different tables) for
 the smaller items because then doing transactions involving multiple items
 would probably incur a performance penalty as the transaction would need to run
 across multiple nodes instead of just one.
 
-When using sort keys, be careful not to overload an single database node. For example, it'd be awful to have a model like this:
+When using sort keys, be careful not to overload an single database node. For
+example, it'd be awful to have a model like this:
 ```javascript
 class CustomerData extends db.Model {
   static KEY = { store: S.str }
@@ -861,14 +1057,17 @@ be used together. It should not be used for overly large or unrelated data.
 
 
 ## Overlapping Models
-Two models may be stored in the same physical table (after all, the underlying tables don't enforce a schema; each item could theoretically be different, except for the key structure).
+Two models may be stored in the same physical table (after all, the underlying
+tables don't enforce a schema; each item could theoretically be different,
+except for the key structure).
 
 This may be desirable on rare occasions when two related types of data should
 be co-located on the same database node (by putting them in the same table and
 giving them the same partition key value, but differing [sort key](#sort-keys)
 values).
 
-This example has just one table, Inventory, which is populated by two different (but related) models:
+This example has just one table, Inventory, which is populated by two different
+(but related) models:
 ```javascript
 class Inventory extends db.Model {
   // we override the default table name so that our subclasses all use the same
@@ -967,7 +1166,8 @@ await db.Transaction.run({ cacheModels: true },async tx => {
 })
 ```
 
-Repeated reads can be enabled during a transaction because transactions track all referenced items. Call `enableModelCache` to turn it on.
+Repeated reads can be enabled during a transaction because transactions track
+all referenced items. Call `enableModelCache` to turn it on.
 ```javascript
 await db.Transaction.run(async tx => {
   ...
@@ -991,13 +1191,17 @@ an exception regardless of the cacheModels flag value.
   * Classes without `__` prefix are public.
      * Variables prefixed with `__`, are at least private to package.
 
-* **Code** for this library is all in one file, located under `services/sharedlib/src/dynamodb.js`.
+* **Code** for this library is all in one file, located under
+  `services/sharedlib/src/dynamodb.js`.
 
-* **Unit Tests** are available under `services/sharedlib/test/unit-test-dynamodb*.js`.
+* **Unit Tests** are available under
+  `services/sharedlib/test/unit-test-dynamodb*.js`.
 
 
 ## AOL
-This library automates optimistic locking by tracking fields accessed and constructing expressions under the hood, thus entirely avoid hand crafting requests like above. Rules are as following:
+This library automates optimistic locking by tracking fields accessed and
+constructing expressions under the hood, thus entirely avoid hand crafting
+requests like above. Rules are as following:
 
 * For **ConditionExpression**
     - If a model does not exists on server:
@@ -1015,11 +1219,13 @@ This library automates optimistic locking by tracking fields accessed and constr
 
 
 ## Transactions
-Our `Transaction` class, combines AOL and DynamoDB's transactWrite with the following strategy:
+Our `Transaction` class, combines AOL and DynamoDB's transactWrite with the
+following strategy:
 
 * Individual get operations are allowed within a transaction context.
 * Models read are tracked by the transaction context.
-* Models mutated are written to DB using one single transactWrite operation on commit.
+* Models mutated are written to DB using one single transactWrite operation on
+  commit.
 * TransactWrite request is constructed using the following rules:
     * For each readonly items:
         * Append ConditionExpressions generated using AOL
@@ -1027,7 +1233,9 @@ Our `Transaction` class, combines AOL and DynamoDB's transactWrite with the foll
         * Append UpdateExpression generated using AOL.
         * Append ConditionExpressions generated using AOL
 * Transaction commits when the transaction context / scope is exited.
-* If a `retryable` error or `ConditionalCheckFailedException` or `TransactionCanceledException` is thrown during transactWrite operation, transaction will be retried.
+* If a `retryable` error or `ConditionalCheckFailedException` or
+  `TransactionCanceledException` is thrown during transactWrite operation,
+  transaction will be retried.
 * If all retries failed, a `TransactionFailedError` will be thrown.
 
 When more than one item is accessed and/or updated, this library issues a

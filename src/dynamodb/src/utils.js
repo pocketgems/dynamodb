@@ -82,10 +82,11 @@ function loadOptionDefaults (options, defaults) {
 
 // sentinel values for different item creation methods
 const ITEM_SOURCE = {
-  CREATE: { isCreate: true },
   CREATE_OR_PUT: { isCreateOrPut: true },
+  CREATE: { isCreate: true },
   DELETE: { isDelete: true }, // Delete by key creates a local model
   GET: { isGet: true },
+  QUERY: { isQuery: true },
   SCAN: { isScan: true },
   UPDATE: { isUpdate: true }
 }

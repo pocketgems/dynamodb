@@ -19,7 +19,6 @@ const { __Field, SCHEMA_TYPE_TO_FIELD_CLASS_MAP } = require('./fields')
 const { Key } = require('./key')
 const {
   validateValue,
-  ITEM_SOURCE,
   ITEM_SOURCES,
   makeItemString,
   SCHEMA_TYPE_TO_JS_TYPE_MAP,
@@ -324,6 +323,17 @@ class Model {
     return ret
   }
 
+  static __getId (vals) {
+    return this.__encodeCompoundValueToString(this.__keyOrder.partition, vals)
+  }
+
+  static __getSk (vals) {
+    if (this.__keyOrder.sort.length <= 0) {
+      return undefined
+    }
+    return this.__encodeCompoundValueToString(this.__keyOrder.sort, vals)
+  }
+
   /**
    * Returns a map containing the model's computed key values (_id, as well as
    * _sk if model has a sort key).
@@ -333,17 +343,12 @@ class Model {
    */
   static __computeKeyAttrMap (vals) {
     // compute and validate the partition attribute
-    const keyAttrs = {
-      _id: this.__encodeCompoundValueToString(this.__keyOrder.partition, vals)
+    const ret = { _id: this.__getId(vals) }
+    const sk = this.__getSk(vals)
+    if (sk) {
+      ret._sk = sk
     }
-
-    // add and validate the sort attribute, if any
-    if (this.__keyOrder.sort.length > 0) {
-      keyAttrs._sk = this.__encodeCompoundValueToString(
-        this.__keyOrder.sort, vals
-      )
-    }
-    return keyAttrs
+    return ret
   }
 
   /**

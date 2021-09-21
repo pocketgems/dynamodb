@@ -24,7 +24,8 @@ const {
   ObjectField,
   StringField
 } = require('./fields')
-const { Scan } = require('./iterators')
+const Filter = require('./filter')
+const { Query, Scan } = require('./iterators')
 const { Model } = require('./models')
 const {
   __WriteBatcher,
@@ -104,10 +105,11 @@ function setup (config) {
   // Make DynamoDB document client available to these classes
   const documentClient = config.dynamoDBDocumentClient
   const clsWithDBAccess = [
-    Model,
-    Transaction,
     __WriteBatcher,
-    Scan
+    Model,
+    Query,
+    Scan,
+    Transaction
   ]
   clsWithDBAccess.forEach(Cls => {
     Cls.documentClient = documentClient
@@ -138,7 +140,7 @@ function setup (config) {
     toExport.__private = {
       __Field,
       __WriteBatcher,
-      getWithArgs,
+      Filter,
       fields: [
         ArrayField,
         BooleanField,
@@ -146,7 +148,10 @@ function setup (config) {
         ObjectField,
         StringField
       ],
-      ITEM_SOURCE
+      getWithArgs,
+      ITEM_SOURCE,
+      Query,
+      Scan
     }
   }
   return toExport

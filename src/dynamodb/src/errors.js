@@ -154,10 +154,18 @@ class WriteAttemptedInReadOnlyTxError extends Error {
   }
 }
 
+class InvalidFilterError extends Error {
+  constructor (reason) {
+    super(reason)
+    this.name = this.constructor.name
+  }
+}
+
 module.exports = {
   GenericModelError,
   InvalidCachedModelError,
   InvalidFieldError,
+  InvalidFilterError,
   InvalidModelDeletionError,
   InvalidModelUpdateError,
   InvalidOptionsError,
