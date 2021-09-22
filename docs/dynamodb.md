@@ -740,7 +740,7 @@ transactions committed before query started are reflected in the items returned
 from query. Disabling strong consistency can improve performance.
 ```javascript <!-- embed:../test/unit-test-dynamodb-iterators.js:section:example inconsistentQuery start:example inconsistentQuery end -->
       const query = tx.query(QueryModel, { inconsistentRead: true })
-      query.id1('123').id2('123')
+      query.id1('123').id2(123)
 ```
 
 #### Lazy Filter

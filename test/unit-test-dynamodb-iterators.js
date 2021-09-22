@@ -433,15 +433,6 @@ class ScanTest extends BaseTest {
       return scan.__setupParams().ConsistentRead
     })
     expect(scanRet).toBe(false)
-
-    const queryRet = await db.Transaction.run(async tx => {
-      // example inconsistentQuery start
-      const query = tx.query(QueryModel, { inconsistentRead: true })
-      query.id1('123').id2('123')
-      // example inconsistentQuery end
-      return query.__setupParams().ConsistentRead
-    })
-    expect(queryRet).toBe(false)
   }
 
   async testSharding () {
@@ -455,11 +446,11 @@ class ScanTest extends BaseTest {
 class QueryModel extends db.Model {
   static KEY = {
     id1: S.str,
-    id2: S.str
+    id2: S.int
   }
 
   static SORT_KEY = {
-    sk1: S.int
+    sk1: S.str
   }
 
   static FIELDS = {
@@ -476,14 +467,14 @@ class QueryTest extends BaseTest {
       const models = [
         QueryModel.data({
           id1: '1',
-          id2: '1',
-          sk1: 0,
+          id2: 1,
+          sk1: '0',
           field: 0
         }),
         QueryModel.data({
           id1: '1',
-          id2: '1',
-          sk1: 1,
+          id2: 1,
+          sk1: '123',
           field: 1
         })
       ]
@@ -497,19 +488,19 @@ class QueryTest extends BaseTest {
       const query = tx.query(QueryModel)
       // example queryHandle end
       query.id1('1')
-      query.id2('1')
+      query.id2(1)
       return (await query.fetch(10))[0]
     })
     expect(results.length).toBe(2)
-    expect(results[0].sk1).toBe(0)
-    expect(results[1].sk1).toBe(1)
+    expect(results[0].sk1).toBe('0')
+    expect(results[1].sk1).toBe('123')
   }
 
   async testQueryNonExistentId () {
     const results = await db.Transaction.run(async tx => {
       const query = tx.query(QueryModel)
       query.id1('invalid')
-      query.id2('1')
+      query.id2(1)
       return (await query.fetch(10))[0]
     })
     expect(results.length).toBe(0)
@@ -519,8 +510,8 @@ class QueryTest extends BaseTest {
     const results = await db.Transaction.run(async tx => {
       const query = tx.query(QueryModel)
       query.id1('1')
-      query.id2('1')
-      query.sk1(1)
+      query.id2(1)
+      query.sk1('prefix', '1')
       return (await query.fetch(10))[0]
     })
     expect(results.length).toBe(1)
@@ -532,7 +523,7 @@ class QueryTest extends BaseTest {
       const query = tx.query(QueryModel, { descending: true })
       // example descending end
       query.id1('1')
-      query.id2('1')
+      query.id2(1)
       // example queryFetch start
       const [results1, nextToken1] = await query.fetch(1)
       const [results2, nextToken2] = await query.fetch(999, nextToken1)
@@ -541,8 +532,8 @@ class QueryTest extends BaseTest {
       return [...results1, ...results2]
     })
     expect(results.length).toBe(2)
-    expect(results[0].sk1).toBe(1)
-    expect(results[1].sk1).toBe(0)
+    expect(results[0].sk1).toBe('123')
+    expect(results[1].sk1).toBe('0')
   }
 
   async testLazyFilter () {
@@ -551,7 +542,7 @@ class QueryTest extends BaseTest {
       const query = tx.query(QueryModel, { allowLazyFilter: true })
       // example lazyFilter end
       query.id1('1')
-      query.id2('1')
+      query.id2(1)
       query.field(0)
       const ret = []
       for await (const data of query.run(10)) {
@@ -560,6 +551,17 @@ class QueryTest extends BaseTest {
       return ret
     })
     expect(results.length).toBe(1)
+  }
+
+  async testInconsistentRead () {
+    const queryRet = await db.Transaction.run(async tx => {
+      // example inconsistentQuery start
+      const query = tx.query(QueryModel, { inconsistentRead: true })
+      query.id1('123').id2(123)
+      // example inconsistentQuery end
+      return query.__setupParams().ConsistentRead
+    })
+    expect(queryRet).toBe(false)
   }
 }
 

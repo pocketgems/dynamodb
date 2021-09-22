@@ -306,11 +306,11 @@ can allow lazy filter to enable filtering non-key fields.`)
         }
       } else {
         const self = this
-        this[name] = function (operation, value) {
+        this[name] = function (operation) {
           if (arguments.length === 1) {
             handle.filter('==', operation)
           } else {
-            handle.filter(operation, value)
+            handle.filter(...arguments)
           }
           return self
         }
@@ -340,8 +340,12 @@ can allow lazy filter to enable filtering non-key fields.`)
       const pascalName = keyName[0].toUpperCase() + keyName.substring(1)
       const funcName = `__get${pascalName}`
       const value = this.__ModelCls[funcName](keyComponents)
+      let condition = `#_${keyName}${op}:_${keyName}`
+      if (op === 'prefix') {
+        condition = `begins_with(#_${keyName},:_${keyName})`
+      }
       mergeCondition(ret, [
-        [`#_${keyName}${op}:_${keyName}`],
+        [condition],
         { [`#_${keyName}`]: `_${keyName}` },
         { [`:_${keyName}`]: value }
       ])

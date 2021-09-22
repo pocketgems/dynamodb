@@ -59,12 +59,12 @@ class FilterTest extends BaseTest {
     helper('<=', '<=')
 
     let filter = new Filter('query', 'x', '1', undefined)
-    filter.filter('between', [1, 2])
+    filter.filter('between', 1, 2)
     expect(filter.conditions).toEqual(['#_1 BETWEEN :_1Lower AND :_1Upper'])
 
     filter = new Filter('query', 'x', '1', 'SORT')
     filter.filter('prefix', '123')
-    expect(filter.conditions).toEqual(['BEGINS_WITH(#_1,:_1)'])
+    expect(filter.conditions).toEqual(['begins_with(#_1,:_1)'])
   }
 
   testInvalidFilterOperation () {
@@ -75,11 +75,11 @@ class FilterTest extends BaseTest {
 
     expect(() => {
       filter.filter('between', 123)
-    }).toThrow(/Value for "between" operator must be an array/)
+    }).toThrow(/"between" operator requires 2 value inputs/)
 
     expect(() => {
-      filter.filter('between', [2, 1])
-    }).toThrow(/Value for "between" operator must be in ascending order/)
+      filter.filter('between', 2, 1)
+    }).toThrow(/"between" operator must be in ascending order/)
 
     expect(() => {
       const scan = new Filter('scan', 'x', '1', undefined)

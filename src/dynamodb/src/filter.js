@@ -74,13 +74,15 @@ class Filter {
       }
     }
     if (operation === 'between') {
-      if (!Array.isArray(value) || value.length !== 2) {
+      if (arguments.length !== 3) {
         throw new InvalidFilterError(
-          'Value for "between" operator must be an array with 2 elements')
+          `"between" operator requires 2 value inputs, e.g.
+           query.${this.__fieldName}('between', lower, upper)`)
       }
+      value = [arguments[1], arguments[2]]
       if (value[0] > value[1]) {
         throw new InvalidFilterError(
-          'Value for "between" operator must be in ascending order')
+          'Input values for "between" operator must be in ascending order')
       }
     }
 
@@ -109,7 +111,7 @@ class Filter {
       return
     }
     if (operation === 'prefix') {
-      this.conditions = [`BEGINS_WITH(#_${awsName},:_${awsName})`]
+      this.conditions = [`begins_with(#_${awsName},:_${awsName})`]
       this.attrNames = { [`#_${awsName}`]: this.__fieldName }
       this.attrValues = { [`:_${awsName}`]: value }
       return
@@ -128,7 +130,8 @@ class Filter {
       '<': '<',
       '<=': '<=',
       '>': '>',
-      '>=': '>='
+      '>=': '>=',
+      prefix: 'prefix'
     }[this.__operation]
   }
 }
