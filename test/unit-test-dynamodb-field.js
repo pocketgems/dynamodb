@@ -156,6 +156,14 @@ class CommonFieldTest extends BaseTest {
     expect(objectField.mutated).toBe(false)
 
     deepobj.prop = 1
+    // Expected, since val from database should not change, so __mayHaveMutated
+    // flag short-circuits the check
+    expect(arrayField.mutated).toBe(false)
+    expect(objectField.mutated).toBe(false)
+
+    // Simply reading the field triggers mutated value change
+    arrayField.get()
+    objectField.get()
     expect(arrayField.mutated).toBe(true)
     expect(objectField.mutated).toBe(true)
   }

@@ -259,6 +259,28 @@ class __Field {
   }
 
   /**
+   * A quick heuristic on if current value may differ from db. When this value
+   * is true, use comparison / deep equality to confirm if the value has been
+   * mutated. If this value is false, then the field must not have been
+   * mutated, and there is no need to confirm mutation further.
+   */
+  get __mayHaveMutated () {
+    // A field may be mutated when it's written or if the value is a complex
+    // structure when it is read.
+    if (this.accessed) {
+      return true
+    }
+    // A field may still be mutated when it's never read or written, since the
+    // field may be initialized with a mutated value (default value from schema
+    // or default value upon creation).
+    if (this.__initialValue === undefined && this.__value !== undefined) {
+      return true
+    }
+    // Else the field must not be different from what's in database.
+    return false
+  }
+
+  /**
    * This is primarily used for optimistic locking.
    * @returns {Boolean} if the field was accessed (read / write) by users of
    *   this library
@@ -425,7 +447,11 @@ class NumberField extends __Field {
  * @memberof Internal.Fields
  * @private
  */
-class StringField extends __Field {}
+class StringField extends __Field {
+  get mutated () {
+    return this.__mayHaveMutated && super.mutated
+  }
+}
 
 /**
  * @extends Internal.__Field
@@ -442,7 +468,7 @@ class ObjectField extends __Field {
    * @returns if value was changed.
    */
   get mutated () {
-    return !deepeq(this.__value, this.__initialValue)
+    return this.__mayHaveMutated && !deepeq(this.__value, this.__initialValue)
   }
 }
 
@@ -468,7 +494,7 @@ class ArrayField extends __Field {
    * @returns if value was changed.
    */
   get mutated () {
-    return !deepeq(this.__value, this.__initialValue)
+    return this.__mayHaveMutated && !deepeq(this.__value, this.__initialValue)
   }
 }
 
