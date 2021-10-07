@@ -705,13 +705,19 @@ class Model {
    * @type {Boolean}
    */
   __isMutated () {
-    return this.isNew ||
-      this.__toBeDeleted ||
-      Object.values(this.__attrs).reduce(
-        (result, field) => {
-          return result || field.mutated
-        },
-        false)
+    if (this.isNew) {
+      return true
+    }
+    if (this.__toBeDeleted) {
+      return true
+    }
+    for (const field of Object.values(this.__attrs)) {
+      if (field.mutated) {
+        // any field mutated makes the model mutated
+        return true
+      }
+    }
+    return false
   }
 
   /**
