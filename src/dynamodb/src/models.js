@@ -584,21 +584,25 @@ class Model {
 
     const isUpdate = this.__src.isUpdate
     for (const field of Object.values(this.__attrs)) {
-      const omitInUpdate = isUpdate && field.get() === undefined
-      const doValidate = (shouldValidate === undefined || shouldValidate) &&
-        !omitInUpdate
+      if (!field.accessed) {
+        if (isUpdate) {
+          // When init method is UPDATE, not all required fields are present in
+          // the model: we only write parts of the model.
+          // Hence we exclude any fields that are not part of the update
+          // (not accessed).
+          continue
+        }
+        if (!field.__mayHaveMutated) {
+          continue
+        }
+      }
+
+      const doValidate = shouldValidate === undefined || shouldValidate
       if (doValidate) {
         field.validate()
       }
 
       if (field.keyType) {
-        continue
-      }
-
-      if (omitInUpdate) {
-        // When init method is UPDATE, not all required fields are present in the
-        // model: we only write parts of the model.
-        // Hence we exclude any fields that are not part of the update.
         continue
       }
 

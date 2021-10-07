@@ -735,6 +735,18 @@ class TransactionWriteTest extends QuickTransactionTest {
     expect(model.field1).toBe(1)
   }
 
+  async testDeleteFieldByUpdate () {
+    await txGet(this.modelName, (m) => { m.field2 = 2 })
+    await db.Transaction.run(async tx => {
+      tx.update(
+        TransactionModel,
+        { id: this.modelName, field2: 2 },
+        { field2: undefined })
+    })
+    const model = await txGet(this.modelName)
+    expect(model.field2).toBe(undefined)
+  }
+
   async testCreatePartialModel () {
     let fut = db.Transaction.run(async tx => {
       tx.createOrPut(
