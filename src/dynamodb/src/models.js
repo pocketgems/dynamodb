@@ -47,8 +47,11 @@ class Model {
     // track whether this item has been marked for deletion
     this.__toBeDeleted = src.isDelete
 
-    // __attrs has a __Field subclass object for each non-key attribute.
-    this.__attrs = {}
+    // __cached_attrs has a __Field subclass object for each non-key attribute.
+    this.__cached_attrs = {}
+
+    // __cached_attrs has a __Field subclass object for each non-key attribute.
+    this.__attr_getters = {}
 
     // Decode _id and _sk that are stored in DB into key components that are
     // in KEY and SORT_KEY.
@@ -85,28 +88,40 @@ class Model {
   }
 
   __addField (idx, name, opts, vals) {
-    const val = vals[name]
     const valSpecified = Object.hasOwnProperty.call(vals, name)
-    const Cls = SCHEMA_TYPE_TO_FIELD_CLASS_MAP[opts.schema.type]
-    // can't force validation of undefined values for blind updates because
-    //   they are permitted to omit fields
-    const field = new Cls({
-      idx,
-      name,
-      opts,
-      val,
-      valIsFromDB: !this.isNew,
-      valSpecified,
-      isForUpdate: this.__src.isUpdate,
-      isForDelete: this.__src.isDelete
-    })
-    Object.seal(field)
-    this.__attrs[name] = field
+    const getCachedField = () => {
+      if (this.__cached_attrs[name]) {
+        return this.__cached_attrs[name]
+      }
+      const val = vals[name]
+      const Cls = SCHEMA_TYPE_TO_FIELD_CLASS_MAP[opts.schema.type]
+      // can't force validation of undefined values for blind updates because
+      //   they are permitted to omit fields
+      const field = new Cls({
+        idx,
+        name,
+        opts,
+        val,
+        valIsFromDB: !this.isNew,
+        valSpecified,
+        isForUpdate: this.__src.isUpdate,
+        isForDelete: this.__src.isDelete
+      })
+      Object.seal(field)
+      this.__cached_attrs[name] = field
+      return field
+    }
+    this.__attr_getters[name] = getCachedField
+    if (this.isNew) {
+      getCachedField() // create the field now to trigger validation
+    }
     Object.defineProperty(this, name, {
       get: (...args) => {
+        const field = getCachedField()
         return field.get()
       },
       set: (val) => {
+        const field = getCachedField()
         field.set(val)
       }
     })
@@ -359,7 +374,7 @@ class Model {
    */
   getField (name) {
     assert(!name.startsWith('_'), 'may not access internal computed fields')
-    return this.__attrs[name]
+    return this.__attr_getters[name]()
   }
 
   /**
@@ -469,7 +484,8 @@ class Model {
     const item = this.__encodedKey
     const accessedFields = []
     let exprCount = 0
-    for (const [key, field] of Object.entries(this.__attrs)) {
+    for (const [key, getter] of Object.entries(this.__attr_getters)) {
+      const field = getter()
       field.validate()
 
       if (field.keyType) {
@@ -583,7 +599,7 @@ class Model {
     let exprCount = 0
 
     const isUpdate = this.__src.isUpdate
-    for (const field of Object.values(this.__attrs)) {
+    for (const field of Object.values(this.__cached_attrs)) {
       if (!field.accessed) {
         if (isUpdate) {
           // When init method is UPDATE, not all required fields are present in
@@ -715,7 +731,7 @@ class Model {
     if (this.__toBeDeleted) {
       return true
     }
-    for (const field of Object.values(this.__attrs)) {
+    for (const field of Object.values(this.__cached_attrs)) {
       if (field.mutated) {
         // any field mutated makes the model mutated
         return true
@@ -1025,7 +1041,8 @@ class Model {
         }
       }
     }
-    for (const [name, field] of Object.entries(this.__attrs)) {
+    for (const [name, getter] of Object.entries(this.__attr_getters)) {
+      const field = getter()
       if (field.keyType) {
         if (dbKeys) {
           continue

@@ -407,7 +407,7 @@ class WriteTest extends BaseTest {
     params = m1.__updateParams()
     expect(params.ConditionExpression).toBe('attribute_exists(#_id)')
     expect(params).not.toHaveProperty(UPDATE_EXPRESSION_STR)
-    expect(m1.__attrs.id.accessed).toBe(false)
+    expect(m1.__cached_attrs.id.accessed).toBe(false)
   }
 
   async testWriteSetToUndefinedProp () {
