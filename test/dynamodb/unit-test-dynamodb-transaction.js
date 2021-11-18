@@ -2,10 +2,9 @@ const assert = require('assert')
 
 const uuidv4 = require('uuid').v4
 
-const db = require('../src/dynamodb')
-const S = require('../src/schema')
-
-const { BaseTest, runTests } = require('./base-unit-test')
+const db = require('../../src/dynamodb/src/default-db')
+const S = require('../../src/schema/src/schema')
+const { BaseTest, runTests } = require('../base-unit-test')
 
 async function txGetGeneric (cls, values, func) {
   return db.Transaction.run(async tx => {
@@ -1256,17 +1255,43 @@ class TransactionDeleteTest extends QuickTransactionTest {
     })
     const fut = db.Transaction.run({ retries: 0 }, async tx => {
       const model = await tx.get(TransactionModel, id)
-      if (model.field1 === 123) {
+      if (model.field1 === 123 && model.id === id) {
         tx.delete(model)
       }
       await db.Transaction.run(async innerTx => {
         // Modify the field before outer tx commits
         const model2 = await innerTx.get(TransactionModel, id)
         model2.field1 = 321
+
+        // Not accessed in outer model, should not fail outer delete
+        model2.field2 = 1000
       })
     })
     await expect(fut).rejects.toThrow(
       'Tried to delete model with outdated / invalid conditions')
+  }
+
+  /**
+   * Verify written but not read fields
+   * are excluded for condition check
+   */
+  async testReadlessAccess () {
+    const id = uuidv4()
+    await txGet(id, m => {
+      m.field1 = 123
+    })
+    const delPromise = db.Transaction.run({ retries: 0 }, async tx => {
+      const model = await tx.get(TransactionModel, id)
+      model.getField('field1').incrementBy(1)
+
+      await db.Transaction.run(async innerTx => {
+        // current value of field should be ignored
+        const innerModel = await innerTx.get(TransactionModel, id)
+        innerModel.getField('field1').incrementBy(2)
+      })
+      tx.delete(model)
+    })
+    await expect(delPromise).resolves.not.toThrow()
   }
 }
 

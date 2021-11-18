@@ -95,6 +95,11 @@ class __WriteBatcher {
    * @access private
    */
   __write (model) {
+    if (!model.__isMutated()) {
+      throw new Error('Attempting to write an unchanged model ' +
+        model.toString())
+    }
+
     if (!this.__toCheck[model]) {
       if (this.__toCheck[model] === false) {
         throw new Error(`Attempting to write model ${model.toString()} twice`)
@@ -102,10 +107,6 @@ class __WriteBatcher {
         throw new Error('Attempting to write untracked model ' +
           model.toString())
       }
-    }
-    if (!model.__isMutated()) {
-      throw new Error('Attempting to write an unchanged model ' +
-        model.toString())
     }
     model.__finalize()
     this.__toCheck[model] = false
@@ -199,10 +200,11 @@ class __WriteBatcher {
     }
     const toCheck = Object.values(this.__toCheck)
       .map(m => {
-        if (m !== false) {
-          return m.__conditionCheckParams()
+        if (m === false) {
+          // removed from __toCheck; updateExpression created in __write
+          return undefined
         }
-        return undefined
+        return m.__conditionCheckParams()
       })
       .filter(cond => !!cond)
       .map(cond => {

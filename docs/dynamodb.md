@@ -63,7 +63,7 @@ is composed of one or more _Fields_. Each item uniquely identified by a
 
 ## Minimal Example
 Define a new table like this:
-```javascript <!-- embed:../test/unit-test-dynamodb-doc.js:scope:Order -->
+```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:scope:Order -->
 class Order extends db.Model {
   static FIELDS = {
     product: S.str,
@@ -79,7 +79,7 @@ tx.create(Order, { id, product: 'coffee', quantity: 1 })
 ```
 
 Later, we can retrieve it from the database and modify it:
-```javascript <!-- embed:../test/unit-test-dynamodb-doc.js:scope:DBReadmeTest:testMinimalExample:Example -->
+```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:scope:DBReadmeTest:testMinimalExample:Example -->
     // Example
     await db.Transaction.run(async tx => {
       const order = await tx.get(Order, id)
@@ -103,7 +103,7 @@ changed.
 You can override the default and define your key to be composed of one _or
 more_ fields with arbitrary
 [Todea schema](./schema.md)s (`R`):
-```javascript <!-- embed:../test/unit-test-dynamodb-doc.js:scope:RaceResult -->
+```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:scope:RaceResult -->
 class RaceResult extends db.Model {
   static KEY = {
     raceID: S.int,
@@ -113,7 +113,7 @@ class RaceResult extends db.Model {
 ```
 
 Access each component of a key just like any other field:
-```javascript <!-- embed:../test/unit-test-dynamodb-doc.js:scope:DBReadmeTest:testKeys -->
+```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:scope:DBReadmeTest:testKeys -->
   async testKeys () {
     await RaceResult.createResource()
     await db.Transaction.run(async tx => {
@@ -147,7 +147,7 @@ the same key.
 ### Fields
 Fields are pieces of data attached to an item. They are defined similar to
 `KEY`:
-```javascript <!-- embed:../test/unit-test-dynamodb-doc.js:scope:ModelWithFields -->
+```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:scope:ModelWithFields -->
 class ModelWithFields extends db.Model {
   static FIELDS = {
     someInt: S.int.min(0),
@@ -171,7 +171,7 @@ Fields can be configured to be optional, immutable and/or have default values:
          field is required.
     * The default value is _not_ assigned to an optional field that is missing
       when it is fetched from the database.
-```javascript <!-- embed:../test/unit-test-dynamodb-doc.js:scope:ModelWithComplexFields -->
+```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:scope:ModelWithComplexFields -->
 class ModelWithComplexFields extends db.Model {
   static FIELDS = {
     aNonNegInt: S.int.min(0),
@@ -182,7 +182,7 @@ class ModelWithComplexFields extends db.Model {
   }
 }
 ```
-```javascript <!-- embed:../test/unit-test-dynamodb-doc.js:section:example1122start:example1122end -->
+```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:section:example1122start:example1122end -->
       // can omit the optional field
       const item = tx.create(ModelWithComplexFields, {
         id: uuidv4(),
@@ -276,7 +276,7 @@ The schema is checked as follows:
 As you've noticed, key components and fields are simply accessed by their names
 (e.g., `raceResult.runnerName` or `order.product`). You can also define
 instance methods on your models to provide additional functionality:
-```javascript <!-- embed:../test/unit-test-dynamodb-doc.js:scope:OrderWithPrice -->
+```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:scope:OrderWithPrice -->
 class OrderWithPrice extends db.Model {
   static FIELDS = {
     quantity: S.int,
@@ -632,7 +632,7 @@ Otherwise, deletion on missing items will be treated as noop.
 Query enables accessing items in a DB table with the same partition key.
 Transaction context `tx` provides `query` method that return a handle for
 adding filters and execute the query.
-```javascript <!-- embed:../test/unit-test-dynamodb-iterators.js:section:example queryHandle start:example queryHandle end -->
+```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:section:example queryHandle start:example queryHandle end -->
       const query = tx.query(QueryModel)
 ```
 
@@ -640,7 +640,7 @@ adding filters and execute the query.
 Queries require equality filters on every partition key, otherwise when a
 query is executed an exception will result. Consider a model with 2 partition
 keys `id1` and `id2`:
-```javascript <!-- embed:../test/unit-test-dynamodb-iterators.js:scope:TestModel -->
+```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:scope:TestModel -->
 class TestModel extends db.Model {
   static KEY = {
     id1: S.str,
@@ -660,7 +660,7 @@ class TestModel extends db.Model {
 ```
 
 The required equality filters are added with the following code
-```javascript <!-- embed:../test/unit-test-dynamodb-iterators.js:section:example equality filter start:example equality filter end -->
+```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:section:example equality filter start:example equality filter end -->
     query.id1('xyz')
     query.id2(321)
 ```
@@ -677,7 +677,7 @@ query.sk1('between', '123', '234') // sk1 is between '123' and '234
 ```
 
 Filter expressions support method chaining
-```javascript <!-- embed:../test/unit-test-dynamodb-iterators.js:section:example filter chaining start:example filter chaining end -->
+```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:section:example filter chaining start:example filter chaining end -->
     query1.id1('xyz').id2(123).sk1('>', '1')
 ```
 
@@ -705,7 +705,7 @@ Queries can be executed using the paginator API and generator API:
   when `nextToken` is undefined, else the pagination will restart from the
   beginning of the table again, resulting in an infinite loop.
 
-```javascript <!-- embed:../test/unit-test-dynamodb-iterators.js:section:example queryFetch start:example queryFetch end -->
+```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:section:example queryFetch start:example queryFetch end -->
       const [results1, nextToken1] = await query.fetch(1)
       const [results2, nextToken2] = await query.fetch(999, nextToken1)
       expect(nextToken2).toBeUndefined()
@@ -714,7 +714,7 @@ Queries can be executed using the paginator API and generator API:
 - The generator API is supported by `run(n)`. It also takes the number of items
   to return as a parameter, and only stops when **n** items are returned, or
   all items in the table are read.
-```javascript <!-- embed:../test/unit-test-dynamodb-iterators.js:scope:async testLazyFilter:for await -->
+```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:scope:async testLazyFilter:for await -->
       for await (const data of query.run(10)) {
         ret.push(data)
       }
@@ -730,7 +730,7 @@ Queries can be executed using the paginator API and generator API:
 Query results are sorted by sort keys in ascending order by default. Returning
 items in descending order requires enabling `descending` option when creating
 the query handle.
-```javascript <!-- embed:../test/unit-test-dynamodb-iterators.js:section:example descending start:example descending end -->
+```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:section:example descending start:example descending end -->
       const query = tx.query(QueryModel, { descending: true })
 ```
 
@@ -738,7 +738,7 @@ the query handle.
 By default, query returns strongly consistent data that makes sure *only*
 transactions committed before query started are reflected in the items returned
 from query. Disabling strong consistency can improve performance.
-```javascript <!-- embed:../test/unit-test-dynamodb-iterators.js:section:example inconsistentQuery start:example inconsistentQuery end -->
+```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:section:example inconsistentQuery start:example inconsistentQuery end -->
       const query = tx.query(QueryModel, { inconsistentRead: true })
       query.id1('123').id2(123)
 ```
@@ -754,7 +754,7 @@ However, lazy filters are still supported to allow flexibility in constructing
 queries while avoiding setting up many dedicated Indexes. To allow lazy
 filters, the query handle must be created with `allowLazyFilter` option turned
 on.
-```javascript <!-- embed:../test/unit-test-dynamodb-iterators.js:section:example lazyFilter start:example lazyFilter end -->
+```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:section:example lazyFilter start:example lazyFilter end -->
       const query = tx.query(QueryModel, { allowLazyFilter: true })
 ```
 
@@ -765,21 +765,21 @@ for inequality condition "!=".
 A scan accesses all items in a table one by one. Transaction context
 `tx` provides `scan` method that returns a handle for conducting a scan
 operation.
-```javascript <!-- embed:../test/unit-test-dynamodb-iterators.js:section:scanHandle start:scanHandle end -->
+```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:section:scanHandle start:scanHandle end -->
       const scan = tx.scan(ScanModel)
 ```
 
 #### Execution
 A scan is executed using paginator and generator APIs similar to [query's execution APIs](#execution)
 - Paginator API
-```javascript <!-- embed:../test/unit-test-dynamodb-iterators.js:section:example scan start:example scan end -->
+```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:section:example scan start:example scan end -->
       const scan = tx.scan(ScanModel)
       const [page1, nextToken1] = await scan.fetch(2)
       const [page2, nextToken2] = await scan.fetch(10, nextToken1)
 ```
 
 - Generator API
-```javascript <!-- embed:../test/unit-test-dynamodb-iterators.js:scope:testScanRunFew:for await -->
+```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:scope:testScanRunFew:for await -->
       for await (const model of scan.run(3)) {
         models.push(model)
       }
@@ -796,7 +796,7 @@ and `shardCount`.
 For example, a sharded scan using 2 machines will need to set `shardCount` to 2
 and use 0 as the `shardIndex` on one machine and use 1 as the `shardIndex` on
 the other.
-```javascript <!-- embed:../test/unit-test-dynamodb-iterators.js:scope:testSharding:Transaction -->
+```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:scope:testSharding:Transaction -->
     await db.Transaction.run(async tx => {
       const scan = tx.scan(ScanModel, { shardCount: 2, shardIndex: 0 })
       return scan.fetch(10)
@@ -806,7 +806,7 @@ the other.
 #### Read Consistency
 By default, a scan returns strongly consistent data. Disabling strong
 consistency can improve performance and reduce cost by 50%.
-```javascript <!-- embed:../test/unit-test-dynamodb-iterators.js:scope:testInconsistentRead:scanRet  -->
+```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:scope:testInconsistentRead:scanRet  -->
     const scanRet = await db.Transaction.run(async tx => {
       const scan = tx.scan(ScanModel, { inconsistentRead: true })
       return scan.__setupParams().ConsistentRead
@@ -977,7 +977,7 @@ NOTE: When the timestamp is more than 5 years in the past, the item will not be
 removed.So to keep an item indefinitely in a TTL enabled table, you may safely
 set the TTL field to 0.
 
-```javascript <!-- embed:../test/unit-test-dynamodb-model.js:scope:TTLModel -->
+```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-model.js:scope:TTLModel -->
 class TTLModel extends db.Model {
   static FIELDS = {
     expirationTime: S.int,
@@ -1195,7 +1195,7 @@ an exception regardless of the cacheModels flag value.
   `services/sharedlib/src/dynamodb.js`.
 
 * **Unit Tests** are available under
-  `services/sharedlib/test/unit-test-dynamodb*.js`.
+  `services/sharedlib/test/dynamodb/unit-test-dynamodb*.js`.
 
 
 ## AOL
@@ -1247,5 +1247,5 @@ provide.
 
 # Appendix
 The samples in this readme can be found in the APIs defined for unit testing
-this library in `services/sharedlib/test/unit-test-dynamodb.js` in the
+this library in `services/sharedlib/test/dynamodb/unit-test-dynamodb.js` in the
 `DBReadmeTest` class.

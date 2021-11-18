@@ -580,15 +580,14 @@ class Model {
    * hence is preferred over put.
    *
    * @access package
-   * @param {Boolean} shouldValidate Whether each field needs to be validated.
-   *   If undefined, default behavior is to have validation.
-   *   It is used for generating params for ConditionCheck which is mostly
-   *   identical to updateParams. But omit validation since the model is either
-   *   from server which must be valid already (from validations on last
-   *   write), or fields still need to be setup before they are all valid.
+   * @param {Boolean} omitUpdates (default = false)
+   * When True, generates only condition expressions for read values;
+   * skipping update expressions, related Attribute Names/Values and schema validation,
+   * with the expectation that any accessed value is either unmodified (and therefore valid)
+   * or explicitly unchecked (written but not read).
    * @returns parameters for a update request to DynamoDB
    */
-  __updateParams (shouldValidate) {
+  __updateParams (omitUpdates = false) {
     const conditions = []
     const exprAttrNames = {}
     const exprValues = {}
@@ -600,27 +599,18 @@ class Model {
 
     const isUpdate = this.__src.isUpdate
     for (const field of Object.values(this.__cached_attrs)) {
-      if (!field.accessed) {
-        if (isUpdate) {
-          // When init method is UPDATE, not all required fields are present in
-          // the model: we only write parts of the model.
-          // Hence we exclude any fields that are not part of the update
-          // (not accessed).
-          continue
-        }
-        if (!field.__mayHaveMutated) {
-          continue
-        }
-      }
-
-      const doValidate = shouldValidate === undefined || shouldValidate
-      if (doValidate) {
-        field.validate()
-      }
-
       if (field.keyType) {
+        // keyparts are never updated and not explicitly represented in store
         continue
       }
+      if (field.accessed) {
+        accessedFields.push(field)
+      }
+      if (!field.__mayHaveMutated || omitUpdates) {
+        continue
+      }
+
+      field.validate()
 
       const exprKey = `:_${exprCount++}`
       const [set, vals, remove] = field.__updateExpression(exprKey)
@@ -630,9 +620,6 @@ class Model {
       }
       if (remove) {
         removes.push(field.__awsName)
-      }
-      if (field.accessed) {
-        accessedFields.push(field)
       }
       if (set || remove) {
         exprAttrNames[field.__awsName] = field.name
@@ -706,7 +693,7 @@ class Model {
       const conditions = []
       const attrNames = {}
       // Since model is not new, conditionCheckParams will always have contents
-      const conditionCheckParams = this.__updateParams(false)
+      const conditionCheckParams = this.__updateParams(true)
       conditions.push(conditionCheckParams.ConditionExpression)
       Object.assign(attrNames, conditionCheckParams.ExpressionAttributeNames)
       ret.ExpressionAttributeValues =
@@ -755,7 +742,7 @@ class Model {
       'Model is mutated, write it instead!')
     // Since model cannot be new, conditionCheckExpression will never be empty
     // (_id must exist)
-    return this.__updateParams(false)
+    return this.__updateParams(true)
   }
 
   /**

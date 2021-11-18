@@ -1,7 +1,6 @@
-const S = require('../src/schema/src/schema')
-
-const { BaseTest, runTests } = require('./base-unit-test')
-const db = require('./db-with-field-maker')
+const S = require('../../src/schema/src/schema')
+const { BaseTest, runTests } = require('../base-unit-test')
+const db = require('../db-with-field-maker')
 
 const {
   Query,

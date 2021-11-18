@@ -199,18 +199,18 @@ class __Field {
    *   ShouldRemove]
    */
   __updateExpression (exprKey) {
-    if (this.mutated) {
-      if (this.__value === undefined) {
-        return [undefined, {}, true]
-      } else {
-        return [
-          `${this.__awsName}=${exprKey}`,
-          { [exprKey]: deepcopy(this.__value) },
-          false
-        ]
-      }
+    if (!this.mutated) {
+      return []
     }
-    return []
+    if (this.__value === undefined) {
+      return [undefined, {}, true]
+    }
+
+    return [
+      `${this.__awsName}=${exprKey}`,
+      { [exprKey]: deepcopy(this.__value) },
+      false
+    ]
   }
 
   /**

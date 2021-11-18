@@ -1,9 +1,8 @@
 const uuidv4 = require('uuid').v4
 
-const S = require('../src/schema')
-
-const { BaseTest, runTests } = require('./base-unit-test')
-const db = require('./db-with-field-maker')
+const S = require('../../src/schema/src/schema')
+const { BaseTest, runTests } = require('../base-unit-test')
+const db = require('../db-with-field-maker')
 
 const CONDITION_EXPRESSION_STR = 'ConditionExpression'
 const UPDATE_EXPRESSION_STR = 'UpdateExpression'
@@ -170,7 +169,7 @@ class SimpleModelTest extends BaseTest {
     jest.resetModules()
     const oldVal = process.env.INDEBUGGER
     process.env.INDEBUGGER = 0
-    const tempDB = require('../src/dynamodb')
+    const tempDB = require('../../src/dynamodb/src/default-db')
     expect(tempDB.Model.createResource).toBe(undefined)
     expect(tempDB.Model.__private).toBe(undefined)
     process.env.INDEBUGGER = oldVal
@@ -868,6 +867,10 @@ class WriteBatcherTest extends BaseTest {
     await Promise.all(promises)
   }
 
+  async afterEach () {
+    jest.restoreAllMocks()
+  }
+
   async testUntrackedWrite () {
     const batcher = new db.__private.__WriteBatcher()
     const model = await txGet(BasicModel, uuidv4())
@@ -890,27 +893,27 @@ class WriteBatcherTest extends BaseTest {
     batcher.track(model1)
     batcher.track(model2)
     model1.noRequiredNoDefault = model2.noRequiredNoDefault + 1
-    const originalFunc = batcher.documentClient.transactWrite
+
     const msg = uuidv4()
-    const mock = jest.fn().mockImplementation(data => {
-      const update = data.TransactItems[0].Update
-      // we never read the old value on model1, so our update should NOT be
-      // conditioned on the old value
-      if (update) {
-        expect(update.ConditionExpression).toBe('attribute_exists(#_id)')
-      }
-      const awsName = model1.getField('noRequiredNoDefault').__awsName
-      expect(update.UpdateExpression).toBe(`SET ${awsName}=:_0`)
-      const condition = data.TransactItems[1].ConditionCheck
-      expect(condition.ConditionExpression)
-        .toBe(`attribute_exists(#_id) AND ${awsName}=:_1`)
-      throw new Error(msg)
-    })
-    batcher.documentClient.transactWrite = mock
+    const mock = jest.spyOn(batcher.documentClient, 'transactWrite')
+      .mockImplementation(data => {
+        const update = data.TransactItems[0].Update
+        // we never read the old value on model1, so our update should NOT be
+        // conditioned on the old value
+        if (update) {
+          expect(update.ConditionExpression).toBe('attribute_exists(#_id)')
+        }
+        const awsName = model1.getField('noRequiredNoDefault').__awsName
+        expect(update.UpdateExpression).toBe(`SET ${awsName}=:_0`)
+
+        const condition = data.TransactItems[1].ConditionCheck
+        expect(Object.keys(condition.ExpressionAttributeValues).length).toEqual(1)
+        expect(condition.ConditionExpression)
+          .toBe(`attribute_exists(#_id) AND ${awsName}=:_0`)
+        throw new Error(msg)
+      })
     await expect(batcher.commit(true)).rejects.toThrow(msg)
     expect(mock).toHaveBeenCalledTimes(1)
-
-    batcher.documentClient.transactWrite = originalFunc
   }
 
   async testReservedAttributeName () {
@@ -1041,6 +1044,46 @@ class WriteBatcherTest extends BaseTest {
       tx.update(BasicModel, { id }, { noRequiredNoDefault: 1 })
     })
     await expect(fut).rejects.toThrow(db.InvalidModelUpdateError)
+  }
+
+  /**
+   * Verify creating a model with invalid key fails
+   */
+  async testInvalidKey () {
+    let createPromise = db.Transaction.run(async tx => {
+      tx.create(BasicModel, { id: { test: 'not valid schema' } })
+    })
+    await expect(createPromise).rejects.toThrow(S.ValidationError)
+
+    createPromise = db.Transaction.run(async tx => {
+      return tx.get(BasicModel, { id: { test: 'not valid schema' } }, { createIfMissing: true })
+    })
+
+    await expect(createPromise).rejects.toThrow(S.ValidationError)
+  }
+
+  /**
+   * Verify modifying keyparts is not allowed
+   */
+  async testMutatingKeyparts () {
+    await CompoundIDModel.createResource()
+    const compoundID = { year: 1900, make: 'Honda', upc: uuidv4() }
+    let createPromise = db.Transaction.run(async tx => {
+      const model = tx.create(CompoundIDModel, compoundID)
+      model.year = 1901
+    })
+    await expect(createPromise).rejects.toThrow(db.InvalidFieldError)
+
+    await db.Transaction.run(async tx => {
+      return tx.create(CompoundIDModel, compoundID)
+    })
+
+    createPromise = db.Transaction.run(async tx => {
+      const model = await tx.get(CompoundIDModel, compoundID)
+      model.year = 1901
+    })
+
+    await expect(createPromise).rejects.toThrow(db.InvalidFieldError)
   }
 }
 

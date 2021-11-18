@@ -1,9 +1,8 @@
 const uuidv4 = require('uuid').v4
 
-const db = require('../src/dynamodb')
-const S = require('../src/schema')
-
-const { BaseTest, runTests } = require('./base-unit-test')
+const db = require('../../src/dynamodb/src/default-db')
+const S = require('../../src/schema/src/schema')
+const { BaseTest, runTests } = require('../base-unit-test')
 
 class Order extends db.Model {
   static FIELDS = {
