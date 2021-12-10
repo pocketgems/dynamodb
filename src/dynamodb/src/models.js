@@ -1005,6 +1005,10 @@ class Model {
     )
   }
 
+  toJSON () {
+    return this.getSnapshot({ initial: true, dbKeys: false })
+  }
+
   /**
    * Return snapshot of the model, all fields included.
    * @param {Object} params
