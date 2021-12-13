@@ -1006,7 +1006,7 @@ class Model {
   }
 
   toJSON () {
-    return this.getSnapshot({ initial: true, dbKeys: false })
+    return this.getSnapshot()
   }
 
   /**
@@ -1016,7 +1016,7 @@ class Model {
    * @param {Boolean} params.dbKeys Whether to return _id and _sk instead of
    *   raw key fields.
    */
-  getSnapshot ({ initial = false, dbKeys = false }) {
+  getSnapshot ({ initial = false, dbKeys = false } = {}) {
     if (initial === false && this.__toBeDeleted) {
       return undefined
     }

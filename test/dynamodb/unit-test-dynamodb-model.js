@@ -759,6 +759,24 @@ class JSONModelTest extends BaseTest {
       expect(model.arrNoDefaultRequired).toStrictEqual(arr)
     })
   }
+
+  async testToJson () {
+    const id = uuidv4()
+    const data = {
+      id,
+      objNoDefaultNoRequired: {},
+      objDefaultNoRequired: { a: 1 },
+      objNoDefaultRequired: { ab: 12, cd: [23] },
+      objDefaultRequired: { a: '2' },
+      arrDefaultNoRequired: [2, 3],
+      arrNoDefaultRequired: [{ cd: 2 }],
+      arrDefaultRequired: []
+    }
+    const model = await db.Transaction.run(async tx => {
+      return tx.get(JSONModel, data, { createIfMissing: true })
+    })
+    expect(model.toJSON()).toEqual(data)
+  }
 }
 
 class GetArgsParserTest extends BaseTest {
