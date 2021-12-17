@@ -1,4 +1,4 @@
-# Data Modeling library <!-- omit in toc -->
+# DynamoDB Library <!-- omit in toc -->
 This library is used to interact with the DynamoDB NoSQL database. It provides
 high-level abstractions to structure data and prevent race conditions.
 
