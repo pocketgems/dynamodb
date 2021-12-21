@@ -976,8 +976,8 @@ class Model {
       const lowerBound = currentSecond - 157680000
       const awsName = expireField.__awsName
       condition = `(${condition} OR
-        (attribute_exists(${awsName}) and
-         :_ttlMin <= ${awsName} and
+        (attribute_exists(${awsName}) AND
+         :_ttlMin <= ${awsName} AND
          ${awsName} <= :_ttlMax))`
       attrNames[awsName] = expireField.name
       attrValues = {
