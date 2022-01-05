@@ -10,10 +10,10 @@ const {
   InvalidOptionsError,
   InvalidParameterError,
   ModelAlreadyExistsError,
-  ModelCreatedTwiceError,
   ModelDeletedTwiceError,
   TransactionFailedError,
-  WriteAttemptedInReadOnlyTxError
+  WriteAttemptedInReadOnlyTxError,
+  ModelTrackedTwiceError
 } = require('./errors')
 const { Query, Scan } = require('./iterators')
 const { Key } = require('./key')
@@ -141,11 +141,14 @@ class __WriteBatcher {
   track (model) {
     const trackedModel = this.__toCheck[model]
     if (trackedModel !== undefined) {
+      /**
+       * Cannot track two instances pointing to the same item in dynamodb,
+       */
       if (model.__src.isDelete) {
         throw new ModelDeletedTwiceError(model)
       } else if (!(model.__src.isGet || model.__src.isCreate) ||
                  !(trackedModel instanceof NonExistentItem)) {
-        throw new ModelCreatedTwiceError(model)
+        throw new ModelTrackedTwiceError(model, trackedModel)
       }
     }
     this.__allModels.push(model)
@@ -244,7 +247,7 @@ class __WriteBatcher {
       if (model.__fullTableName === tableName &&
           model._id === id &&
           model._sk === sk) {
-        return model
+        return !(model instanceof NonExistentItem) ? model : undefined
       }
     }
   }

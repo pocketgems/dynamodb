@@ -11,8 +11,8 @@ const {
   InvalidOptionsError,
   InvalidParameterError,
   ModelAlreadyExistsError,
-  ModelCreatedTwiceError,
   ModelDeletedTwiceError,
+  ModelTrackedTwiceError,
   TransactionFailedError,
   WriteAttemptedInReadOnlyTxError
 } = require('./errors')
@@ -128,8 +128,8 @@ function setup (config) {
     InvalidCachedModelError,
     InvalidOptionsError,
     InvalidParameterError,
-    ModelCreatedTwiceError,
     ModelDeletedTwiceError,
+    ModelTrackedTwiceError,
     ModelAlreadyExistsError,
     TransactionFailedError,
     WriteAttemptedInReadOnlyTxError

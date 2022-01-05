@@ -220,7 +220,8 @@ class TransactionGetTest extends QuickTransactionTest {
         { createIfMissing: true })
       const fut = tx.get(TransactionModel, 'a',
         { createIfMissing: true })
-      await expect(fut).rejects.toThrow()
+      await expect(fut).rejects
+        .toThrow('Model tracked for Get already tracked from Get: sharedlibTransactionModel _id=a')
     })
   }
 
@@ -930,6 +931,33 @@ class TransactionWriteTest extends QuickTransactionTest {
     })
     await expect(fut).rejects.toThrow()
   }
+
+  /**
+   * Verify model cannot be tracked more than once inside a tx.
+   */
+  async testDuplicateTracking () {
+    // verify create then get on non existing item fails
+    let future = db.Transaction.run(async tx => {
+      tx.createOrPut(TransactionModel, { id: 'abc', field1: 1 })
+      await tx.get(TransactionModel, { id: 'abc' })
+    })
+    await expect(future)
+      .rejects
+      .toThrow(
+        'Model tracked for Get already tracked from CreateOrPut: sharedlibTransactionModel _id=abc'
+      )
+
+    // verify delete then get fails
+    future = db.Transaction.run(async tx => {
+      tx.delete(TransactionModel.key({ id: 'abc' }))
+      await tx.get(TransactionModel, { id: 'abc' })
+    })
+    await expect(future)
+      .rejects
+      .toThrow(
+        'Model tracked for Get already tracked from Delete: sharedlibTransactionModel _id=abc'
+      )
+  }
 }
 
 class TransactionReadOnlyTest extends QuickTransactionTest {
@@ -1246,25 +1274,24 @@ class TransactionDeleteTest extends QuickTransactionTest {
       'Tried to delete model when it\'s already deleted in the current tx:')
   }
 
-  async testConditionalDelete () {
-    // If a model's properties is accessed before the model is deleted, the
-    // deletion operation should have it reflected in the condition expr
+  /**
+   * Verify delete fails if accessed fields are modified during tx
+   */
+  async testAccessedFieldModified () {
     const id = uuidv4()
     await txGet(id, m => {
       m.field1 = 123
     })
+
     const fut = db.Transaction.run({ retries: 0 }, async tx => {
       const model = await tx.get(TransactionModel, id)
       if (model.field1 === 123 && model.id === id) {
         tx.delete(model)
       }
       await db.Transaction.run(async innerTx => {
-        // Modify the field before outer tx commits
+        // accessed in outer tx, should fail outer delete
         const model2 = await innerTx.get(TransactionModel, id)
         model2.field1 = 321
-
-        // Not accessed in outer model, should not fail outer delete
-        model2.field2 = 1000
       })
     })
     await expect(fut).rejects.toThrow(
@@ -1272,10 +1299,36 @@ class TransactionDeleteTest extends QuickTransactionTest {
   }
 
   /**
-   * Verify written but not read fields
-   * are excluded for condition check
+   * Verify delete succeeds even if unaccessed fields are modified during tx
    */
-  async testReadlessAccess () {
+  async testUnaccessedFieldModified () {
+    const id = uuidv4()
+    await txGet(id, m => {
+      m.field1 = 123
+    })
+
+    const fut = db.Transaction.run({ retries: 0 }, async tx => {
+      const model = await tx.get(TransactionModel, id)
+      if (model.field1 === 123 && model.id === id) {
+        tx.delete(model)
+      }
+
+      await db.Transaction.run(async innerTx => {
+        const innerModel = await innerTx.get(TransactionModel, id)
+
+        // Not accessed in outer tx, should not fail outer delete
+        innerModel.field2 = 1000
+      })
+    })
+
+    await expect(fut).resolves.not.toThrow()
+  }
+
+  /**
+   * Verify delete succeeds even if written but not read
+   * fields are modified during tx
+   */
+  async testReadlessAccessedFieldModified () {
     const id = uuidv4()
     await txGet(id, m => {
       m.field1 = 123

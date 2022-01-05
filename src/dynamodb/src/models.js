@@ -1063,6 +1063,18 @@ class NonExistentItem {
     }
   }
 
+  get _id () {
+    return this.key.encodedKeys._id
+  }
+
+  get _sk () {
+    return this.key.encodedKeys._sk
+  }
+
+  get __fullTableName () {
+    return this.key.Cls.fullTableName
+  }
+
   __isMutated () {
     return false
   }

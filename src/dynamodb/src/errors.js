@@ -121,13 +121,18 @@ class InvalidCachedModelError extends GenericModelError {
 }
 
 /**
- * Thrown when a model is being created more than once.
- * @memberof Errors
+ * Thrown when model is tracked more than once inside a transaction.
  */
-class ModelCreatedTwiceError extends GenericModelError {
-  constructor (model) {
-    super('Tried to create model when it\'s already created in the same tx',
-      model.__fullTableName, model._id, model._sk)
+class ModelTrackedTwiceError extends GenericModelError {
+
+  constructor (model, trackedModel) {
+    const getSourceDisplayText = (model) => {
+      return Object.keys(model.__src)[0].replace('is', '')
+    }
+    const src = getSourceDisplayText(model)
+    const trackedSrc = getSourceDisplayText(trackedModel)
+    const msg = `Model tracked for ${src} already tracked from ${trackedSrc}`
+    super(msg, model.__fullTableName, model._id, model._sk)
     this.model = model
   }
 }
@@ -171,8 +176,8 @@ module.exports = {
   InvalidOptionsError,
   InvalidParameterError,
   ModelAlreadyExistsError,
-  ModelCreatedTwiceError,
   ModelDeletedTwiceError,
+  ModelTrackedTwiceError,
   TransactionFailedError,
   WriteAttemptedInReadOnlyTxError
 }
