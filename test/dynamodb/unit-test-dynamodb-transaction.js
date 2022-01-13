@@ -1126,7 +1126,7 @@ class TransactionConditionCheckTest extends QuickTransactionTest {
     // Non-existent model
     await db.Transaction.run(async tx => {
       await tx.get(TransactionModel, uuidv4())
-      await tx.create(TransactionModel, { id })
+      tx.create(TransactionModel, { id })
     })
     expect(spy).toHaveBeenCalledTimes(1)
     let callArgs = spy.mock.calls[0]
@@ -1138,7 +1138,7 @@ class TransactionConditionCheckTest extends QuickTransactionTest {
     // Existing model
     await db.Transaction.run(async tx => {
       await tx.get(TransactionModel, id)
-      await tx.create(TransactionModel, { id: uuidv4() })
+      tx.create(TransactionModel, { id: uuidv4() })
     })
     expect(spy).toHaveBeenCalledTimes(1)
     callArgs = spy.mock.calls[0]
@@ -1216,7 +1216,7 @@ class TransactionDeleteTest extends QuickTransactionTest {
 
     await db.Transaction.run(async tx => {
       // creat then delete in the same transaction don't cause conflicts
-      const model = await tx.create(data.Cls, data.keyComponents)
+      const model = tx.create(data.Cls, data.keyComponents)
       tx.delete(model)
     })
   }

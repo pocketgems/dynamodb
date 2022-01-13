@@ -1127,7 +1127,7 @@ class DefaultsTest extends BaseTest {
     const id = uuidv4()
 
     await db.Transaction.run(async tx => {
-      await tx.create(NestedDefaultsModel, {
+      tx.create(NestedDefaultsModel, {
         id: id,
         arr: [{ int: 2 }, { int: 3 }]
       })
@@ -1192,7 +1192,7 @@ class DefaultsTest extends BaseTest {
     const id = uuidv4()
 
     await db.Transaction.run(async tx => {
-      await tx.create(NestedDefaultsModel, {
+      tx.create(NestedDefaultsModel, {
         id: id,
         arr: [{ int: 2 }, { int: 3 }]
       })
