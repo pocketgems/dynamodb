@@ -181,19 +181,7 @@ class __WriteBatcher {
       return false
     }
     if (!expectWrites) {
-      const x = this.__toWrite[0]
-      let table, key
-      if (x.Update) {
-        table = x.Update.TableName
-        key = x.Update.Key
-      } else if (x.Put) {
-        table = x.Put.TableName
-        key = x.Put.Item
-      } else {
-        table = x.Delete.TableName
-        key = x.Delete.Key
-      }
-      throw new WriteAttemptedInReadOnlyTxError(table, key._id, key._sk)
+      throw new WriteAttemptedInReadOnlyTxError(this.__toWrite)
     }
 
     if (this.__allModels.length === 1 &&

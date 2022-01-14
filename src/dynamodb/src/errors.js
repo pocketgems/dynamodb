@@ -124,7 +124,6 @@ class InvalidCachedModelError extends GenericModelError {
  * Thrown when model is tracked more than once inside a transaction.
  */
 class ModelTrackedTwiceError extends GenericModelError {
-
   constructor (model, trackedModel) {
     const getSourceDisplayText = (model) => {
       return Object.keys(model.__src)[0].replace('is', '')
@@ -154,8 +153,9 @@ class ModelDeletedTwiceError extends GenericModelError {
  * @memberof Errors
  */
 class WriteAttemptedInReadOnlyTxError extends Error {
-  constructor (table, _id, _sk) {
-    super('Tried to write model in a read-only transaction', table, _id, _sk)
+  constructor (dataToWrite) {
+    super(`Tried to write model in a read-only transaction with the following
+      changes ${JSON.stringify(dataToWrite)}`)
   }
 }
 
