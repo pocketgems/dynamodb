@@ -1548,6 +1548,16 @@ class ModelDiffsTest extends BaseTest {
           _id: id,
           data: undefined
         }
+      }],
+      diff: [{
+        TransactionModel: {
+          _id: id,
+          data: {
+            added: {},
+            deleted: {},
+            updated: undefined
+          }
+        }
       }]
     })
 
@@ -1569,6 +1579,16 @@ class ModelDiffsTest extends BaseTest {
         TransactionModel: {
           _id: id,
           data: undefined
+        }
+      }],
+      diff: [{
+        TransactionModel: {
+          _id: id,
+          data: {
+            added: {},
+            deleted: {},
+            updated: undefined
+          }
         }
       }]
     })

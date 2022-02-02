@@ -1,5 +1,7 @@
 const assert = require('assert')
 
+const { detailedDiff } = require('deep-object-diff')
+
 const AsyncEmitter = require('./async-emitter')
 const AWSError = require('./aws-error')
 const { Data } = require('./data')
@@ -214,7 +216,7 @@ class __WriteBatcher {
     request.on('extractError', (response) => {
       this.__extractError(request, response)
     })
-    return request.promise().catch(e => {
+    await request.promise().catch(e => {
       throw new AWSError('transactWrite', e)
     })
   }
@@ -989,6 +991,7 @@ class Transaction {
   getModelDiffs (filter = () => true) {
     const allBefore = []
     const allAfter = []
+    const allDiff = []
     for (const model of this.__writeBatcher.trackedModels) {
       // istanbul ignore if
       if (!filter(model)) {
@@ -1000,10 +1003,13 @@ class Transaction {
       const key = model.key ? model.key.encodedKeys : model.__encodedKey
       allBefore.push({ [modelName]: { ...key, data: before } })
       allAfter.push({ [modelName]: { ...key, data: after } })
+      const diff = detailedDiff(before, after)
+      allDiff.push({ [modelName]: { ...key, data: diff } })
     }
     return {
       before: allBefore,
-      after: allAfter
+      after: allAfter,
+      diff: allDiff
     }
   }
 }
