@@ -1422,7 +1422,7 @@ class TTLTest extends BaseTest {
   }
 
   async testCFResource () {
-    expect(TTLModel.__getResourceDefinition())
+    expect(Object.values(TTLModel.__getResourceDefinitions())[0].Properties)
       .toHaveProperty('TimeToLiveSpecification')
   }
 
@@ -1431,28 +1431,28 @@ class TTLTest extends BaseTest {
       static EXPIRE_EPOCH_FIELD = 'notTime'
     }
     expect(() => {
-      Cls1.__getResourceDefinition()
+      Cls1.__getResourceDefinitions()
     }).toThrow('must refer to an integer or double field')
 
     const Cls2 = class extends TTLModel {
       static EXPIRE_EPOCH_FIELD = 'optionalTime'
     }
     expect(() => {
-      Cls2.__getResourceDefinition()
+      Cls2.__getResourceDefinitions()
     }).toThrow('EXPIRE_EPOCH_FIELD must refer to a required field')
 
     const Cls3 = class extends TTLModel {
       static EXPIRE_EPOCH_FIELD = 'doubleTime'
     }
     expect(() => {
-      Cls3.__getResourceDefinition()
+      Cls3.__getResourceDefinitions()
     }).not.toThrow()
 
     const Cls4 = class extends TTLModel {
       static EXPIRE_EPOCH_FIELD = 'invalid'
     }
     expect(() => {
-      Cls4.__getResourceDefinition()
+      Cls4.__getResourceDefinitions()
     }).toThrow('EXPIRE_EPOCH_FIELD must refer to an existing field')
   }
 

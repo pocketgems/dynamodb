@@ -37,14 +37,22 @@ const {
   loadOptionDefaults
 } = require('./utils')
 
-function makeCreateResourceFunc (dynamoDB) {
+function makeCreateResourceFunc (dynamoDB, autoscaling) {
   return async function () {
     this.__doOneTimeModelPrep()
-    const params = this.__getResourceDefinition()
-    const ttlSpec = params.TimeToLiveSpecification
-    delete params.TimeToLiveSpecification
+    const definitions = this.__getResourceDefinitions()
+    const tableParams = Object.values(definitions)
+      .filter(val => val.Type === 'AWS::DynamoDB::Table')[0]
+      .Properties
+    // istanbul ignore else
+    if (!autoscaling) {
+      tableParams.BillingMode = 'PAY_PER_REQUEST'
+      delete tableParams.ProvisionedThroughput
+    }
+    const ttlSpec = tableParams.TimeToLiveSpecification
+    delete tableParams.TimeToLiveSpecification
 
-    await dynamoDB.createTable(params).promise().catch(err => {
+    await dynamoDB.createTable(tableParams).promise().catch(err => {
       /* istanbul ignore if */
       if (err.code !== 'ResourceInUseException') {
         throw new AWSError('createTable', err)
@@ -53,7 +61,7 @@ function makeCreateResourceFunc (dynamoDB) {
 
     if (ttlSpec) {
       await dynamoDB.updateTimeToLive({
-        TableName: params.TableName,
+        TableName: tableParams.TableName,
         TimeToLiveSpecification: ttlSpec
       }).promise().catch(
         /* istanbul ignore next */
@@ -64,11 +72,25 @@ function makeCreateResourceFunc (dynamoDB) {
         }
       )
     }
+
+    // istanbul ignore if
+    if (autoscaling) {
+      for (const val of Object.values(definitions)) {
+        const params = val.Properties
+        if (val.type === 'AWS::ApplicationAutoScaling::ScalableTarget') {
+          delete params.RoleARN
+          await autoscaling.registerScalableTarget(params).promise()
+        } else if (val.type === 'AWS::ApplicationAutoScaling::ScalingPolicy') {
+          await autoscaling.putScalingPolicy(params).promise()
+        }
+      }
+    }
   }
 }
 
 /* istanbul ignore next */
 const DefaultConfig = {
+  autoscalingClient: undefined,
   dynamoDBClient: undefined,
   dynamoDBDocumentClient: undefined,
   enableDynamicResourceCreation: false
@@ -87,6 +109,8 @@ const DefaultConfig = {
  *   true.
  * @param {String} [config.dynamoDBDocumentClient] AWS DynamoDB document client
  *   used to interact with db items.
+ * @param {Object} [config.autoscalingClient=undefined] AWS Application
+ *   AutoScaling client used to provision auto scaling rules on DB tables.
  * @param {Boolean} [config.enableDynamicResourceCreation=false] Wether to
  *   enable dynamic table resource creations.
  * @returns {Object} Symbols that clients of this library can use.
@@ -99,7 +123,7 @@ function setup (config) {
     assert(config.dynamoDBClient,
       'Must provide dynamoDBClient when enableDynamicResourceCreation is on')
     Model.createResource = makeCreateResourceFunc(
-      config.dynamoDBClient)
+      config.dynamoDBClient, config.autoscalingClient)
   }
 
   // Make DynamoDB document client available to these classes

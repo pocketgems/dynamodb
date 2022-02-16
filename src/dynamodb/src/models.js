@@ -249,7 +249,7 @@ class Model {
     }
   }
 
-  static __getResourceDefinition () {
+  static __getResourceDefinitions () {
     this.__doOneTimeModelPrep()
     // the partition key attribute is always "_id" and of type string
     const attrs = [{ AttributeName: '_id', AttributeType: 'S' }]
@@ -261,20 +261,100 @@ class Model {
       keys.push({ AttributeName: '_sk', KeyType: 'RANGE' })
     }
 
-    const ret = {
+    const properties = {
       TableName: this.fullTableName,
       AttributeDefinitions: attrs,
       KeySchema: keys,
-      BillingMode: 'PAY_PER_REQUEST'
+      BillingMode: 'PROVISIONED',
+      ProvisionedThroughput: {
+        ReadCapacityUnits: 1,
+        WriteCapacityUnits: 1
+      }
     }
 
     if (this.EXPIRE_EPOCH_FIELD) {
-      ret.TimeToLiveSpecification = {
+      properties.TimeToLiveSpecification = {
         AttributeName: this.EXPIRE_EPOCH_FIELD,
         Enabled: true
       }
     }
-    return ret
+
+    const tableResourceName = 'DynamoDBTable' + this.fullTableName
+    const readPolicyName = tableResourceName + 'ReadScalingPolicy'
+    const readTargetName = tableResourceName + 'ReadScalableTarget'
+    const writePolicyName = tableResourceName + 'WriteScalingPolicy'
+    const writeTargetName = tableResourceName + 'WriteScalableTarget'
+    return {
+      [tableResourceName]: {
+        Type: 'AWS::DynamoDB::Table',
+        DeletionPolicy: 'Retain',
+        Properties: properties
+      },
+      [readPolicyName]: {
+        Type: 'AWS::ApplicationAutoScaling::ScalingPolicy',
+        Properties: {
+          PolicyName: readPolicyName,
+          PolicyType: 'TargetTrackingScaling',
+          ScalingTargetId: {
+            Ref: readTargetName
+          },
+          TargetTrackingScalingPolicyConfiguration: {
+            TargetValue: 75,
+            ScaleInCooldown: 60,
+            ScaleOutCooldown: 180,
+            PredefinedMetricSpecification: {
+              PredefinedMetricType: 'DynamoDBReadCapacityUtilization'
+            }
+          }
+        }
+      },
+      [readTargetName]: {
+        Type: 'AWS::ApplicationAutoScaling::ScalableTarget',
+        DependsOn: tableResourceName,
+        Properties: {
+          MaxCapacity: 100,
+          MinCapacity: 1,
+          ResourceId: `table/${this.fullTableName}`,
+          RoleARN: {
+            'Fn::Sub': 'arn:aws:iam::${AWS::AccountId}:role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable' // eslint-disable-line no-template-curly-in-string
+          },
+          ScalableDimension: 'dynamodb:table:ReadCapacityUnits',
+          ServiceNamespace: 'dynamodb'
+        }
+      },
+      [writePolicyName]: {
+        Type: 'AWS::ApplicationAutoScaling::ScalingPolicy',
+        Properties: {
+          PolicyName: writePolicyName,
+          PolicyType: 'TargetTrackingScaling',
+          ScalingTargetId: {
+            Ref: writeTargetName
+          },
+          TargetTrackingScalingPolicyConfiguration: {
+            TargetValue: 75,
+            ScaleInCooldown: 60,
+            ScaleOutCooldown: 180,
+            PredefinedMetricSpecification: {
+              PredefinedMetricType: 'DynamoDBWriteCapacityUtilization'
+            }
+          }
+        }
+      },
+      [writeTargetName]: {
+        Type: 'AWS::ApplicationAutoScaling::ScalableTarget',
+        DependsOn: tableResourceName,
+        Properties: {
+          MaxCapacity: 100,
+          MinCapacity: 1,
+          ResourceId: `table/${this.fullTableName}`,
+          RoleARN: {
+            'Fn::Sub': 'arn:aws:iam::${AWS::AccountId}:role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable' // eslint-disable-line no-template-curly-in-string
+          },
+          ScalableDimension: 'dynamodb:table:WriteCapacityUnits',
+          ServiceNamespace: 'dynamodb'
+        }
+      }
+    }
   }
 
   /**

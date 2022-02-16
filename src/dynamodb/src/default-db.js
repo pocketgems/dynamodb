@@ -7,8 +7,9 @@ const setup = require('./dynamodb')
 
 // istanbul ignore next
 const dynamodbEndpoint = process.env.DYNAMO_ENDPT || ''
+const region = 'us-west-2'
 const awsConfig = {
-  region: 'us-west-2',
+  region,
   endpoint: dynamodbEndpoint
 }
 
@@ -32,8 +33,8 @@ if (!inDebugger &&
 }
 
 module.exports = setup({
-  // By default, production code should provision resources via infra-as-code
-  enableDynamicResourceCreation: inDebugger,
   dynamoDBClient,
-  dynamoDBDocumentClient
+  dynamoDBDocumentClient,
+  // By default, production code should provision resources via infra-as-code
+  enableDynamicResourceCreation: inDebugger
 })
