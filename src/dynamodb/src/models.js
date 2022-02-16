@@ -300,8 +300,8 @@ class Model {
           },
           TargetTrackingScalingPolicyConfiguration: {
             TargetValue: 75,
-            ScaleInCooldown: 60,
-            ScaleOutCooldown: 180,
+            ScaleInCooldown: 180,
+            ScaleOutCooldown: 60,
             PredefinedMetricSpecification: {
               PredefinedMetricType: 'DynamoDBReadCapacityUtilization'
             }
@@ -332,8 +332,8 @@ class Model {
           },
           TargetTrackingScalingPolicyConfiguration: {
             TargetValue: 75,
-            ScaleInCooldown: 60,
-            ScaleOutCooldown: 180,
+            ScaleInCooldown: 180,
+            ScaleOutCooldown: 60,
             PredefinedMetricSpecification: {
               PredefinedMetricType: 'DynamoDBWriteCapacityUtilization'
             }
