@@ -48,6 +48,12 @@ function makeCreateResourceFunc (dynamoDB, autoscaling) {
     if (!autoscaling) {
       tableParams.BillingMode = 'PAY_PER_REQUEST'
       delete tableParams.ProvisionedThroughput
+    } else {
+      tableParams.BillingMode = 'PROVISIONED'
+      tableParams.ProvisionedThroughput = {
+        ReadCapacityUnits: 1,
+        WriteCapacityUnits: 1
+      }
     }
     const ttlSpec = tableParams.TimeToLiveSpecification
     delete tableParams.TimeToLiveSpecification

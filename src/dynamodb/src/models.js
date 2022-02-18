@@ -265,10 +265,24 @@ class Model {
       TableName: this.fullTableName,
       AttributeDefinitions: attrs,
       KeySchema: keys,
-      BillingMode: 'PROVISIONED',
+      BillingMode: {
+        'Fn::If': [
+          'IsProdServerCondition',
+          'PROVISIONED',
+          'PAY_PER_REQUEST'
+        ]
+      },
       ProvisionedThroughput: {
-        ReadCapacityUnits: 1,
-        WriteCapacityUnits: 1
+        'Fn::If': [
+          'IsProdServerCondition',
+          {
+            ReadCapacityUnits: 1,
+            WriteCapacityUnits: 1
+          },
+          {
+            Ref: 'AWS::NoValue'
+          }
+        ]
       }
     }
 
@@ -300,8 +314,8 @@ class Model {
           },
           TargetTrackingScalingPolicyConfiguration: {
             TargetValue: 75,
-            ScaleInCooldown: 180,
-            ScaleOutCooldown: 60,
+            ScaleInCooldown: 0,
+            ScaleOutCooldown: 0,
             PredefinedMetricSpecification: {
               PredefinedMetricType: 'DynamoDBReadCapacityUtilization'
             }
@@ -332,8 +346,8 @@ class Model {
           },
           TargetTrackingScalingPolicyConfiguration: {
             TargetValue: 75,
-            ScaleInCooldown: 180,
-            ScaleOutCooldown: 60,
+            ScaleInCooldown: 0,
+            ScaleOutCooldown: 0,
             PredefinedMetricSpecification: {
               PredefinedMetricType: 'DynamoDBWriteCapacityUtilization'
             }
