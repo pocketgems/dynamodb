@@ -44,7 +44,6 @@ function makeCreateResourceFunc (dynamoDB, autoscaling) {
     const tableParams = Object.values(definitions)
       .filter(val => val.Type === 'AWS::DynamoDB::Table')[0]
       .Properties
-    // istanbul ignore else
     if (!autoscaling) {
       tableParams.BillingMode = 'PAY_PER_REQUEST'
       delete tableParams.ProvisionedThroughput
@@ -58,10 +57,21 @@ function makeCreateResourceFunc (dynamoDB, autoscaling) {
     const ttlSpec = tableParams.TimeToLiveSpecification
     delete tableParams.TimeToLiveSpecification
 
-    await dynamoDB.createTable(tableParams).promise().catch(err => {
+    await dynamoDB.createTable(tableParams).promise().catch(async err => {
       /* istanbul ignore if */
       if (err.code !== 'ResourceInUseException') {
         throw new AWSError('createTable', err)
+      }
+
+      // Update billing mode if needed for existing tables
+      const tableDescription = await dynamoDB.describeTable({
+        TableName: tableParams.TableName
+      }).promise()
+      const currentMode = tableDescription.Table.BillingModeSummary.BillingMode
+      if (currentMode !== tableParams.BillingMode) {
+        const updateParams = { ...tableParams }
+        delete updateParams.KeySchema
+        await dynamoDB.updateTable(updateParams).promise()
       }
     })
 
@@ -142,6 +152,7 @@ function setup (config) {
     Transaction
   ]
   clsWithDBAccess.forEach(Cls => {
+    Cls.dbClient = config.dynamoDBClient
     Cls.documentClient = documentClient
     Cls.prototype.documentClient = documentClient
   })

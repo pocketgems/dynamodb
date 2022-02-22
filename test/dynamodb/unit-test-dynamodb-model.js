@@ -164,6 +164,34 @@ class SimpleModelTest extends BaseTest {
     await SimpleModel.createResource()
   }
 
+  async testUpdateBillingMode () {
+    const setupDB = require('../../src/dynamodb/src/dynamodb')
+    const dbParams = {
+      dynamoDBClient: db.Model.dbClient,
+      dynamoDBDocumentClient: db.Model.documentClient,
+      enableDynamicResourceCreation: true,
+      autoscalingClient: undefined
+    }
+    const onDemandDB = setupDB(dbParams)
+    let CapacityModel = class extends onDemandDB.Model {}
+    await CapacityModel.createResource()
+    let tableDescription = await onDemandDB.Model.dbClient
+      .describeTable({ TableName: CapacityModel.fullTableName })
+      .promise()
+    expect(tableDescription.Table.BillingModeSummary.BillingMode)
+      .toBe('PAY_PER_REQUEST')
+
+    dbParams.autoscalingClient = {}
+    const provisionedDB = setupDB(dbParams)
+    CapacityModel = class extends provisionedDB.Model {}
+    await CapacityModel.createResource()
+    tableDescription = await provisionedDB.Model.dbClient
+      .describeTable({ TableName: CapacityModel.fullTableName })
+      .promise()
+    expect(tableDescription.Table.BillingModeSummary.BillingMode)
+      .toBe('PROVISIONED')
+  }
+
   async testDebugFunctionExport () {
     // Only export in debugging
     jest.resetModules()
