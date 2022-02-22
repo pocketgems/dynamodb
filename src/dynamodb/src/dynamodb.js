@@ -67,7 +67,8 @@ function makeCreateResourceFunc (dynamoDB, autoscaling) {
       const tableDescription = await dynamoDB.describeTable({
         TableName: tableParams.TableName
       }).promise()
-      const currentMode = tableDescription.Table.BillingModeSummary.BillingMode
+      const currentMode = tableDescription.Table.BillingModeSummary
+        ?.BillingMode
       if (currentMode !== tableParams.BillingMode) {
         const updateParams = { ...tableParams }
         delete updateParams.KeySchema
