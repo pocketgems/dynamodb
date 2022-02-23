@@ -39,6 +39,11 @@ const {
 
 function makeCreateResourceFunc (dynamoDB, autoscaling) {
   return async function () {
+    if (Object.hasOwnProperty.call(this, '__createdResource')) {
+      return // already created resource
+    }
+    this.__createdResource = true
+
     this.__doOneTimeModelPrep()
     const definitions = this.__getResourceDefinitions()
     const tableParams = Object.values(definitions)
@@ -97,15 +102,59 @@ function makeCreateResourceFunc (dynamoDB, autoscaling) {
       )
     }
 
-    // istanbul ignore if
     if (autoscaling) {
+      // create scalable target first
       for (const val of Object.values(definitions)) {
         const params = val.Properties
-        if (val.type === 'AWS::ApplicationAutoScaling::ScalableTarget') {
+        if (val.Type === 'AWS::ApplicationAutoScaling::ScalableTarget') {
           delete params.RoleARN
-          await autoscaling.registerScalableTarget(params).promise()
-        } else if (val.type === 'AWS::ApplicationAutoScaling::ScalingPolicy') {
-          await autoscaling.putScalingPolicy(params).promise()
+          const targetsResult = await autoscaling.describeScalableTargets({
+            ResourceIds: [params.ResourceId],
+            ScalableDimension: params.ScalableDimension,
+            ServiceNamespace: params.ServiceNamespace
+          }).promise().catch(e => {
+            throw new AWSError('describeScalableTargets', e)
+          })
+
+          if (targetsResult.ScalableTargets.length === 0) {
+            await autoscaling.registerScalableTarget(params).promise()
+              .catch(e => {
+                throw new AWSError('registerScalableTarget', e)
+              })
+          }
+        }
+      }
+
+      // create scaling policy second
+      for (const val of Object.values(definitions)) {
+        const params = val.Properties
+        if (val.Type === 'AWS::ApplicationAutoScaling::ScalingPolicy') {
+          params.ServiceNamespace = 'dynamodb'
+          params.ResourceId = `table/${tableParams.TableName}`
+          params.ScalableDimension = params.ScalingTargetId.Ref
+            .includes('Write')
+            ? 'dynamodb:table:WriteCapacityUnits'
+            : 'dynamodb:table:ReadCapacityUnits'
+          delete params.ScalingTargetId
+
+          const policiesResult = await autoscaling.describeScalingPolicies({
+            ServiceNamespace: params.ServiceNamespace,
+            ResourceId: params.ResourceId,
+            ScalableDimension: params.ScalableDimension,
+            PolicyNames: [
+                `DynamoDBTable${params.TableName}ReadScalingPolicy`,
+                `DynamoDBTable${params.TableName}WriteScalingPolicy`
+            ]
+          }).promise().catch(e => {
+            throw new AWSError('describeScalingPolicies', e)
+          })
+
+          if (policiesResult.ScalingPolicies.length === 0) {
+            await autoscaling.putScalingPolicy(params).promise()
+              .catch(e => {
+                throw new AWSError('putScalingPolicy', e)
+              })
+          }
         }
       }
     }
