@@ -306,6 +306,7 @@ class Model {
       },
       [readPolicyName]: {
         Type: 'AWS::ApplicationAutoScaling::ScalingPolicy',
+        Condition: 'IsProdServerCondition',
         Properties: {
           PolicyName: readPolicyName,
           PolicyType: 'TargetTrackingScaling',
@@ -324,6 +325,7 @@ class Model {
       },
       [readTargetName]: {
         Type: 'AWS::ApplicationAutoScaling::ScalableTarget',
+        Condition: 'IsProdServerCondition',
         DependsOn: tableResourceName,
         Properties: {
           MaxCapacity: 100,
@@ -338,6 +340,7 @@ class Model {
       },
       [writePolicyName]: {
         Type: 'AWS::ApplicationAutoScaling::ScalingPolicy',
+        Condition: 'IsProdServerCondition',
         Properties: {
           PolicyName: writePolicyName,
           PolicyType: 'TargetTrackingScaling',
@@ -356,6 +359,7 @@ class Model {
       },
       [writeTargetName]: {
         Type: 'AWS::ApplicationAutoScaling::ScalableTarget',
+        Condition: 'IsProdServerCondition',
         DependsOn: tableResourceName,
         Properties: {
           MaxCapacity: 100,
