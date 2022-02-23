@@ -140,15 +140,10 @@ function makeCreateResourceFunc (dynamoDB, autoscaling) {
           const policiesResult = await autoscaling.describeScalingPolicies({
             ServiceNamespace: params.ServiceNamespace,
             ResourceId: params.ResourceId,
-            ScalableDimension: params.ScalableDimension,
-            PolicyNames: [
-                `DynamoDBTable${params.TableName}ReadScalingPolicy`,
-                `DynamoDBTable${params.TableName}WriteScalingPolicy`
-            ]
+            ScalableDimension: params.ScalableDimension
           }).promise().catch(e => {
             throw new AWSError('describeScalingPolicies', e)
           })
-
           if (policiesResult.ScalingPolicies.length === 0) {
             await autoscaling.putScalingPolicy(params).promise()
               .catch(e => {
