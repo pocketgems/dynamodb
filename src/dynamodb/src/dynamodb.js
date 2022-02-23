@@ -33,6 +33,7 @@ const {
   getWithArgs,
   Transaction
 } = require('./transaction')
+const { sleep } = require('./utils')
 const {
   ITEM_SOURCE,
   loadOptionDefaults
@@ -221,6 +222,7 @@ function setup (config) {
   })
 
   const exportAsClass = {
+    sleep,
     S,
     Model,
     UniqueKeyList,
