@@ -72,13 +72,14 @@ function makeCreateResourceFunc (dynamoDB, autoscaling) {
       if (currentMode !== tableParams.BillingMode) {
         const updateParams = { ...tableParams }
         delete updateParams.KeySchema
-        await dynamoDB.updateTable(updateParams).promise().catch(e => {
-          // istanbul ignore if
-          if (e.message !==
+        await dynamoDB.updateTable(updateParams).promise().catch(
+          // istanbul ignore next
+          e => {
+            if (e.message !==
             'The requested throughput value equals the current value') {
-            throw e
-          }
-        })
+              throw e
+            }
+          })
       }
     })
 
