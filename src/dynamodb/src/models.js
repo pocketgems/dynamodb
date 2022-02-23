@@ -328,7 +328,7 @@ class Model {
         Condition: 'IsProdServerCondition',
         DependsOn: tableResourceName,
         Properties: {
-          MaxCapacity: 100,
+          MaxCapacity: 1000,
           MinCapacity: 1,
           ResourceId: `table/${this.fullTableName}`,
           RoleARN: {
@@ -362,7 +362,7 @@ class Model {
         Condition: 'IsProdServerCondition',
         DependsOn: tableResourceName,
         Properties: {
-          MaxCapacity: 100,
+          MaxCapacity: 1000,
           MinCapacity: 1,
           ResourceId: `table/${this.fullTableName}`,
           RoleARN: {
