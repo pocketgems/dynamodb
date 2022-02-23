@@ -112,15 +112,20 @@ function makeCreateResourceFunc (dynamoDB, autoscaling) {
             ResourceIds: [params.ResourceId],
             ScalableDimension: params.ScalableDimension,
             ServiceNamespace: params.ServiceNamespace
-          }).promise().catch(e => {
-            throw new AWSError('describeScalableTargets', e)
-          })
+          }).promise().catch(
+            // istanbul ignore next
+            e => {
+              throw new AWSError('describeScalableTargets', e)
+            })
 
+          // istanbul ignore else
           if (targetsResult.ScalableTargets.length === 0) {
             await autoscaling.registerScalableTarget(params).promise()
-              .catch(e => {
-                throw new AWSError('registerScalableTarget', e)
-              })
+              .catch(
+                // istanbul ignore next
+                e => {
+                  throw new AWSError('registerScalableTarget', e)
+                })
           }
         }
       }
@@ -141,14 +146,19 @@ function makeCreateResourceFunc (dynamoDB, autoscaling) {
             ServiceNamespace: params.ServiceNamespace,
             ResourceId: params.ResourceId,
             ScalableDimension: params.ScalableDimension
-          }).promise().catch(e => {
-            throw new AWSError('describeScalingPolicies', e)
-          })
+          }).promise().catch(
+            // istanbul ignore next
+            e => {
+              throw new AWSError('describeScalingPolicies', e)
+            })
+          // istanbul ignore else
           if (policiesResult.ScalingPolicies.length === 0) {
             await autoscaling.putScalingPolicy(params).promise()
-              .catch(e => {
-                throw new AWSError('putScalingPolicy', e)
-              })
+              .catch(
+                // istanbul ignore next
+                e => {
+                  throw new AWSError('putScalingPolicy', e)
+                })
           }
         }
       }

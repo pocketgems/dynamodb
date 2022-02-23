@@ -181,7 +181,20 @@ class SimpleModelTest extends BaseTest {
     expect(tableDescription.Table.BillingModeSummary.BillingMode)
       .toBe('PAY_PER_REQUEST')
 
-    dbParams.autoscalingClient = {}
+    const fakeAPI = {
+      promise: async () => {
+        return {
+          ScalableTargets: [],
+          ScalingPolicies: []
+        }
+      }
+    }
+    dbParams.autoscalingClient = {
+      describeScalableTargets: () => fakeAPI,
+      registerScalableTarget: () => fakeAPI,
+      describeScalingPolicies: () => fakeAPI,
+      putScalingPolicy: () => fakeAPI
+    }
     const provisionedDB = setupDB(dbParams)
     CapacityModel = class extends provisionedDB.Model {}
     await CapacityModel.createResource()
