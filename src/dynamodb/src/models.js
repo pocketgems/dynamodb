@@ -187,12 +187,6 @@ class Model {
           this.name
         )
       }
-      if (schema.optional) {
-        throw new GenericModelError(
-          'EXPIRE_EPOCH_FIELD must refer to a required field',
-          this.name
-        )
-      }
     }
     this.__CACHED_SCHEMA = S.obj(ret)
     return this.__CACHED_SCHEMA

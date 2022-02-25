@@ -1478,9 +1478,7 @@ class TTLTest extends BaseTest {
     const Cls2 = class extends TTLModel {
       static EXPIRE_EPOCH_FIELD = 'optionalTime'
     }
-    expect(() => {
-      Cls2.__getResourceDefinitions()
-    }).toThrow('EXPIRE_EPOCH_FIELD must refer to a required field')
+    Cls2.__getResourceDefinitions() // works ok
 
     const Cls3 = class extends TTLModel {
       static EXPIRE_EPOCH_FIELD = 'doubleTime'

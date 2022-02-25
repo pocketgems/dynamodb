@@ -970,7 +970,7 @@ scan all places in the database without filtering data.
 
 A model can have one integer or double field to store an epoch timestamp in
 seconds as the expiration time. The field is designated via the
-`EXPIRE_EPOCH_FIELD` property. The field must be non-optional integer or double
+`EXPIRE_EPOCH_FIELD` property. The field must be integer or double
 type.
 
 NOTE: When the timestamp is more than 5 years in the past, the item will not be
