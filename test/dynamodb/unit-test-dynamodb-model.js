@@ -1763,6 +1763,29 @@ class SnapshotTest extends BaseTest {
   }
 }
 
+class KeyCollectionTest extends BaseTest {
+  testDedup () {
+    const id = uuidv4()
+    const keys = new db.KeyCollection(NoTTLModel.key(id))
+    keys.push(NoTTLModel.key(id), NoTTLModel.key(uuidv4()))
+    expect(keys.length).toBe(2)
+    keys.push(NoTTLModel.key(id))
+    expect(keys.length).toBe(2)
+  }
+
+  async testGet () {
+    const id = uuidv4()
+    await db.Transaction.run(tx => {
+      tx.create(SimpleModel, { id })
+    })
+    const keys = new db.KeyCollection(SimpleModel.key(id))
+    const result = await db.Transaction.run(tx => {
+      return tx.get(keys)
+    })
+    expect(result[0].id).toBe(id)
+  }
+}
+
 runTests(
   BadModelTest,
   ConditionCheckTest,
@@ -1779,5 +1802,6 @@ runTests(
   SnapshotTest,
   TTLTest,
   WriteBatcherTest,
-  WriteTest
+  WriteTest,
+  KeyCollectionTest
 )

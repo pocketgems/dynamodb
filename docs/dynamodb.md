@@ -44,16 +44,17 @@ high-level abstractions to structure data and prevent race conditions.
   - [Key Encoding](#key-encoding)
   - [Nested Transactions are NOT Nested](#nested-transactions-are-not-nested)
   - [Time To Live](#time-to-live)
-  - [Unsupported DynamoDB Features](#unsupported-dynamodb-features)
   - [Table Creation & Persistence](#table-creation--persistence)
   - [Sort Keys](#sort-keys)
   - [Overlapping Models](#overlapping-models)
   - [Repeated Reads](#repeated-reads)
+  - [Key Collection](#key-collection)
 - [Library Collaborator's Guide](#library-collaborators-guide)
   - [Conventions](#conventions)
   - [AOL](#aol)
   - [Transactions](#transactions-1)
 - [Appendix](#appendix)
+  - [Unsupported DynamoDB Features](#unsupported-dynamodb-features)
 
 
 # Core Concepts
@@ -990,11 +991,6 @@ class TTLModel extends db.Model {
 }
 ```
 
-## Unsupported DynamoDB Features
-This library does not yet support:
-   - Indexing
-
-
 ## Table Creation & Persistence
 When the localhost server runs, it generates `config/resources.yml` based on
 the models you've defined (make sure to export them from your service!). On
@@ -1180,6 +1176,14 @@ If [an operation other than read](#operations) was done on the item (e.g.
 delete, or create, etc.), a subsequent attempt to read the item will result in
 an exception regardless of the cacheModels flag value.
 
+## Key Collection
+When duplicated keys are passed to `tx.get()`, an error will result, even if [model cache](#repeated-reads) is enabled, because it is more likely to be a coding error in common use cases. Keys must be de-duplicated by removing repeated class, hash and sort key combinations. The `db.KeyCollection` class provides an `Array` like interface to simplify the deduplication process.
+```javascript
+const keys = new db.KeyCollection(MyModel.key('123'))
+keys.push(MyModel.key('123'), ...[MyModel.key('123')])
+const items = await tx.get(keys)
+```
+
 # Library Collaborator's Guide
 
 ## Conventions
@@ -1249,3 +1253,7 @@ provide.
 The samples in this readme can be found in the APIs defined for unit testing
 this library in `services/sharedlib/test/dynamodb/unit-test-dynamodb.js` in the
 `DBReadmeTest` class.
+
+## Unsupported DynamoDB Features
+This library does not yet support:
+   - Indexing
