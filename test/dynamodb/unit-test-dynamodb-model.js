@@ -1763,10 +1763,10 @@ class SnapshotTest extends BaseTest {
   }
 }
 
-class KeyCollectionTest extends BaseTest {
+class UniqueKeyListTest extends BaseTest {
   testDedup () {
     const id = uuidv4()
-    const keys = new db.KeyCollection(NoTTLModel.key(id))
+    const keys = new db.UniqueKeyList(NoTTLModel.key(id))
     keys.push(NoTTLModel.key(id), NoTTLModel.key(uuidv4()))
     expect(keys.length).toBe(2)
     keys.push(NoTTLModel.key(id))
@@ -1778,7 +1778,7 @@ class KeyCollectionTest extends BaseTest {
     await db.Transaction.run(tx => {
       tx.create(SimpleModel, { id })
     })
-    const keys = new db.KeyCollection(SimpleModel.key(id))
+    const keys = new db.UniqueKeyList(SimpleModel.key(id))
     const result = await db.Transaction.run(tx => {
       return tx.get(keys)
     })
@@ -1803,5 +1803,5 @@ runTests(
   TTLTest,
   WriteBatcherTest,
   WriteTest,
-  KeyCollectionTest
+  UniqueKeyListTest
 )

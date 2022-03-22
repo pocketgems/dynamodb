@@ -26,7 +26,7 @@ const {
 } = require('./fields')
 const Filter = require('./filter')
 const { Query, Scan } = require('./iterators')
-const { KeyCollection } = require('./key')
+const { UniqueKeyList } = require('./key')
 const { Model } = require('./models')
 const {
   __WriteBatcher,
@@ -223,7 +223,7 @@ function setup (config) {
   const exportAsClass = {
     S,
     Model,
-    KeyCollection,
+    UniqueKeyList,
     Transaction,
 
     // Errors

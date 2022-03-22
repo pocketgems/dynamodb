@@ -15,7 +15,7 @@ class Key {
   }
 }
 
-class KeyCollection extends Array {
+class UniqueKeyList extends Array {
   constructor (...keys) {
     super(...keys)
     const hashes = keys.map(key => this.constructor.getKeyHash(key))
@@ -44,5 +44,5 @@ class KeyCollection extends Array {
 
 module.exports = {
   Key,
-  KeyCollection
+  UniqueKeyList
 }
