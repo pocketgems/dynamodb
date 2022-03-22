@@ -1177,7 +1177,11 @@ delete, or create, etc.), a subsequent attempt to read the item will result in
 an exception regardless of the cacheModels flag value.
 
 ## Key Collection
-When duplicated keys are passed to `tx.get()`, an error will result, even if [model cache](#repeated-reads) is enabled, because it is more likely to be a coding error in common use cases. Keys must be de-duplicated by removing repeated class, hash and sort key combinations. The `db.KeyCollection` class provides an `Array` like interface to simplify the deduplication process.
+When duplicated keys are passed to `tx.get()`, an error will result, even if
+[model cache](#repeated-reads) is enabled, because it is more likely to be a
+coding error in common use cases. Keys must be de-duplicated by removing
+repeated class, hash and sort key combinations. The `db.KeyCollection` class
+provides an `Array` like interface to simplify the deduplication process.
 ```javascript
 const keys = new db.KeyCollection(MyModel.key('123'))
 keys.push(MyModel.key('123'), ...[MyModel.key('123')])
