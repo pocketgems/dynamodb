@@ -943,7 +943,7 @@ class Model {
   static __splitKeysAndDataWithPreprocessing (vals) {
     // if we only have one key component, then the `_id` **MAY** just be the
     // value rather than a map of key component names to values
-    assert.ok(this.__keyOrder,
+    assert(this.__setupDone,
       `model ${this.name} one-time setup was not done (remember to export ` +
       'the model and in unit tests remember to call createResource()')
     const pKeyOrder = this.__keyOrder.partition
