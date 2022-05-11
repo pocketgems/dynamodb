@@ -362,6 +362,27 @@ class TransactionGetTest extends QuickTransactionTest {
     })
   }
 
+  async testInconsistentReadMissingEntry () {
+    const ids = [uuidv4(), uuidv4(), uuidv4()]
+    await db.Transaction.run(async tx => {
+      await tx.create(TransactionModel, { id: ids[0] })
+      await tx.create(TransactionModel, { id: ids[2] })
+    })
+
+    await db.Transaction.run(async tx => {
+      const result = await tx.get([
+        TransactionModel.key(ids[0]),
+        TransactionModel.key(ids[1]),
+        TransactionModel.key(ids[2])
+      ],
+      { inconsistentRead: true })
+
+      expect(result[0].id).toEqual(ids[0])
+      expect(result[1]).toBeUndefined()
+      expect(result[2].id).toEqual(ids[2])
+    })
+  }
+
   async testEventualConsistentGet () {
     const msg = uuidv4()
     const params = { inconsistentRead: false, createIfMissing: true }
