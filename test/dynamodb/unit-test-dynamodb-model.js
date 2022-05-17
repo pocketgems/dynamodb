@@ -262,6 +262,12 @@ class SimpleModelTest extends BaseTest {
     await expect(fut).rejects.toThrow(Error)
     db.Model.__getParams = originalFunc
   }
+
+  async testDescribeTable () {
+    const data = await SimpleModel.describeTable()
+    expect(data.itemCount).toBeDefined()
+    expect(data.sizeInBytes).toBeDefined()
+  }
 }
 
 class NewModelTest extends BaseTest {

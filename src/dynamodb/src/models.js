@@ -1139,6 +1139,19 @@ class Model {
     }
     return ret
   }
+
+  static async describeTable () {
+    try {
+      const data = await this.dbClient.describeTable({
+        TableName: this.fullTableName
+      }).promise()
+      const { ItemCount: itemCount, TableSizeBytes: sizeInBytes } = data.Table
+      return { itemCount, sizeInBytes }
+    } catch (e) {
+      // istanbul ignore next
+      throw new AWSError('describeTable', e)
+    }
+  }
 }
 
 /**
