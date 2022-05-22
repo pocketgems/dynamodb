@@ -339,16 +339,39 @@ can allow lazy filter to enable filtering non-key fields.`)
       }
       const pascalName = keyName[0].toUpperCase() + keyName.substring(1)
       const funcName = `__get${pascalName}`
-      const value = this.__ModelCls[funcName](keyComponents)
-      let condition = `#_${keyName}${op}:_${keyName}`
-      if (op === 'prefix') {
-        condition = `begins_with(#_${keyName},:_${keyName})`
+      if (!op) {
+        // Assuming this is between
+        const betweenKeyComponents = [{}, {}]
+        for (const [key, value] of Object.entries(keyComponents)) {
+          for (let index = 0; index < value.length; index++) {
+            betweenKeyComponents[index][key] = value[index]
+          }
+        }
+        const [leftKeyComponents, rightKeyComponents] = betweenKeyComponents
+        const leftValue = this.__ModelCls[funcName](leftKeyComponents)
+        const rightValue = this.__ModelCls[funcName](rightKeyComponents)
+
+        const condition = `#_${keyName} BETWEEN :l_${keyName} AND :r_${keyName}`
+        mergeCondition(ret, [
+          [condition],
+          { [`#_${keyName}`]: `_${keyName}` },
+          {
+            [`:l_${keyName}`]: leftValue,
+            [`:r_${keyName}`]: rightValue
+          }
+        ])
+      } else {
+        const value = this.__ModelCls[funcName](keyComponents)
+        let condition = `#_${keyName}${op}:_${keyName}`
+        if (op === 'prefix') {
+          condition = `begins_with(#_${keyName},:_${keyName})`
+        }
+        mergeCondition(ret, [
+          [condition],
+          { [`#_${keyName}`]: `_${keyName}` },
+          { [`:_${keyName}`]: value }
+        ])
       }
-      mergeCondition(ret, [
-        [condition],
-        { [`#_${keyName}`]: `_${keyName}` },
-        { [`:_${keyName}`]: value }
-      ])
     }
     if (ret[0].length === 0) {
       throw new InvalidFilterError('Query must contain partition key filters')

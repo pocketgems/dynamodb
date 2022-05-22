@@ -516,6 +516,17 @@ class QueryTest extends BaseTest {
     expect(results.length).toBe(1)
   }
 
+  async testBetweenSortKey () {
+    const results = await db.Transaction.run(async tx => {
+      const query = tx.query(QueryModel)
+      query.id1('1')
+      query.id2(1)
+      query.sk1('between', '0', '0')
+      return (await query.fetch(10))[0]
+    })
+    expect(results.length).toBe(1)
+  }
+
   async testQueryDescending () {
     const results = await db.Transaction.run(async tx => {
       // example descending start
