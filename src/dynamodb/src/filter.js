@@ -131,7 +131,8 @@ class Filter {
       '<=': '<=',
       '>': '>',
       '>=': '>=',
-      prefix: 'prefix'
+      prefix: 'prefix',
+      between: 'between'
     }[this.__operation]
   }
 }

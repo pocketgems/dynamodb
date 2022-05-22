@@ -339,8 +339,7 @@ can allow lazy filter to enable filtering non-key fields.`)
       }
       const pascalName = keyName[0].toUpperCase() + keyName.substring(1)
       const funcName = `__get${pascalName}`
-      if (!op) {
-        // Assuming this is between
+      if (op === 'between') {
         const betweenKeyComponents = [{}, {}]
         for (const [key, value] of Object.entries(keyComponents)) {
           for (let index = 0; index < value.length; index++) {
