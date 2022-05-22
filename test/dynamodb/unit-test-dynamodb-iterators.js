@@ -457,10 +457,23 @@ class QueryModel extends db.Model {
   }
 }
 
+class SortModel extends db.Model {
+  static KEY = {
+    id: S.str
+  }
+
+  static SORT_KEY = {
+    sk: S.obj({
+      arr: S.arr(S.int)
+    })
+  }
+}
+
 class QueryTest extends BaseTest {
   async beforeAll () {
     await super.beforeAll()
     await QueryModel.createResource()
+    await SortModel.createResource()
 
     await db.Transaction.run(tx => {
       const models = [
@@ -475,6 +488,14 @@ class QueryTest extends BaseTest {
           id2: 1,
           sk1: '123',
           field: 1
+        }),
+        SortModel.data({
+          id: '0',
+          sk: { arr: [1] }
+        }),
+        SortModel.data({
+          id: '0',
+          sk: { arr: [2] }
         })
       ]
       return tx.get(models, { createIfMissing: true })
@@ -518,10 +539,10 @@ class QueryTest extends BaseTest {
 
   async testBetweenSortKey () {
     const results = await db.Transaction.run(async tx => {
-      const query = tx.query(QueryModel)
-      query.id1('1')
-      query.id2(1)
-      query.sk1('between', '0', '0')
+      const query = tx.query(SortModel)
+      query.id('0')
+
+      query.sk('between', { arr: [1] }, { arr: [1] })
       return (await query.fetch(10))[0]
     })
     expect(results.length).toBe(1)
