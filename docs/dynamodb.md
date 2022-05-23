@@ -838,22 +838,41 @@ Similarly, items can be blindly created or overwritten with `createOrPut`
 method. This is useful when we don't care about the previous value (if any).
 For example, maybe we're tracking whether a customer has used a particular
 feature or not. When they use it, we may just want to blindly record it:
-```javascript
-class LastUsedFeature extends db.Model {
-  static KEY = {
-    user: S.str,
-    feature: S.str
+```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:scope:testBlindWritesCreateOrUpdate -->
+  async testBlindWritesCreateOrUpdate () {
+    class LastUsedFeature extends db.Model {
+      static KEY = {
+        user: S.str,
+        feature: S.str
+      }
+
+      static FIELDS = { epoch: S.int }
+    }
+    await LastUsedFeature.createResource()
+    await db.Transaction.run(async tx => {
+      // Overwrite the item regardless of the content
+      const ret = tx.createOrPut(LastUsedFeature,
+        { user: 'Bob', feature: 'refer a friend', epoch: 234 })
+      expect(ret).toBe(undefined) // should not return anything
+    })
+
+    await db.Transaction.run(tx => {
+      tx.createOrPut(LastUsedFeature,
+        // this contains the new value(s) and the item's key; if a value is
+        // undefined then the field will be deleted (it must be optional for
+        // this to be allowed)
+        { user: 'Bob', feature: 'refer a friend', epoch: 123 },
+        // these are the current values we expect; this call fails if the data
+        // exists AND it doesn't match these values
+        { epoch: 234 }
+      )
+    })
+    await db.Transaction.run(async tx => {
+      const item = await tx.get(LastUsedFeature,
+        { user: 'Bob', feature: 'refer a friend' })
+      expect(item.epoch).toBe(123)
+    })
   }
-  static FIELDS = { epoch: S.int }
-}
-// ...
-tx.createOrPut(HasTriedFeature,
-  // these are the values we expect (must include all key components);
-  // this call fails if the data exists AND it doesn't match these values
-  { user: 'Bob', feature: 'refer a friend' },
-  // this contains the new value(s); if a value is undefined then the
-  // field will be deleted (it must be optional for this to be allowed)
-  { epoch: 123 })
 ```
 
 Both of these methods are synchronous, local methods like `tx.create()`. They

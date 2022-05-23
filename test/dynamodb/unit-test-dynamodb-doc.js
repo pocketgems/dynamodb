@@ -486,15 +486,23 @@ class DBReadmeTest extends BaseTest {
       static FIELDS = { epoch: S.int }
     }
     await LastUsedFeature.createResource()
-    await db.Transaction.run(tx => {
+    await db.Transaction.run(async tx => {
+      // Overwrite the item regardless of the content
       const ret = tx.createOrPut(LastUsedFeature,
-        // these are the values we expect (must include all key components);
-        // this call fails if the data exists AND it doesn't match these values
-        { user: 'Bob', feature: 'refer a friend' },
-        // this contains the new value(s); if a value is undefined then the
-        // field will be deleted (it must be optional for this to be allowed)
-        { epoch: 123 })
+        { user: 'Bob', feature: 'refer a friend', epoch: 234 })
       expect(ret).toBe(undefined) // should not return anything
+    })
+
+    await db.Transaction.run(tx => {
+      tx.createOrPut(LastUsedFeature,
+        // this contains the new value(s) and the item's key; if a value is
+        // undefined then the field will be deleted (it must be optional for
+        // this to be allowed)
+        { user: 'Bob', feature: 'refer a friend', epoch: 123 },
+        // these are the current values we expect; this call fails if the data
+        // exists AND it doesn't match these values
+        { epoch: 234 }
+      )
     })
     await db.Transaction.run(async tx => {
       const item = await tx.get(LastUsedFeature,

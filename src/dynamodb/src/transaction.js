@@ -758,7 +758,7 @@ class Transaction {
    *   Values for every field in the model must be provided. Fields with
    *   `undefined` value will be removed from DB.
    */
-  createOrPut (Cls, original, updated) {
+  createOrPut (Cls, updated, original = {}) {
     const newData = { ...updated }
     for (const key of Object.keys(original)) {
       if (Object.hasOwnProperty.call(newData, key)) {

@@ -613,16 +613,16 @@ class TransactionWriteTest extends QuickTransactionTest {
     const id = uuidv4()
     const fut = db.Transaction.run(async tx => {
       tx.createOrPut(TransactionModel,
-        { id },
-        { id: id + 'x', field1: 3, field2: 1 })
+        { id: id + 'x', field1: 3, field2: 1 },
+        { id })
     })
     await expect(fut).rejects.toThrow(db.InvalidParameterError)
 
     // can specify id in new data param (but it must match)
     await db.Transaction.run(async tx => {
       tx.createOrPut(TransactionModel,
-        { id },
-        { id, field1: 3, field2: 1, objField: { a: { a: 1 } } })
+        { id, field1: 3, field2: 1, objField: { a: { a: 1 } } },
+        { id })
     })
     await db.Transaction.run(async tx => {
       const item = await tx.get(TransactionModel, id)
@@ -635,8 +635,8 @@ class TransactionWriteTest extends QuickTransactionTest {
     // can omit id in new data param (it's implied)
     await db.Transaction.run(async tx => {
       tx.createOrPut(TransactionModel,
-        { id, field1: 3 },
-        { field1: 33, field2: 11, objField: { a: { a: 11 } } })
+        { field1: 33, field2: 11, objField: { a: { a: 11 } } },
+        { id, field1: 3 })
     })
     await db.Transaction.run(async tx => {
       const item = await tx.get(TransactionModel, id)
@@ -657,28 +657,29 @@ class TransactionWriteTest extends QuickTransactionTest {
 
     fut = db.Transaction.run(async tx => {
       tx.createOrPut(TransactionModelWithRequiredField,
-        { id },
-        { field1: 3, field2: 1 })
+        { field1: 3, field2: 1 },
+        { id })
     })
     await expect(fut).rejects.toThrow(/missing required value/)
 
     await db.Transaction.run(async tx => {
       tx.createOrPut(TransactionModel,
-        { id },
-        { field1: 3, field2: 1, arrField: undefined, objField: undefined })
+        { field1: 3, field2: 1, arrField: undefined, objField: undefined },
+        { id })
     })
     let model = await txGet(id)
     expect(model.field1).toBe(3)
 
     await db.Transaction.run(async tx => {
       tx.createOrPut(TransactionModel,
-        { id },
         {
           field1: 3,
           field2: 567,
           arrField: undefined,
           objField: undefined
-        })
+        },
+        { id }
+      )
     })
     model = await txGet(id)
     expect(model.field2).toBe(567)
@@ -772,13 +773,13 @@ class TransactionWriteTest extends QuickTransactionTest {
     let fut = db.Transaction.run(async tx => {
       tx.createOrPut(
         TransactionModelWithRequiredField,
-        { id: this.modelName },
         {
           field1: 1,
           field2: 2,
           arrField: undefined,
           objField: undefined
-        }
+        },
+        { id: this.modelName }
       )
     })
     await expect(fut).rejects.toThrow(/missing required value/)
@@ -786,14 +787,14 @@ class TransactionWriteTest extends QuickTransactionTest {
     fut = db.Transaction.run(async tx => {
       tx.createOrPut(
         TransactionModelWithRequiredField,
-        { id: this.modelName },
         {
           field1: 1,
           field2: 2,
           arrField: undefined,
           objField: undefined,
           required: undefined
-        }
+        },
+        { id: this.modelName }
       )
     })
     await expect(fut).rejects.toThrow(/missing required value/)
@@ -801,8 +802,8 @@ class TransactionWriteTest extends QuickTransactionTest {
     await db.Transaction.run(async tx => {
       tx.createOrPut(
         TransactionModelWithRequiredField,
-        { id: this.modelName },
         {
+          id: this.modelName,
           field1: 111222,
           field2: undefined,
           arrField: undefined,
@@ -822,8 +823,8 @@ class TransactionWriteTest extends QuickTransactionTest {
     await db.Transaction.run(async tx => {
       tx.createOrPut(
         TransactionModel,
-        { id: name },
         {
+          id: name,
           field1: 333222,
           field2: undefined,
           arrField: undefined,
@@ -839,12 +840,12 @@ class TransactionWriteTest extends QuickTransactionTest {
     await db.Transaction.run(async tx => {
       tx.createOrPut(
         TransactionModel,
-        { id: name, field1: 123123 },
         {
           field2: undefined,
           arrField: undefined,
           objField: undefined
-        }
+        },
+        { id: name, field1: 123123 }
       )
     })
     model = await txGet(name)
@@ -856,13 +857,13 @@ class TransactionWriteTest extends QuickTransactionTest {
     await db.Transaction.run(async tx => {
       tx.createOrPut(
         TransactionModel,
-        { id: name },
         {
           field1: 9988234,
           field2: undefined,
           arrField: undefined,
           objField: undefined
-        }
+        },
+        { id: name }
       )
     })
     let model = await txGet(name)
@@ -871,12 +872,12 @@ class TransactionWriteTest extends QuickTransactionTest {
     const fut = db.Transaction.run(async tx => {
       tx.createOrPut(
         TransactionModel,
-        { id: name, field1: 123123 }, // initial value doesn't match
         {
           field2: 111,
           arrField: undefined,
           objField: undefined
-        }
+        },
+        { id: name, field1: 123123 } // initial value doesn't match
       )
     })
     await expect(fut).rejects.toThrow(db.TransactionFailedError)
@@ -884,12 +885,12 @@ class TransactionWriteTest extends QuickTransactionTest {
     await db.Transaction.run(async tx => {
       tx.createOrPut(
         TransactionModel,
-        { id: name, field1: 9988234 }, // initial value ok
         {
           field2: 111,
           arrField: undefined,
           objField: undefined
-        }
+        },
+        { id: name, field1: 9988234 } // initial value ok
       )
     })
     model = await txGet(name)
@@ -904,8 +905,8 @@ class TransactionWriteTest extends QuickTransactionTest {
         for (const id of ids) {
           tx.createOrPut(
             TransactionModel,
-            { id },
             {
+              id,
               field1: value,
               field2: 111,
               arrField: undefined,
@@ -1436,8 +1437,7 @@ class TransactionCacheModelsTest extends BaseTest {
     const id = uuidv4()
     const fut = db.Transaction.run({ cacheModels: true }, async tx => {
       tx.createOrPut(TransactionModel,
-        { id },
-        { id: id, field1: 3 }
+        { id, field1: 3 }
       )
       await tx.get(TransactionModel.key({ id }))
     })
