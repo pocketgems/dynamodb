@@ -852,7 +852,7 @@ class Model {
       return undefined
     }
     const pieces = []
-    for (var i = 0; i < keyOrder.length; i++) {
+    for (let i = 0; i < keyOrder.length; i++) {
       const fieldName = keyOrder[i]
       const fieldOpts = this._attrs[fieldName]
       const givenValue = values[fieldName]
