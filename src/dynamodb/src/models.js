@@ -55,18 +55,21 @@ class Model {
 
     // Decode _id and _sk that are stored in DB into key components that are
     // in KEY and SORT_KEY.
-    const setupKey = (attrName, keyOrder, vals) => {
+    const setupKey = (attrName, keySchema, keyOrder, vals) => {
       const attrVal = vals[attrName]
       if (attrVal === undefined) {
         return
       }
 
       delete vals[attrName]
-      Object.assign(vals, this.constructor.__decodeCompoundValueFromString(
-        keyOrder, attrVal, attrName))
+      const useNumericKey = this.constructor.__useNumericKey(keySchema)
+      Object.assign(vals, this.constructor.__decodeCompoundValue(
+        keyOrder, attrVal, attrName, useNumericKey))
     }
-    setupKey('_id', this.constructor.__keyOrder.partition, vals)
-    setupKey('_sk', this.constructor.__keyOrder.sort, vals)
+    setupKey('_id', this.constructor.KEY,
+      this.constructor.__keyOrder.partition, vals)
+    setupKey('_sk', this.constructor.SORT_KEY,
+      this.constructor.__keyOrder.sort, vals)
 
     // add user-defined fields from FIELDS & key components from KEY & SORT_KEY
     let fieldIdx = 0
@@ -243,15 +246,33 @@ class Model {
     }
   }
 
+  static __useNumericKey (keySchema) {
+    const isLegacyTable = ['ActionHistory'].includes(this.name)
+    // istanbul ignore if
+    if (isLegacyTable) {
+      return false
+    }
+    const schemas = Object.values(keySchema)
+    const isUniqueKey = schemas.length === 1
+    if (!isUniqueKey) {
+      return false
+    }
+    const schemaType = schemas[0].getProp('type')
+    const isNumericKey = ['integer', 'number'].includes(schemaType)
+    return isNumericKey
+  }
+
   static __getResourceDefinitions () {
     this.__doOneTimeModelPrep()
-    // the partition key attribute is always "_id" and of type string
-    const attrs = [{ AttributeName: '_id', AttributeType: 'S' }]
+    // the partition key attribute is always "_id"
+    const keyType = this.__useNumericKey(this.KEY) ? 'N' : 'S'
+    const attrs = [{ AttributeName: '_id', AttributeType: keyType }]
     const keys = [{ AttributeName: '_id', KeyType: 'HASH' }]
 
-    // if we have a sort key attribute, it always "_sk" and of type string
+    // if we have a sort key attribute, it is always "_sk"
     if (this.__keyOrder.sort.length > 0) {
-      attrs.push({ AttributeName: '_sk', AttributeType: 'S' })
+      const keyType = this.__useNumericKey(this.SORT_KEY) ? 'N' : 'S'
+      attrs.push({ AttributeName: '_sk', AttributeType: keyType })
       keys.push({ AttributeName: '_sk', KeyType: 'RANGE' })
     }
 
@@ -402,20 +423,25 @@ class Model {
   static FIELDS = {}
 
   get _id () {
-    return this.__getKey(this.constructor.__keyOrder.partition)
+    return this.__getKey(this.constructor.__keyOrder.partition,
+      this.constructor.KEY)
   }
 
   get _sk () {
-    return this.__getKey(this.constructor.__keyOrder.sort)
+    return this.__getKey(this.constructor.__keyOrder.sort,
+      this.constructor.SORT_KEY)
   }
 
-  __getKey (keyOrder) {
-    return this.constructor.__encodeCompoundValueToString(
-      keyOrder, new Proxy(this, {
+  __getKey (keyOrder, keySchema) {
+    const useNumericKey = this.constructor.__useNumericKey(keySchema)
+    return this.constructor.__encodeCompoundValue(
+      keyOrder,
+      new Proxy(this, {
         get: (target, prop, receiver) => {
           return target.getField(prop).__value
         }
-      })
+      }),
+      useNumericKey
     )
   }
 
@@ -424,21 +450,23 @@ class Model {
       _id: this._id
     }
     const sk = this._sk
-    if (sk) {
+    if (sk !== undefined) {
       ret._sk = sk
     }
     return ret
   }
 
   static __getId (vals) {
-    return this.__encodeCompoundValueToString(this.__keyOrder.partition, vals)
+    const useNumericKey = this.__useNumericKey(this.KEY)
+    return this.__encodeCompoundValue(this.__keyOrder.partition, vals, useNumericKey)
   }
 
   static __getSk (vals) {
     if (this.__keyOrder.sort.length <= 0) {
       return undefined
     }
-    return this.__encodeCompoundValueToString(this.__keyOrder.sort, vals)
+    const useNumericKey = this.__useNumericKey(this.SORT_KEY)
+    return this.__encodeCompoundValue(this.__keyOrder.sort, vals, useNumericKey)
   }
 
   /**
@@ -452,7 +480,7 @@ class Model {
     // compute and validate the partition attribute
     const ret = { _id: this.__getId(vals) }
     const sk = this.__getSk(vals)
-    if (sk) {
+    if (sk !== undefined) { // Account for 0
       ret._sk = sk
     }
     return ret
@@ -847,10 +875,11 @@ class Model {
    * @param {Object} values maps component names to values; may have extra
    *   fields (they will be ignored)
    */
-  static __encodeCompoundValueToString (keyOrder, values) {
+  static __encodeCompoundValue (keyOrder, values, useNumericKey) {
     if (keyOrder.length === 0) {
       return undefined
     }
+
     const pieces = []
     for (let i = 0; i < keyOrder.length; i++) {
       const fieldName = keyOrder[i]
@@ -860,6 +889,9 @@ class Model {
         throw new InvalidFieldError(fieldName, 'must be provided')
       }
       const valueType = validateValue(fieldName, fieldOpts, givenValue)
+      if (useNumericKey) {
+        return givenValue
+      }
       if (valueType === String) {
         // the '\0' character cannot be stored in string fields. If you need to
         // store a string containing this character, then you need to store it
@@ -887,13 +919,22 @@ class Model {
    * @param {String} strVal the string representation of a compound value
    * @param {String} attrName which key we're parsing
    */
-  static __decodeCompoundValueFromString (keyOrder, strVal, attrName) {
-    const compoundID = {}
-    const pieces = strVal.split('\0')
+  static __decodeCompoundValue (keyOrder, val, attrName, useNumericKey) {
+    if (useNumericKey) {
+      const fieldName = keyOrder[0]
+      const fieldOpts = this._attrs[fieldName]
+      validateValue(fieldName, fieldOpts, val)
+      return { [fieldName]: val }
+    }
+
+    // Assume val is otherwise a string
+    const pieces = val.split('\0')
     if (pieces.length !== keyOrder.length) {
       throw new InvalidFieldError(
         attrName, 'failed to parse key: incorrect number of components')
     }
+
+    const compoundID = {}
     for (let i = 0; i < pieces.length; i++) {
       const piece = pieces[i]
       const fieldName = keyOrder[i]
@@ -904,6 +945,7 @@ class Model {
       } else {
         compoundID[fieldName] = JSON.parse(piece)
       }
+
       validateValue(fieldName, fieldOpts, compoundID[fieldName])
     }
     return compoundID

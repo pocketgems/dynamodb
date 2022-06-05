@@ -276,7 +276,7 @@ class NewModelTest extends BaseTest {
       const id = uuidv4()
       const model = tx.create(SimpleModel, { id })
       expect(model.id).toBe(id)
-      expect(model.id).toBe(SimpleModel.__encodeCompoundValueToString(
+      expect(model.id).toBe(SimpleModel.__encodeCompoundValue(
         SimpleModel.__keyOrder.partition, { id }))
       expect(model.isNew).toBe(true)
       tx.__reset() // Don't write anything, cause it will fail.
@@ -328,10 +328,17 @@ class CompoundIDModel extends db.Model {
   }
 }
 
+class IntKeyModel extends db.Model {
+  static KEY = {
+    id: S.int
+  }
+}
+
 class IDSchemaTest extends BaseTest {
   async beforeAll () {
     await IDWithSchemaModel.createResource()
     await CompoundIDModel.createResource()
+    await IntKeyModel.createResource()
   }
 
   async testSimpleIDWithSchema () {
@@ -345,17 +352,17 @@ class IDSchemaTest extends BaseTest {
     // IDs are checked when keys are created too
     expect(() => cls.key('bad')).toThrow(S.ValidationError)
     const keyOrder = cls.__keyOrder.partition
-    expect(() => cls.__encodeCompoundValueToString(keyOrder, { id: 'X' }))
+    expect(() => cls.__encodeCompoundValue(keyOrder, { id: 'X' }))
       .toThrow(S.ValidationError)
     expect(cls.key('xyz').encodedKeys).toEqual({ _id: 'xyz' })
-    expect(cls.__encodeCompoundValueToString(keyOrder, { id: 'xyz' }))
+    expect(cls.__encodeCompoundValue(keyOrder, { id: 'xyz' }))
       .toEqual('xyz')
   }
 
   async testCompoundID () {
     const compoundID = { year: 1900, make: 'Honda', upc: uuidv4() }
     const keyOrder = CompoundIDModel.__keyOrder.partition
-    const id = CompoundIDModel.__encodeCompoundValueToString(
+    const id = CompoundIDModel.__encodeCompoundValue(
       keyOrder, compoundID)
     function check (entity) {
       expect(entity._id).toBe(id)
@@ -385,15 +392,25 @@ class IDSchemaTest extends BaseTest {
     })).toThrow(db.InvalidFieldError)
 
     const msg = /incorrect number of components/
-    expect(() => CompoundIDModel.__decodeCompoundValueFromString(
+    expect(() => CompoundIDModel.__decodeCompoundValue(
       keyOrder, '', 'fake')).toThrow(msg)
-    expect(() => CompoundIDModel.__decodeCompoundValueFromString(
+    expect(() => CompoundIDModel.__decodeCompoundValue(
       keyOrder, id + '\0', 'fake')).toThrow(msg)
-    expect(() => CompoundIDModel.__decodeCompoundValueFromString(
+    expect(() => CompoundIDModel.__decodeCompoundValue(
       keyOrder, '\0' + id, 'fake')).toThrow(msg)
 
     expect(() => CompoundIDModel.key('unexpected value')).toThrow(
       db.InvalidParameterError)
+  }
+
+  async testIntKey () {
+    const key = IntKeyModel.__encodeCompoundValue(
+      IntKeyModel.__keyOrder.partition, { id: 2342 }, true)
+    expect(key).toBe(2342)
+
+    const decoded = IntKeyModel.__decodeCompoundValue(
+      IntKeyModel.__keyOrder.partition, 2, '_sk', true)
+    expect(decoded).toEqual({ id: 2 })
   }
 }
 
@@ -627,7 +644,7 @@ class KeyTest extends BaseTest {
       const model = await txGet(RangeKeyModel, encodedKeys)
       expect(model.id).toBe(id)
       expect(model.rangeKey).toBe(rangeKey)
-      expect(model._sk).toBe(rangeKey.toString())
+      expect(model._sk).toBe(rangeKey)
       expect(model.n).toBe(n)
     }
 
@@ -1757,7 +1774,7 @@ class SnapshotTest extends BaseTest {
       })
       expect(m.getSnapshot({ dbKeys: true })).toStrictEqual({
         _id: id,
-        _sk: '1',
+        _sk: 1,
         n: 1
       })
       expect(m.getSnapshot({})).toStrictEqual({

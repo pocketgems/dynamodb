@@ -1,3 +1,5 @@
+const uuidv4 = require('uuid').v4
+
 const S = require('../../src/schema/src/schema')
 const { BaseTest, runTests } = require('../base-unit-test')
 const db = require('../db-with-field-maker')
@@ -308,6 +310,16 @@ class ScanModel extends db.Model {
   }
 }
 
+class OrderModel extends db.Model {
+  static KEY = {
+    id: S.str
+  }
+
+  static SORT_KEY = {
+    ts: S.int
+  }
+}
+
 class ScanTest extends BaseTest {
   async beforeAll () {
     await super.beforeAll()
@@ -474,6 +486,7 @@ class QueryTest extends BaseTest {
     await super.beforeAll()
     await QueryModel.createResource()
     await SortModel.createResource()
+    await OrderModel.createResource()
 
     await db.Transaction.run(tx => {
       const models = [
@@ -593,6 +606,26 @@ class QueryTest extends BaseTest {
       return query.__setupParams().ConsistentRead
     })
     expect(queryRet).toBe(false)
+  }
+
+  async testOrdering () {
+    // scan should return items in numeric order, not text order, e.g.
+    // 1, 10, 2... is wrong
+    const id = uuidv4()
+    await db.Transaction.run(async tx => {
+      for (let index = 0; index < 11; index++) {
+        tx.create(OrderModel, { id, ts: index })
+      }
+    })
+
+    await db.Transaction.run(async tx => {
+      const query = tx.query(OrderModel).id(id)
+      let expectedTS = 0
+      for await (const model of query.run(999)) {
+        expect(model.ts).toBe(expectedTS)
+        expectedTS++
+      }
+    })
   }
 }
 
