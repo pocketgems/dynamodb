@@ -247,6 +247,21 @@ class Model {
   }
 
   static __useNumericKey (keySchema) {
+    // ActionHistory table was the only table that had a numeric sort key
+    // before we supported numeric sort keys. It is provisioned with a string
+    // sort key, which happens to work, because the sort key is epoch, which
+    // doesn't grow in magnitude in years, and therefore doesn't suffer from
+    // ordering issue (when sorted, stringified numerical values are
+    // incorrectly ordered, e.g. ["1", "10", "11", "2"]).
+    // To properly fix this table, we will have to move ActionHistory logic to
+    // point to a temporary table, delete the old table, and point logic back,
+    // causing a service disruption for LR Admins who need to debug using
+    // action history. However, since we are migrating ActionHistory from
+    // DynamoDB to AWS TimeStream later, it makes more sense to hold off the
+    // fix and wait for the migration (or the decision to not migrate) to
+    // minimize negative impact.
+    // TODO: Once we move ActionHistory table out of DynamoDB, we can remove
+    // this hack.
     const isLegacyTable = ['ActionHistory'].includes(this.name)
     // istanbul ignore if
     if (isLegacyTable) {
