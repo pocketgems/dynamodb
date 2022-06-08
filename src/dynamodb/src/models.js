@@ -1,5 +1,6 @@
 const assert = require('assert')
 
+const stableStringify = require('fast-json-stable-stringify')
 const deepcopy = require('rfdc')()
 
 const S = require('../../schema/src/schema')
@@ -918,7 +919,7 @@ class Model {
         }
         pieces.push(givenValue)
       } else {
-        pieces.push(JSON.stringify(givenValue))
+        pieces.push(stableStringify(givenValue))
       }
     }
     return pieces.join('\0')

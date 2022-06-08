@@ -328,6 +328,15 @@ class CompoundIDModel extends db.Model {
   }
 }
 
+class ObjKeyModel extends db.Model {
+  static KEY = {
+    obj: S.obj({
+      innerInt: S.int,
+      innerStr: S.str
+    })
+  }
+}
+
 class IntKeyModel extends db.Model {
   static KEY = {
     id: S.int
@@ -338,6 +347,7 @@ class IDSchemaTest extends BaseTest {
   async beforeAll () {
     await IDWithSchemaModel.createResource()
     await CompoundIDModel.createResource()
+    await ObjKeyModel.createResource()
     await IntKeyModel.createResource()
   }
 
@@ -401,6 +411,27 @@ class IDSchemaTest extends BaseTest {
 
     expect(() => CompoundIDModel.key('unexpected value')).toThrow(
       db.InvalidParameterError)
+  }
+
+  async testObjKeyStableEncoding () {
+    const keyOrder = ObjKeyModel.__keyOrder.partition
+    const key1 = ObjKeyModel.__encodeCompoundValue(keyOrder,
+      {
+        obj: {
+          innerInt: 10,
+          innerStr: 'xyz'
+        }
+      }
+    )
+    const key2 = ObjKeyModel.__encodeCompoundValue(keyOrder,
+      {
+        obj: {
+          innerStr: 'xyz',
+          innerInt: 10
+        }
+      }
+    )
+    expect(key1).toStrictEqual(key2)
   }
 
   async testIntKey () {

@@ -14,6 +14,7 @@
     "aws-sdk": "^2.829.0",
     "deep-equal": "^2.0.5",
     "deep-object-diff": "^1.1.7",
+    "fast-json-stable-stringify": "^2.1.0",
     "rfdc": "^1.1.4",
     "uuid": "^8.3.2"
   },
