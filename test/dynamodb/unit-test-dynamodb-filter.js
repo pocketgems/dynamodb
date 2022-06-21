@@ -65,6 +65,10 @@ class FilterTest extends BaseTest {
     filter = new Filter('query', 'x', '1', 'SORT')
     filter.filter('prefix', '123')
     expect(filter.conditions).toEqual(['begins_with(#_1,:_1)'])
+
+    filter = new Filter('query', 'x', '1', undefined)
+    filter.filter('contains', '123')
+    expect(filter.conditions).toEqual(['contains(#_1,:_1)'])
   }
 
   testInvalidFilterOperation () {
@@ -80,6 +84,11 @@ class FilterTest extends BaseTest {
     expect(() => {
       filter.filter('between', 2, 1)
     }).toThrow(/"between" operator must be in ascending order/)
+
+    expect(() => {
+      const keyFilter = new Filter('query', 'x', '1', 'SORT')
+      keyFilter.filter('contains', 1)
+    }).toThrow(/"contains" filters are not allowed on keys/)
 
     expect(() => {
       const scan = new Filter('scan', 'x', '1', undefined)

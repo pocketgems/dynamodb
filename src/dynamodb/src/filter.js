@@ -33,7 +33,7 @@ class Filter {
   }
 
   static VALID_OPERATIONS = new Set([
-    '==', '!=', '<', '<=', '>', '>=', 'between', 'prefix'
+    '==', '!=', '<', '<=', '>', '>=', 'between', 'prefix', 'contains'
   ])
 
   /**
@@ -85,6 +85,10 @@ class Filter {
           'Input values for "between" operator must be in ascending order')
       }
     }
+    if (operation === 'contains' && this.__keyType !== undefined) {
+      throw new InvalidFilterError(
+        '"contains" filters are not allowed on keys')
+    }
 
     this.__operation = operation
     this.__value = value
@@ -116,6 +120,12 @@ class Filter {
       this.attrValues = { [`:_${awsName}`]: value }
       return
     }
+    if (operation === 'contains') {
+      this.conditions = [`contains(#_${awsName},:_${awsName})`]
+      this.attrNames = { [`#_${awsName}`]: this.__fieldName }
+      this.attrValues = { [`:_${awsName}`]: value }
+      return
+    }
 
     const operator = this.awsOperator
     this.conditions = [`#_${awsName}${operator}:_${awsName}`]
@@ -132,7 +142,8 @@ class Filter {
       '>': '>',
       '>=': '>=',
       prefix: 'prefix',
-      between: 'between'
+      between: 'between',
+      contains: 'contains'
     }[this.__operation]
   }
 }
