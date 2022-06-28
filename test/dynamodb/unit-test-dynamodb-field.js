@@ -267,7 +267,7 @@ class CommonFieldTest extends BaseTest {
     expect(() => {
       const opts = { default: undefined }
       db.__private.NumberField(opts) // eslint-disable-line no-new
-    }).toThrow(db.InvalidFieldError)
+    }).toThrow('Default value must be defined')
   }
 
   testAccessedFlag () {

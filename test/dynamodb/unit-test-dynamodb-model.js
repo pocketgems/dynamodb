@@ -1250,24 +1250,6 @@ class DefaultsTest extends BaseTest {
   }
 
   /**
-   * Verify that nested schemas with 'undefined' as default
-   * do not pass validation
-   */
-  async testNestedDefaultValidation () {
-    class NestedDefaultsModel extends db.Model {
-      static FIELDS = {
-        arr: S.arr(S.obj({
-          str: S.str.default(undefined)
-        }))
-      }
-    }
-
-    expect(async () => await NestedDefaultsModel.createResource())
-      .rejects
-      .toThrow('No default value can be set to undefined')
-  }
-
-  /**
    * Verify that nested defaults are applied
    * when retrieving models
    */

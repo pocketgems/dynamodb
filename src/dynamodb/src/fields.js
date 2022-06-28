@@ -32,12 +32,6 @@ class __Field {
       'keyType must be one of \'PARTITION\', \'SORT\' or undefined')
     assert(schema.isTodeaSchema, 'must be Todea schema')
 
-    schema.traverseSchema((schema) => {
-      if (schema.hasDefault() && schema.getDefault() === undefined) {
-        throw new InvalidFieldError(fieldName, 'No default value can be set to undefined')
-      }
-    })
-
     const compiledSchema = schema.getValidatorAndJSONSchema(
       `${modelName}.${fieldName}`)
     schema = compiledSchema.jsonSchema
