@@ -18,7 +18,7 @@ high-level abstractions to structure data and prevent race conditions.
     - [Warning: Side Effects](#warning-side-effects)
     - [Per-request transaction](#per-request-transaction)
   - [Operations](#operations)
-    - [Addressing Items](#addressing-items)
+    - [Addressing Rows](#addressing-rows)
     - [Create](#create)
     - [Read](#read)
       - [Create if Missing](#create-if-missing)
@@ -58,9 +58,10 @@ high-level abstractions to structure data and prevent race conditions.
 
 
 # Core Concepts
-Data is organized into tables. Each row in a table is called an _Item_, which
-is composed of one or more _Fields_. Each item uniquely identified by a
-[_Key_](#keys) (more on this later).
+Data is organized into tables.
+A table consists of several _rows_ (also known as _items_), which
+is composed of one or more _Columns_ (also known as _Fields_).
+Each row is uniquely identified by a [_Key_](#keys) (more on this later).
 
 ## Minimal Example
 Define a new table like this:
@@ -73,7 +74,7 @@ class Order extends db.Model {
 }
 ```
 
-Then we can create a new item (effectively a row in the database):
+Then we can create a new row:
 ```javascript
 const id = uuidv4()
 tx.create(Order, { id, product: 'coffee', quantity: 1 })
@@ -95,10 +96,10 @@ Later, we can retrieve it from the database and modify it:
 ## Tables
 
 ### Keys
-Each item is uniquely identified by a key. By default, the key is composed of a
+Each row is uniquely identified by a key. By default, the key is composed of a
 single field named `id` which has the format of a UUIDv4 string (e.g.,
 `"c40ef065-4034-4be8-8a1d-0959695b213e"`) typically produced by calling
-`uuidv4()`, as shown in the minimal example above. An item's key cannot be
+`uuidv4()`, as shown in the minimal example above. A row's key cannot be
 changed.
 
 You can override the default and define your key to be composed of one _or
@@ -141,13 +142,13 @@ value because this:
      with a given race ID and runner name (slow because this would involve a
      database query instead of a simple local computation!).
 
-Note: Keys are table-specific. Two different items in different tables may have
+Note: Keys are table-specific. Two different rows in different tables may have
 the same key.
 
 
 ### Fields
-Fields are pieces of data attached to an item. They are defined similar to
-`KEY`:
+Fields are pieces of data attached to a row. Fields and columns are the same thing.
+They are defined similar to `KEY`:
 ```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:scope:ModelWithFields -->
 class ModelWithFields extends db.Model {
   static FIELDS = {
@@ -158,17 +159,22 @@ class ModelWithFields extends db.Model {
 }
 ```
 
+* Field names are serialized and stored in the database.
+  Avoid having fields with long verbose names, specially for nested ones.
+* If you change the db schema, existing data isn't changed.
+  That includes rows with now missing field names. [Schema Enforcement](#schema-enforcement)
+
 Fields can be configured to be optional, immutable and/or have default values:
  * `optional()` - unless a field is marked as optional, a value must be
    provided (i.e., it cannot be omitted or set to `undefined`)
  * `readOnly()` - if a field is marked as read only, it cannot be changed once
-   the item has been created
+   the row has been created
  * `default()` - the default value for a field
     * This value gets deep copied so you can safely use non-primitive type like
       an object as a default value.
     * The default value is assigned to a field when:
-       * An item is created and no value is specified for the value.
-       * An item is fetched and is is missing the specified field _AND_ the
+       * A row is created and no value is specified for the value.
+       * A row is fetched and is is missing the specified field _AND_ the
          field is required.
     * The default value is _not_ assigned to an optional field that is missing
       when it is fetched from the database.
@@ -185,27 +191,27 @@ class ModelWithComplexFields extends db.Model {
 ```
 ```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:section:example1122start:example1122end -->
       // can omit the optional field
-      const item = tx.create(ModelWithComplexFields, {
+      const row = tx.create(ModelWithComplexFields, {
         id: uuidv4(),
         aNonNegInt: 0,
         immutableInt: 3
       })
-      expect(item.aNonNegInt).toBe(0)
+      expect(row.aNonNegInt).toBe(0)
       // omitted optional field => undefined
-      expect(item.anOptBool).toBe(undefined)
-      expect(item.immutableInt).toBe(3)
+      expect(row.anOptBool).toBe(undefined)
+      expect(row.immutableInt).toBe(3)
 
       // can override the default value
-      const item2 = tx.create(ModelWithComplexFields, {
+      const row2 = tx.create(ModelWithComplexFields, {
         id: uuidv4(),
         aNonNegInt: 1,
         anOptBool: true
       })
-      expect(item2.aNonNegInt).toBe(1)
-      expect(item2.anOptBool).toBe(true)
-      expect(item2.immutableInt).toBe(5) // the default value
+      expect(row2.aNonNegInt).toBe(1)
+      expect(row2.anOptBool).toBe(true)
+      expect(row2.immutableInt).toBe(5) // the default value
       // can't change read only fields:
-      expect(() => { item2.immutableInt = 3 }).toThrow(
+      expect(() => { row2.immutableInt = 3 }).toThrow(
         'immutableInt is immutable so value cannot be changed')
 ```
 
@@ -213,14 +219,14 @@ class ModelWithComplexFields extends db.Model {
 ### Schema Enforcement
 A model's schema (i.e., the structure of its data) is enforced by this library
 — _NOT_ the underlying database! DynamoDB, like most NoSQL databases, is
-effectively schemaless (except for the key). This means each item may
+effectively schemaless (except for the key). This means each row may
 theoretically contain completely different data. This normally won't be the
-case because `db.Model` enforces a consistent schema on items in a table.
+case because `db.Model` enforces a consistent schema on rows in a table.
 
 However, it's important to understand that this schema is _only_ enforced by
 `db.Model` and not the underlying database. This means **changing the model
 does not change any underlying data** in the database. For example, if we make
-a previously optional field required, old items which omitted the value will
+a previously optional field required, old rows which omitted the value will
 still be missing the value.
 
 The schema is checked as follows:
@@ -228,7 +234,7 @@ The schema is checked as follows:
      reference (e.g., an object or array), then changing a value inside the
      reference does _not_ trigger a validation check.
 ```javascript
-         // fields are checked immediately when creating a new item; this throws
+         // fields are checked immediately when creating a new row; this throws
          // S.ValidationError because someInt should be an integer
          const data = {
            id: uuidv4(),
@@ -299,8 +305,8 @@ expect(order.totalPrice(0.1)).toBeCloseTo(440)
 
 ## Transactions
 A transaction is a function which contains logic and database operations. A
-transaction guarantees that all _database_ side effects (e.g., updating an
-item) execute in an all-or-nothing manner, providing both
+transaction guarantees that all _database_ side effects (e.g., updating a
+row) execute in an all-or-nothing manner, providing both
 [ACID](#acid-properties) properties as well as
 [Automatic Optimistic Locking](#automatic-optimistic-locking-aol).
 
@@ -334,7 +340,7 @@ changed, then AOL assumes any updates we requested may no longer be valid). If
 a transaction fails, the default behavior is to automatically retry it up to
 three times. If all the retries fail due to contention, the transaction will
 throw a `db.TransactionFailedError` exception. If there is some permanent error (e.g,
-you tried to create a new item but it already exists) then the transaction will
+you tried to create a new row but it already exists) then the transaction will
 throw a `db.ModelAlreadyExistsError` exception without additional retries.
 
 Consider this guestbook model:
@@ -452,7 +458,7 @@ This sequence is possible:
   1. The request to read lift stats complete: `numLiftRides=1` _!!!_
   1. Our application code thinks there was one lift ride taken, but no skiers.
 
-To ensure this does not occur, use `db.get()` to fetch both items in a single
+To ensure this does not occur, use `db.get()` to fetch both rows in a single
 request:
 ```javascript
 const [skierStats, liftStats] = await tx.get([
@@ -462,7 +468,7 @@ const [skierStats, liftStats] = await tx.get([
 // Caution: Don't pass inconsistentRead=true if you need a consistent snapshot!
 ```
 
-Under the hood, when multiple items are fetched with strong consistency,
+Under the hood, when multiple rows are fetched with strong consistency,
 DynamoDB's `transactGetItems` API is called to prevent races mentioned above.
 
 
@@ -474,11 +480,11 @@ effects may occur even if the transaction doesn't commit. They could even occur
 multiple times (if your transaction retries).
 ```javascript
   await db.Transaction.run(async tx => {
-    const item = await tx.get(...)
-    item.someInt += 1
-    if (item.someInt > 10) {
+    const row = await tx.get(...)
+    row.someInt += 1
+    if (row.someInt > 10) {
       // making an HTTP request is a side effect!
-      await got('https://example.com/theItemHassomeIntBiggerThan10')
+      await got('https://example.com/theRowHassomeIntBiggerThan10')
     }
   })
 ```
@@ -498,8 +504,8 @@ name the transaction object `tx` in code. This section discusses the operations
 supported by `tx`.
 
 
-### Addressing Items
-Database operations always occur on a particular item. The canonical way to identify a particular item is:
+### Addressing Rows
+Database operations always occur on a particular row. The canonical way to identify a particular row is:
 ```javascript
 MyModel.key({ /* a map of key component names to their values */ })
 Order.key({ id: uuidv4() })
@@ -526,13 +532,13 @@ tx.get(RaceResult, { raceID, runnerName })
 
 
 ### Create
-`tx.create()` instantiates a new item in local memory. This method is a local,
-**synchronous** method (no network traffic is generated). If an item with the
+`tx.create()` instantiates a new row in local memory. This method is a local,
+**synchronous** method (no network traffic is generated). If a row with the
 same key already exists, a `db.ModelAlreadyExistsError` is thrown when the
-transaction attempts to commit (without retries, as we don't expect items to be
+transaction attempts to commit (without retries, as we don't expect rows to be
 deleted).
 
-To create an item, you need to supply the model (the type of item you're
+To create a row, you need to supply the model (the type of data you're
 creating) and a map of its initial values:
 ```javascript
 tx.create(Order, { id, product: 'coffee', quantity: 1 })
@@ -555,23 +561,23 @@ const order = await orderPromise // block until the data has been retrieved
 
 
 #### Create if Missing
-If the item does not exist in the database, then by default the returned value
+If the row does not exist in the database, then by default the returned value
 will be `undefined`. You may ask for it to instead be created if it does not
-exist. To do this, you need to supply not only the item's key, but also the
+exist. To do this, you need to supply not only the row's key, but also the
 data you want it to have _if_ it does not yet exist:
 ```javascript
 const dataIfOrderIsNew = { id, product: 'coffee', quantity: 1 }
 const order = await tx.get(Order, dataIfOrderIsNew, { createIfMissing: true })
-if (order.isNew) { // you can check if the item already existed or not
+if (order.isNew) { // you can check if the row already existed or not
   // ...
 }
 ```
 
 The `isNew` property is set when the model is instantiated (after receiving the
 database's response to our data request). When the transaction commits, it will
-ensure that the item is still being created if `isNew=true` (i.e., the item
+ensure that the row is still being created if `isNew=true` (i.e., the row
 wasn't created by someone else in the meantime) or still exists if
-`isNew=false` (i.e., the item hasn't been deleted in the meantime).
+`isNew=false` (i.e., the row hasn't been deleted in the meantime).
 
 
 #### Read Consistency
@@ -603,17 +609,17 @@ const [order1, order2, raceResult] = await tx.get([
 ], { createIfMissing: true })
 ```
 
-* When (`inconsistentRead=`**`false`**), the items are fetched transactionally
+* When (`inconsistentRead=`**`false`**), the row are fetched transactionally
   in a single network request that guarantees we receive a consistent snapshot
   (see [race conditions](#warning-race-conditions) for more about this).
-* When `inconsistentRead=`**`true`** the items are fetched (usually) with one
+* When `inconsistentRead=`**`true`** the rows are fetched (usually) with one
   network request. This is faster than making many separate `tx.get()`
   requests, especially when data can be read from [DAX](#DAX). This operation
   is faster than a consistent batch read, but it does not guarantee a
   consistent snapshot and only provides eventual consistency.
 
 ### Write
-To modify data in the database, simply modify fields on an item created by
+To modify data in the database, simply modify fields on a row created by
 `tx.create()` or fetched by `tx.get()`. When the transaction commits, all
 changes will be written to the database automatically.
 
@@ -621,16 +627,16 @@ For improved performance, data can be updated without being read from database
 first. See details in [blind writes](#blind-writes).
 
 ### Delete
-Items can be deleted from the database via `tx.delete()`. The delete method
+Rows can be deleted from the database via `tx.delete()`. The delete method
 accepts models or keys as parameters. For example,
 `tx.delete(model1, key1, model2, ...keys, key2)`.
 
 For models that were read from server via `tx.get()`, if the model turns out to
 be missing on server when the transaction commits, an exception is thrown.
-Otherwise, deletion on missing items will be treated as noop.
+Otherwise, deletion on missing rows will be treated as noop.
 
 ### Query
-Query enables accessing items in a DB table with the same partition key.
+Query enables accessing rows in a DB table with the same partition key.
 Transaction context `tx` provides `query` method that return a handle for
 adding filters and execute the query.
 ```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:section:example queryHandle start:example queryHandle end -->
@@ -684,14 +690,14 @@ Filter expressions support method chaining
 
 #### Execution
 Queries can be executed using the paginator API and generator API:
-- The paginator API is supported by `fetch(n)`. It takes the number of items to
+- The paginator API is supported by `fetch(n)`. It takes the number of rows to
   return (`n`) and a nextToken as parameters, and returns a maximum of **n**
-  items along with a token for the next page of items.
+  rows along with a token for the next page of rows.
 
   Input `n` is required. The value of `n` can be arbitrarily large (until
-  memory on the service node is depleted from caching fetched items locally),
+  memory on the service node is depleted from caching fetched rows locally),
   because `fetch` makes several calls to the underlying DynamoDB service to
-  aggregate `n` items before returning. However, large `n` also means more
+  aggregate `n` rows before returning. However, large `n` also means more
   requests are issued under the hood resulting in increased latency before the
   aggregated results are made available to the application code. Hence, as a
   best practice, `n` should be kept relatively small, e.g. a few tens to a few
@@ -701,7 +707,7 @@ Queries can be executed using the paginator API and generator API:
   Input `nextToken` is optional. When it's omitted or undefined, paginator will
   start from the beginning of the table. To proceed to the next page of
   results, the `nextToken` value returned from the previous `fetch` call must
-  be passed back in. When there are no more items to be returned, the
+  be passed back in. When there are no more rows to be returned, the
   `nextToken` returned will be `undefined`. Make sure to terminate pagination
   when `nextToken` is undefined, else the pagination will restart from the
   beginning of the table again, resulting in an infinite loop.
@@ -712,9 +718,9 @@ Queries can be executed using the paginator API and generator API:
       expect(nextToken2).toBeUndefined()
 ```
 
-- The generator API is supported by `run(n)`. It also takes the number of items
-  to return as a parameter, and only stops when **n** items are returned, or
-  all items in the table are read.
+- The generator API is supported by `run(n)`. It also takes the number of irowstems
+  to return as a parameter, and only stops when **n** rows are returned, or
+  all rows in the table are read.
 ```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:scope:async testLazyFilter:for await -->
       for await (const data of query.run(10)) {
         ret.push(data)
@@ -723,13 +729,13 @@ Queries can be executed using the paginator API and generator API:
 
   Similar to paginator API, `n` is required and can be arbitrarily large, but
   the same best practices are applicable here too. Note worthily, generator
-  fetches items in small batches to reduce networking overhead. This means some
-  items may be fetched from the database but never get processed by application
+  fetches rows in small batches to reduce networking overhead. This means some
+  rows may be fetched from the database but never get processed by application
   code if the generator is stopped early.
 
 #### Sorting
 Query results are sorted by sort keys in ascending order by default. Returning
-items in descending order requires enabling `descending` option when creating
+rows in descending order requires enabling `descending` option when creating
 the query handle.
 ```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:section:example descending start:example descending end -->
       const query = tx.query(QueryModel, { descending: true })
@@ -737,7 +743,7 @@ the query handle.
 
 #### Read Consistency
 By default, query returns strongly consistent data that makes sure *only*
-transactions committed before query started are reflected in the items returned
+transactions committed before query started are reflected in the rows returned
 from query. Disabling strong consistency can improve performance.
 ```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:section:example inconsistentQuery start:example inconsistentQuery end -->
       const query = tx.query(QueryModel, { inconsistentRead: true })
@@ -746,7 +752,7 @@ from query. Disabling strong consistency can improve performance.
 
 #### Lazy Filter
 The term "lazy filter" comes from the fact that filters on non-key fields are
-applied after items are read from the database and before they're returned to
+applied after rows are read from the database and before they're returned to
 the machine running application code. Lazy filter is disallowed by default
 since they lead to increased cost (additional data is read from the database)
 compared to querying against purposefully setup Indexes.
@@ -763,7 +769,7 @@ Lazy filters support all filter conditions except "prefix", and add support
 for inequality condition "!=".
 
 ### Scan
-A scan accesses all items in a table one by one. Transaction context
+A scan accesses all rows in a table one by one. Transaction context
 `tx` provides `scan` method that returns a handle for conducting a scan
 operation.
 ```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:section:scanHandle start:scanHandle end -->
@@ -822,10 +828,10 @@ counterpart which will likely take 40-50ms.
 
 
 ### Blind Writes
-Blind updates write an item to the DB without reading it first. This is useful
+Blind updates write a row to the DB without reading it first. This is useful
 when we already know model's fields' values and wish to update them without the overhead of an unnecessary read:
 ```javascript
-// this updates the specified order item to quantity=2, but only if the current
+// this updates the specified order row to quantity=2, but only if the current
 // quantity === 1 and product === 'coffee'
 tx.update(Order, { id, quantity: 1, product: 'coffee' }, { quantity: 2 })
 ```
@@ -834,7 +840,7 @@ To maintain consistency, old values _must_ be provided for each field to be
 updated. In addition, any values used to derive the new value should be
 included in the old values. Failure to do so may result in race condition bugs.
 
-Similarly, items can be blindly created or overwritten with `createOrPut`
+Similarly, rows can be blindly created or overwritten with `createOrPut`
 method. This is useful when we don't care about the previous value (if any).
 For example, maybe we're tracking whether a customer has used a particular
 feature or not. When they use it, we may just want to blindly record it:
@@ -850,7 +856,7 @@ feature or not. When they use it, we may just want to blindly record it:
     }
     await LastUsedFeature.createResource()
     await db.Transaction.run(async tx => {
-      // Overwrite the item regardless of the content
+      // Overwrite the row regardless of the content
       const ret = tx.createOrPut(LastUsedFeature,
         { user: 'Bob', feature: 'refer a friend', epoch: 234 })
       expect(ret).toBe(undefined) // should not return anything
@@ -858,7 +864,7 @@ feature or not. When they use it, we may just want to blindly record it:
 
     await db.Transaction.run(tx => {
       tx.createOrPut(LastUsedFeature,
-        // this contains the new value(s) and the item's key; if a value is
+        // this contains the new value(s) and the row's key; if a value is
         // undefined then the field will be deleted (it must be optional for
         // this to be allowed)
         { user: 'Bob', feature: 'refer a friend', epoch: 123 },
@@ -868,9 +874,9 @@ feature or not. When they use it, we may just want to blindly record it:
       )
     })
     await db.Transaction.run(async tx => {
-      const item = await tx.get(LastUsedFeature,
+      const row = await tx.get(LastUsedFeature,
         { user: 'Bob', feature: 'refer a friend' })
-      expect(item.epoch).toBe(123)
+      expect(row.epoch).toBe(123)
     })
   }
 ```
@@ -941,8 +947,8 @@ which don't need to be encoded like that). Finally, we concatenate these values
 (in order of their keys) and separate them with null characters. An encoded key
 would look like this:
 ```javascript
-const item = tx.create(RaceResult, { raceID: 123, runnerName: 'Joe' })
-expect(item._id).toBe('123\0Joe')
+const row = tx.create(RaceResult, { raceID: 123, runnerName: 'Joe' })
+expect(row._id).toBe('123\0Joe')
 
 // the encoded key is also contained in the output of Model.key():
 const key = RaceResult.key({ runnerName: 'Mel', raceID: 123 })
@@ -980,11 +986,11 @@ The inner transaction, if it commits, will commit first. If the outer
 transaction is retried, the inner transaction _will be run additional times_.
 
 ## Time To Live
-DynamoDB supports Time-To-Live (TTL) per item. When the current timestamp
-reaches an item's TTL, the item is automatically removed from the database
+DynamoDB supports Time-To-Live (TTL) per row. When the current timestamp
+reaches a row's TTL, the row is automatically removed from the database
 without incurring additional costs. This is useful when some data can be safely
 removed based on how long they have been stored. For example, to remember
-places I've visited in the past 7 days, I can store each place as a DB item and
+places I've visited in the past 7 days, I can store each place as a DB row and
 set the TTL to be 7 days from the current time. To retrieve places I can easily
 scan all places in the database without filtering data.
 
@@ -993,8 +999,8 @@ seconds as the expiration time. The field is designated via the
 `EXPIRE_EPOCH_FIELD` property. The field must be integer or double
 type.
 
-NOTE: When the timestamp is more than 5 years in the past, the item will not be
-removed.So to keep an item indefinitely in a TTL enabled table, you may safely
+NOTE: When the timestamp is more than 5 years in the past, the row will not be
+removed.So to keep a row indefinitely in a TTL enabled table, you may safely
 set the TTL field to 0.
 
 ```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-model.js:scope:TTLModel -->
@@ -1020,7 +1026,7 @@ restart your service to incorporate the changes.
 Along the same lines, keep in mind that the localhost database is _not_ cleared
 in between test runs. Any data added to the localhost database will remain
 until the service is restarted. This can help you debug issues, but it also
-means you should not create items with a fixed ID as part of a unit test (use
+means you should not create rows with a fixed ID as part of a unit test (use
 `uuidv4()` to get a random ID value so it won't clash with a future run of the
 unit tests.)
 
@@ -1035,23 +1041,23 @@ key structure — it will probably cause serious problems.
 
 
 ## Sort Keys
-The key which uniquely identifies an item in a table has two components:
-  1. `KEY` - this defines the table's _partition_ key. A table's items are
+The key which uniquely identifies a row in a table has two components:
+  1. `KEY` - this defines the table's _partition_ key. A table's rows are
      typically stored across many different database nodes. The _hash_ of the
-     partition key is used to determine which node hosts which items, though
+     partition key is used to determine which node hosts which rows, though
      you don't normally need to be aware of this detail.
   1. `SORT_KEY` - this defines the table's _optional_ _sort_ key. Sort keys are
-     also part of an item's unique identity, but doesn't affect partitioning.
-     Items with the same partition key but different sort keys will all be
+     also part of a row's unique identity, but doesn't affect partitioning.
+     Rows with the same partition key but different sort keys will all be
      stored on the same node.
 
-Accessing many small items from the same table with the same partition key but
+Accessing many small row from the same table with the same partition key but
 different sort keys is just as efficient as lumping them all into one large
-item. Performance will be better when you only need to access a subset of these
-smaller items.
+row. Performance will be better when you only need to access a subset of these
+smaller rows.
 
 This is better than using different partition keys (or different tables) for
-the smaller items because then doing transactions involving multiple items
+the smaller rows because then doing transactions involving multiple rows
 would probably incur a performance penalty as the transaction would need to run
 across multiple nodes instead of just one.
 
@@ -1073,7 +1079,7 @@ be used together. It should not be used for overly large or unrelated data.
 
 ## Overlapping Models
 Two models may be stored in the same physical table (after all, the underlying
-tables don't enforce a schema; each item could theoretically be different,
+tables don't enforce a schema; each row could theoretically be different,
 except for the key structure).
 
 This may be desirable on rare occasions when two related types of data should
@@ -1127,7 +1133,7 @@ tx.create(Weapon, {
 ```
 
 ## Repeated Reads
-By default, reading an item twice in a single transaction is treated as an
+By default, reading a row twice in a single transaction is treated as an
 exception.
 ```javascript
 await db.Transaction.run(async tx => {
@@ -1136,10 +1142,10 @@ await db.Transaction.run(async tx => {
 })
 ```
 
-In some occasions, we may need to allow the same item to be read more than
+In some occasions, we may need to allow the same row to be read more than
 once. For example, a transaction may be handling a batch of operations (action
 pattern with batching), where individual operation might read and update the
-same item.
+same row.
 ```javascript
 const operation = async (tx) => {
   const model = await tx.get(SomeModel, "some id")
@@ -1156,8 +1162,8 @@ await db.Transaction.run(async tx => {
 })
 ```
 
-To allow reading the same item more than once, a `cacheModels` option can be
-toggled on. In this mode, when an item is first read, it is cached by the
+To allow reading the same row more than once, a `cacheModels` option can be
+toggled on. In this mode, when a row is first read, it is cached by the
 transaction, and the transaction will return the cached model for any
 subsequent reads.
 ```javascript
@@ -1169,7 +1175,7 @@ await db.Transaction.run({ cacheModels: true },async tx => {
 })
 ```
 
-Any modifications made to the cached item will be stored along with the item,
+Any modifications made to the cached row will be stored along with the row,
 so subsequent reads will see the previous updates.
  ```javascript
 await db.Transaction.run({ cacheModels: true },async tx => {
@@ -1182,7 +1188,7 @@ await db.Transaction.run({ cacheModels: true },async tx => {
 ```
 
 Repeated reads can be enabled during a transaction because transactions track
-all referenced items. Call `enableModelCache` to turn it on.
+all referenced rows. Call `enableModelCache` to turn it on.
 ```javascript
 await db.Transaction.run(async tx => {
   ...
@@ -1191,8 +1197,8 @@ await db.Transaction.run(async tx => {
 })
 ```
 
-If [an operation other than read](#operations) was done on the item (e.g.
-delete, or create, etc.), a subsequent attempt to read the item will result in
+If [an operation other than read](#operations) was done on the row (e.g.
+delete, or create, etc.), a subsequent attempt to read the row will result in
 an exception regardless of the cacheModels flag value.
 
 ## Key Collection
@@ -1204,7 +1210,7 @@ provides an `Array` like interface to simplify the deduplication process.
 ```javascript
 const keys = new db.UniqueKeyList(MyModel.key('123'))
 keys.push(MyModel.key('123'), ...[MyModel.key('123')])
-const items = await tx.get(keys)
+const rows = await tx.get(keys)
 ```
 
 # Library Collaborator's Guide
@@ -1254,9 +1260,9 @@ following strategy:
 * Models mutated are written to DB using one single transactWrite operation on
   commit.
 * TransactWrite request is constructed using the following rules:
-    * For each readonly items:
+    * For each readonly rows:
         * Append ConditionExpressions generated using AOL
-    * For each read-write items:
+    * For each read-write rows:
         * Append UpdateExpression generated using AOL.
         * Append ConditionExpressions generated using AOL
 * Transaction commits when the transaction context / scope is exited.
@@ -1265,9 +1271,9 @@ following strategy:
   transaction will be retried.
 * If all retries failed, a `TransactionFailedError` will be thrown.
 
-When more than one item is accessed and/or updated, this library issues a
+When more than one row is accessed and/or updated, this library issues a
 `transactWriteItems` call to DynamoDB. For performance reasons, if exactly one
-items was accessed and updated, this library uses a non-transactional
+row was accessed and updated, this library uses a non-transactional
 `writeItem` call to provide the same ACID properties a transactWrite could
 provide.
 

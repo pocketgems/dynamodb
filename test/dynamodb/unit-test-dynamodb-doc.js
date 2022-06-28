@@ -103,33 +103,33 @@ class DBReadmeTest extends BaseTest {
       const givenImmInt = values.immutableInt
       const expImmutableInt = (givenImmInt === undefined) ? 5 : givenImmInt
 
-      function checkItem (item) {
-        expect(item.id).toBe(id)
-        expect(item.anOptBool).toBe(expBool)
-        expect(item.aNonNegInt).toBe(expNNInt)
-        expect(item.immutableInt).toBe(expImmutableInt)
+      function checkRow (row) {
+        expect(row.id).toBe(id)
+        expect(row.anOptBool).toBe(expBool)
+        expect(row.aNonNegInt).toBe(expNNInt)
+        expect(row.immutableInt).toBe(expImmutableInt)
       }
 
       const ret = db.Transaction.run(async tx => {
         const data = { id, ...values }
-        let item
+        let row
         if (how === 'create') {
-          item = tx.create(ModelWithComplexFields, data)
+          row = tx.create(ModelWithComplexFields, data)
         } else {
-          item = await tx.get(
+          row = await tx.get(
             ModelWithComplexFields, data, { createIfMissing: true })
-          expect(item.isNew).toBe(true)
+          expect(row.isNew).toBe(true)
         }
-        checkItem(item)
+        checkRow(row)
       })
       if (expErr) {
         await expect(ret).rejects.toThrow(expErr)
       } else {
         await ret
         await db.Transaction.run(async tx => {
-          const item = await tx.get(ModelWithComplexFields, id)
-          checkItem(item)
-          expect(() => { item.immutableInt = 5 }).toThrow(/is immutable/)
+          const row = await tx.get(ModelWithComplexFields, id)
+          checkRow(row)
+          expect(() => { row.immutableInt = 5 }).toThrow(/is immutable/)
         })
       }
     }
@@ -162,27 +162,27 @@ class DBReadmeTest extends BaseTest {
     await db.Transaction.run(async tx => {
       // example1122start
       // can omit the optional field
-      const item = tx.create(ModelWithComplexFields, {
+      const row = tx.create(ModelWithComplexFields, {
         id: uuidv4(),
         aNonNegInt: 0,
         immutableInt: 3
       })
-      expect(item.aNonNegInt).toBe(0)
+      expect(row.aNonNegInt).toBe(0)
       // omitted optional field => undefined
-      expect(item.anOptBool).toBe(undefined)
-      expect(item.immutableInt).toBe(3)
+      expect(row.anOptBool).toBe(undefined)
+      expect(row.immutableInt).toBe(3)
 
       // can override the default value
-      const item2 = tx.create(ModelWithComplexFields, {
+      const row2 = tx.create(ModelWithComplexFields, {
         id: uuidv4(),
         aNonNegInt: 1,
         anOptBool: true
       })
-      expect(item2.aNonNegInt).toBe(1)
-      expect(item2.anOptBool).toBe(true)
-      expect(item2.immutableInt).toBe(5) // the default value
+      expect(row2.aNonNegInt).toBe(1)
+      expect(row2.anOptBool).toBe(true)
+      expect(row2.immutableInt).toBe(5) // the default value
       // can't change read only fields:
-      expect(() => { item2.immutableInt = 3 }).toThrow(
+      expect(() => { row2.immutableInt = 3 }).toThrow(
         'immutableInt is immutable so value cannot be changed')
       // example1122end
     })
@@ -192,7 +192,7 @@ class DBReadmeTest extends BaseTest {
     await ModelWithFields.createResource()
     const id = uuidv4()
     await db.Transaction.run(tx => {
-      // fields are checked immediately when creating a new item; this throws
+      // fields are checked immediately when creating a new row; this throws
       // db.InvalidFieldError because someInt should be an integer
       const data = {
         id,
@@ -221,16 +221,16 @@ class DBReadmeTest extends BaseTest {
     })
 
     const badTx = db.Transaction.run(async tx => {
-      const item = await tx.get(ModelWithFields, id)
-      expect(item.someInt).toBe(1)
-      expect(item.someBool).toBe(true)
-      expect(item.someObj).toEqual({ arr: ['ok'] })
+      const row = await tx.get(ModelWithFields, id)
+      expect(row.someInt).toBe(1)
+      expect(row.someBool).toBe(true)
+      expect(row.someObj).toEqual({ arr: ['ok'] })
       // changes within a non-primitive type aren't detected or validated until
       // we try to write the change so this next line won't throw!
-      item.someObj.arr.push(5)
+      row.someObj.arr.push(5)
 
       expect(() => {
-        item.getField('someObj').validate()
+        row.getField('someObj').validate()
       }).toThrow(S.ValidationError)
     })
     await expect(badTx).rejects.toThrow(S.ValidationError)
@@ -364,7 +364,7 @@ class DBReadmeTest extends BaseTest {
     })
   }
 
-  async testAddressingItems () {
+  async testAddressingRows () {
     const id = uuidv4()
     expect(Order.key({ id }).keyComponents.id).toBe(id)
     expect(Order.key(id).keyComponents.id).toBe(id)
@@ -374,10 +374,10 @@ class DBReadmeTest extends BaseTest {
     })
     async function check (...args) {
       await db.Transaction.run(async tx => {
-        const item = await tx.get(...args)
-        expect(item.id).toBe(id)
-        expect(item.product).toBe('coffee')
-        expect(item.quantity).toBe(1)
+        const row = await tx.get(...args)
+        expect(row.id).toBe(id)
+        expect(row.product).toBe('coffee')
+        expect(row.quantity).toBe(1)
       })
     }
     await check(Order.key(id))
@@ -386,17 +386,17 @@ class DBReadmeTest extends BaseTest {
     await check(Order, { id })
   }
 
-  async testAddressingCompoundItems () {
+  async testAddressingCompoundRows () {
     const raceID = 20140421
     const runnerName = 'Meb'
     const kc = RaceResult.key({ raceID, runnerName }).keyComponents
     expect(kc.raceID).toBe(raceID)
     expect(kc.runnerName).toBe(runnerName)
     await db.Transaction.run(async tx => {
-      const item = await tx.get(RaceResult, { raceID, runnerName },
+      const row = await tx.get(RaceResult, { raceID, runnerName },
         { createIfMissing: true })
-      expect(item.raceID).toBe(raceID)
-      expect(item.runnerName).toBe(runnerName)
+      expect(row.raceID).toBe(raceID)
+      expect(row.runnerName).toBe(runnerName)
     })
   }
 
@@ -417,11 +417,11 @@ class DBReadmeTest extends BaseTest {
   async testReadConsistency () {
     const data = { id: uuidv4(), product: 'coffee', quantity: 1 }
     await db.Transaction.run(tx => tx.create(Order, data))
-    const item = await db.Transaction.run(async tx => tx.get(
+    const row = await db.Transaction.run(async tx => tx.get(
       Order, data.id, { inconsistentRead: true }))
-    expect(item.id).toEqual(data.id)
-    expect(item.product).toEqual(data.product)
-    expect(item.quantity).toEqual(data.quantity)
+    expect(row.id).toEqual(data.id)
+    expect(row.product).toEqual(data.product)
+    expect(row.quantity).toEqual(data.quantity)
   }
 
   async testBatchRead () {
@@ -487,7 +487,7 @@ class DBReadmeTest extends BaseTest {
     }
     await LastUsedFeature.createResource()
     await db.Transaction.run(async tx => {
-      // Overwrite the item regardless of the content
+      // Overwrite the row regardless of the content
       const ret = tx.createOrPut(LastUsedFeature,
         { user: 'Bob', feature: 'refer a friend', epoch: 234 })
       expect(ret).toBe(undefined) // should not return anything
@@ -495,7 +495,7 @@ class DBReadmeTest extends BaseTest {
 
     await db.Transaction.run(tx => {
       tx.createOrPut(LastUsedFeature,
-        // this contains the new value(s) and the item's key; if a value is
+        // this contains the new value(s) and the row's key; if a value is
         // undefined then the field will be deleted (it must be optional for
         // this to be allowed)
         { user: 'Bob', feature: 'refer a friend', epoch: 123 },
@@ -505,9 +505,9 @@ class DBReadmeTest extends BaseTest {
       )
     })
     await db.Transaction.run(async tx => {
-      const item = await tx.get(LastUsedFeature,
+      const row = await tx.get(LastUsedFeature,
         { user: 'Bob', feature: 'refer a friend' })
-      expect(item.epoch).toBe(123)
+      expect(row.epoch).toBe(123)
     })
   }
 
@@ -563,7 +563,7 @@ class DBReadmeTest extends BaseTest {
     })
   }
 
-  async testUpdatingItemWithoutAOL () {
+  async testUpdatingRowWithoutAOL () {
     const id = uuidv4()
     await db.Transaction.run(async tx => {
       tx.create(Order, { id, product: 'coffee', quantity: 8 })
@@ -597,8 +597,8 @@ class DBReadmeTest extends BaseTest {
   async testKeyEncoding () {
     const err = new Error('do not want to save this')
     await expect(db.Transaction.run(tx => {
-      const item = tx.create(RaceResult, { raceID: 123, runnerName: 'Joe' })
-      expect(item._id).toBe('123\0Joe')
+      const row = tx.create(RaceResult, { raceID: 123, runnerName: 'Joe' })
+      expect(row._id).toBe('123\0Joe')
       throw err // don't want to save this to the test db
     })).rejects.toThrow(err)
 
@@ -612,12 +612,12 @@ class DBReadmeTest extends BaseTest {
     await StringKeyWithNullBytes.createResource()
     const strWithNullByte = 'I can contain \0, no pr\0blem!'
     await expect(db.Transaction.run(tx => {
-      const item = tx.create(StringKeyWithNullBytes, {
+      const row = tx.create(StringKeyWithNullBytes, {
         id: {
           raw: strWithNullByte
         }
       })
-      expect(item.id.raw).toBe(strWithNullByte)
+      expect(row.id.raw).toBe(strWithNullByte)
       throw err // don't want to save this to the test db
     })).rejects.toThrow(err)
   }

@@ -343,7 +343,7 @@ class ScanTest extends BaseTest {
   }
 
   async testScanFetchFew () {
-    // Fetching a few items
+    // Fetching a few rows
     const [models, nextToken] = await db.Transaction.run(async tx => {
       // example scanHandle start
       const scan = tx.scan(ScanModel)
@@ -355,7 +355,7 @@ class ScanTest extends BaseTest {
   }
 
   async testScanFetchAll () {
-    // Fetching all items
+    // Fetching all rows
     const [models, nextToken] = await db.Transaction.run(async tx => {
       const scan = tx.scan(ScanModel)
       return scan.fetch(100)
@@ -380,7 +380,7 @@ class ScanTest extends BaseTest {
   }
 
   async testScanRunFew () {
-    // Run a few items
+    // Run a few rows
     const ret = await db.Transaction.run(async tx => {
       const scan = tx.scan(ScanModel)
       const models = []
@@ -393,7 +393,7 @@ class ScanTest extends BaseTest {
   }
 
   async testScanRunAll () {
-    // Run all items
+    // Run all row
     const ret = await db.Transaction.run(async tx => {
       const scan = tx.scan(ScanModel)
       const models = []
@@ -609,7 +609,7 @@ class QueryTest extends BaseTest {
   }
 
   async testOrdering () {
-    // scan should return items in numeric order, not text order, e.g.
+    // scan should return rows in numeric order, not text order, e.g.
     // 1, 10, 2... is wrong
     const id = uuidv4()
     await db.Transaction.run(async tx => {

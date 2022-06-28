@@ -154,8 +154,8 @@ class SimpleModelTest extends BaseTest {
 
   async testFieldNotExtendable () {
     await expect(db.Transaction.run(tx => {
-      const item = tx.create(SimpleModel, { id: uuidv4() })
-      item.id.weCannotAddPropertiesToFieldsOnModels = undefined
+      const row = tx.create(SimpleModel, { id: uuidv4() })
+      row.id.weCannotAddPropertiesToFieldsOnModels = undefined
     })).rejects.toThrow(TypeError)
   }
 
@@ -682,12 +682,12 @@ class KeyTest extends BaseTest {
     const id1 = uuidv4()
     await check(id1, 1, 0)
 
-    // changing the sort key means we're working with a different item
+    // changing the sort key means we're working with a different row
     await check(id1, 2, 1)
     await check(id1, 1, 0, false)
 
     // changing the partition key but not the sort key also means we're working
-    // with a different item
+    // with a different row
     const id2 = uuidv4()
     await check(id2, 1, 2)
     await check(id2, 2, 3)
@@ -700,7 +700,7 @@ class KeyTest extends BaseTest {
     })
     await check(id1, 1, 99, false)
     // but not the sort key itself
-    // this throws because no such item exists:
+    // this throws because no such row exists:
     await expect(db.Transaction.run(async tx => {
       await tx.update(RangeKeyModel, { id: id1, rangeKey: 9, n: 0 }, { n: 99 })
     })).rejects.toThrow()
@@ -1059,8 +1059,8 @@ class WriteBatcherTest extends BaseTest {
 
     let itemSourceCreate
     await db.Transaction.run(tx => {
-      const item = tx.create(IDWithSchemaModel, { id: 'xyz' + uuidv4() })
-      itemSourceCreate = item.__src
+      const row = tx.create(IDWithSchemaModel, { id: 'xyz' + uuidv4() })
+      itemSourceCreate = row.__src
     })
 
     const batcher = new db.__private.__WriteBatcher()
@@ -1083,16 +1083,16 @@ class WriteBatcherTest extends BaseTest {
       expect(e.message).toContain('error body missing reasons')
     }
 
-    const item = { _id: { S: '123' } }
+    const row = { _id: { S: '123' } }
     reasons.push({
       Code: 'ConditionalCheckFailed',
-      Item: item
+      Item: row
     })
     const request = {
       params: {
         TransactItems: [{
           Put: {
-            Item: item,
+            Item: row,
             TableName: 'sharedlibTestModel'
           }
         }]
@@ -1131,13 +1131,13 @@ class WriteBatcherTest extends BaseTest {
   }
 
   async testModelAlreadyExistsError () {
-    // Single item transactions
+    // Single row transactions
     const id = uuidv4()
     await txCreate(BasicModel, { id })
     let fut = txCreate(BasicModel, { id })
     await expect(fut).rejects.toThrow(db.ModelAlreadyExistsError)
 
-    // Multi-items transactions
+    // Multi-row transactions
     fut = db.Transaction.run(async (tx) => {
       tx.create(BasicModel, { id })
       tx.create(BasicModel, { id: uuidv4() })
@@ -1367,7 +1367,7 @@ class OptDefaultModelTest extends BaseTest {
     }
     await OptDefaultModel2.createResource()
 
-    // the default value for new fields isn't stored in the db yet (old items
+    // the default value for new fields isn't stored in the db yet (old rows
     // have not been changed yet)
     let fut = db.Transaction.run(async tx => {
       await tx.update(OptDefaultModel2,
@@ -1389,8 +1389,8 @@ class OptDefaultModelTest extends BaseTest {
     })
     await expect(fut).rejects.toThrow(/outdated \/ invalid conditions/)
 
-    // verify that these are all in the proper state when accessing old items;
-    // also, accessing the item populates the default value for the new field
+    // verify that these are all in the proper state when accessing old rows;
+    // also, accessing the row populates the default value for the new field
     // which triggers a database write!
     await db.Transaction.run(async tx => {
       check(await tx.get(OptDefaultModel2, idSpecifyNothing),
@@ -1407,13 +1407,13 @@ class OptDefaultModelTest extends BaseTest {
         100, undefined, 7, 8, 11, undefined)
     })
 
-    // accessing and modifying an old item will also write the new defaults to
+    // accessing and modifying an old row will also write the new defaults to
     // the db
     await db.Transaction.run(async tx => {
-      const item = await tx.get(OptDefaultModel2, idUndef)
-      check(item, 7, undefined, undefined,
+      const row = await tx.get(OptDefaultModel2, idUndef)
+      check(row, 7, undefined, undefined,
         8, undefined, undefined)
-      item.def = 3
+      row.def = 3
     })
     await db.Transaction.run(async tx => {
       // verify the db was updated by doing a blind update dependent on it
@@ -1443,11 +1443,11 @@ class OptionalFieldConditionTest extends BaseTest {
       tx.create(OptNumModel, { id })
     })
     await db.Transaction.run(async tx => {
-      const item = await tx.get(OptNumModel, id)
-      if (item.n === undefined) {
-        item.n = 5
+      const row = await tx.get(OptNumModel, id)
+      if (row.n === undefined) {
+        row.n = 5
       }
-      const field = item.getField('n')
+      const field = row.getField('n')
       const [condition, vals] = field.__conditionExpression(':_1')
       expect(condition).toBe(`attribute_not_exists(${field.__awsName})`)
       expect(vals).toEqual({})
