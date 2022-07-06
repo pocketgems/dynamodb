@@ -42,6 +42,15 @@ class InvalidFieldError extends Error {
 }
 
 /**
+ * Thrown when the library detects an index to be in an invalid state.
+ *
+ * @access public
+ * @memberof Errors
+ */
+
+class InvalidIndexError extends InvalidFieldError {}
+
+/**
  * Thrown when a transaction fails.
  * Original exception is attached to property `original`
  * Original stack is appended to current stack.
@@ -171,6 +180,7 @@ module.exports = {
   InvalidCachedModelError,
   InvalidFieldError,
   InvalidFilterError,
+  InvalidIndexError,
   InvalidModelDeletionError,
   InvalidModelUpdateError,
   InvalidOptionsError,

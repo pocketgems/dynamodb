@@ -13,6 +13,7 @@ const {
   InvalidModelDeletionError,
   InvalidModelUpdateError,
   InvalidParameterError,
+  InvalidIndexError,
   ModelAlreadyExistsError,
   ModelDeletedTwiceError
 } = require('./errors')
@@ -176,6 +177,25 @@ class Model {
         ret[key] = val
       }
     }
+
+    for (const [index, keys] of Object.entries(this.INDEXES)) {
+      if (keys.KEY === undefined) {
+        throw new InvalidIndexError(index, 'partition key is required')
+      }
+      const indexFields = new Set()
+      for (const field of [...keys.KEY, ...(keys.SORT_KEY ?? [])]) {
+        if (field in ret === false) {
+          throw new InvalidIndexError(index,
+            'all field names must exist in the table')
+        }
+        if (indexFields.has(field)) {
+          throw new InvalidIndexError(index,
+            'field name cannot be used more than once')
+        }
+        indexFields.add(field)
+      }
+    }
+
     if (this.EXPIRE_EPOCH_FIELD) {
       const todeaSchema = ret[this.EXPIRE_EPOCH_FIELD]
       if (!todeaSchema) {
@@ -273,7 +293,13 @@ class Model {
     if (!isUniqueKey) {
       return false
     }
-    const schemaType = schemas[0].getProp('type')
+    let schemaType
+    if (typeof (schemas[0]) === 'string') {
+      const classSchemas = { ...this.KEY, ...this.SORT_KEY, ...this.__getFields() }
+      schemaType = classSchemas[schemas[0]].getProp('type')
+    } else {
+      schemaType = schemas[0].getProp('type')
+    }
     const isNumericKey = ['integer', 'number'].includes(schemaType)
     return isNumericKey
   }
@@ -283,13 +309,46 @@ class Model {
     // the partition key attribute is always "_id"
     const keyType = this.__useNumericKey(this.KEY) ? 'N' : 'S'
     const attrs = [{ AttributeName: '_id', AttributeType: keyType }]
+    const dedupeAttr = new Set(['_id'])
     const keys = [{ AttributeName: '_id', KeyType: 'HASH' }]
+    const indexes = []
 
     // if we have a sort key attribute, it is always "_sk"
     if (this.__keyOrder.sort.length > 0) {
       const keyType = this.__useNumericKey(this.SORT_KEY) ? 'N' : 'S'
       attrs.push({ AttributeName: '_sk', AttributeType: keyType })
       keys.push({ AttributeName: '_sk', KeyType: 'RANGE' })
+      dedupeAttr.add('_sk')
+    }
+
+    if (Object.keys(this.INDEXES).length > 0) {
+      for (const [index, props] of Object.entries(this.INDEXES)) {
+        const keyNames = this.__getKeyNamesForIndex(index)
+        const indexProps = {
+          IndexName: index,
+          KeySchema: [{ AttributeName: keyNames._id, KeyType: 'HASH' }],
+          Projection: { ProjectionType: 'ALL' }
+        }
+        if (dedupeAttr.has(keyNames._id) === false) {
+          attrs.push({
+            AttributeName: keyNames._id,
+            AttributeType: this.__useNumericKey(props.KEY) ? 'N' : 'S'
+          })
+          dedupeAttr.add(keyNames._id)
+        }
+
+        if (props.SORT_KEY !== undefined) {
+          indexProps.KeySchema.push({ AttributeName: keyNames._sk, KeyType: 'RANGE' })
+          if (dedupeAttr.has(keyNames._sk) === false) {
+            attrs.push({
+              AttributeName: keyNames._sk,
+              AttributeType: this.__useNumericKey(props.SORT_KEY) ? 'N' : 'S'
+            })
+            dedupeAttr.add(keyNames._sk)
+          }
+        }
+        indexes.push(indexProps)
+      }
     }
 
     const properties = {
@@ -315,6 +374,10 @@ class Model {
           }
         ]
       }
+    }
+
+    if (indexes.length > 0) {
+      properties.GlobalSecondaryIndexes = indexes
     }
 
     if (this.EXPIRE_EPOCH_FIELD) {
@@ -438,6 +501,21 @@ class Model {
    */
   static FIELDS = {}
 
+  /**
+   * Defines the global secondary indexes for the table.
+   * By default there are no secondary indexes.
+   *
+   * Properties are defined as a map from index names to an object
+   * containing the keys for the index
+   * (fields defined in an index key should already exist in the table):
+   * @example
+   *   static INDEXES = {
+   *     index1: { KEY: [field1, field2] }
+   *     index2: { KEY: [field3], SORT_KEY: [field4] }
+   *   }
+   */
+  static INDEXES = {}
+
   get _id () {
     return this.__getKey(this.constructor.__keyOrder.partition,
       this.constructor.KEY)
@@ -483,6 +561,41 @@ class Model {
     }
     const useNumericKey = this.__useNumericKey(this.SORT_KEY)
     return this.__encodeCompoundValue(this.__keyOrder.sort, vals, useNumericKey)
+  }
+
+  /**
+   * Generate a compound field name given a list of fields.
+   * For compound field containing a single field that is not either a PK or SK,
+   * we use the same name as the original field to reduce data duplication.
+   * We also auto-detect if _id, or _sk can be re-used
+   *
+   * @param [ fields ] a list of string denoting the fields
+   * @returns a string denoting the compound field's internal name
+   */
+  static __encodeCompoundFieldName (fields) {
+    // Check if the field is array or object schema type - if not then use as-is
+    // Write Unit tests for this
+    // Test it again on querying an index
+    if (fields.length === 1 && this.FIELDS[fields[0]] &&
+      !['array', 'object'].includes(this.FIELDS[fields[0]].getProp('type'))) {
+      return fields[0]
+    }
+
+    if (Object.keys(this.KEY).sort().join('\0') === fields.sort().join('\0')) {
+      return '_id'
+    }
+    if (Object.keys(this.SORT_KEY).sort().join('\0') === fields.sort().join('\0')) {
+      return '_sk'
+    }
+
+    return ['_c', ...fields.sort()].join('_')
+  }
+
+  static __getKeyNamesForIndex (index) {
+    return {
+      _id: this.__encodeCompoundFieldName(this.INDEXES[index].KEY),
+      _sk: this.__encodeCompoundFieldName(this.INDEXES[index].SORT_KEY ?? [])
+    }
   }
 
   /**

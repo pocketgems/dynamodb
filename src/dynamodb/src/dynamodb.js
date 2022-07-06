@@ -78,6 +78,8 @@ function makeCreateResourceFunc (dynamoDB, autoscaling) {
       if (currentMode !== tableParams.BillingMode) {
         const updateParams = { ...tableParams }
         delete updateParams.KeySchema
+        delete updateParams.GlobalSecondaryIndexes
+
         await dynamoDB.updateTable(updateParams).promise().catch(
           // istanbul ignore next
           e => {
@@ -86,6 +88,36 @@ function makeCreateResourceFunc (dynamoDB, autoscaling) {
               throw e
             }
           })
+      }
+      const prevIndexes = new Set((tableDescription.Table.GlobalSecondaryIndexes ?? []).map(index => index.IndexName))
+      const newIndexes = new Set((tableParams.GlobalSecondaryIndexes ?? []).map(index => index.IndexName))
+      const updateParams = { ...tableParams }
+      delete updateParams.BillingMode
+      delete updateParams.KeySchema
+      delete updateParams.ProvisionedThroughput
+      delete updateParams.GlobalSecondaryIndexes
+      const gsiUpdates = []
+
+      for (const index of prevIndexes) {
+        if (newIndexes.has(index) === false) {
+          gsiUpdates.push({ Delete: { IndexName: index } })
+        }
+      }
+
+      for (const index of tableParams.GlobalSecondaryIndexes ?? []) {
+        if (prevIndexes.has(index.IndexName) === false) {
+          gsiUpdates.push({ Create: index })
+        }
+      }
+
+      if (gsiUpdates.length > 1) {
+        throw new AWSError('Update Table',
+          { message: 'Cannot modify more than one index at a time' })
+      }
+
+      if (gsiUpdates.length > 0) {
+        updateParams.GlobalSecondaryIndexUpdates = gsiUpdates
+        await dynamoDB.updateTable(updateParams)
       }
     })
 

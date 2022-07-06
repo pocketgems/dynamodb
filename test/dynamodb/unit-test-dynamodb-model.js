@@ -7,6 +7,8 @@ const db = require('../db-with-field-maker')
 const CONDITION_EXPRESSION_STR = 'ConditionExpression'
 const UPDATE_EXPRESSION_STR = 'UpdateExpression'
 
+const AWSError = require('../../src/dynamodb/src/aws-error')
+
 class BadModelTest extends BaseTest {
   check (cls, msg) {
     expect(() => cls.__doOneTimeModelPrep()).toThrow(msg)
@@ -89,6 +91,26 @@ class BadModelTest extends BaseTest {
     }
     IDCanBeAFieldName.__doOneTimeModelPrep()
   }
+
+  testIndexFieldName () {
+    class BadModel extends db.Model {
+      static KEY = { name: S.str }
+      static INDEXES = { badIndex: {} }
+    }
+    this.check(BadModel, 'partition key is required')
+
+    BadModel.INDEXES = { badIndex: { KEY: ['name'], SORT_KEY: ['dummy', 'missing'] } }
+    delete BadModel.__setupDone
+    this.check(BadModel, 'all field names must exist in the table')
+
+    BadModel.INDEXES = { badIndex: { KEY: ['missing'], SORT_KEY: ['name'] } }
+    delete BadModel.__setupDone
+    this.check(BadModel, 'all field names must exist in the table')
+
+    BadModel.INDEXES = { badIndex: { KEY: ['name'], SORT_KEY: ['name'] } }
+    delete BadModel.__setupDone
+    this.check(BadModel, 'field name cannot be used more than once')
+  }
 }
 
 class ErrorTest extends BaseTest {
@@ -162,6 +184,84 @@ class SimpleModelTest extends BaseTest {
   async testRecreatingTable () {
     // Re-creating the same table shouldn't error out
     await SimpleModel.createResource()
+  }
+
+  async testCreateIndex () {
+    const IndexDBModel = class extends db.Model {
+      static KEY = { name: S.str }
+      static FIELDS = { guild: S.str, rank: S.int }
+      static INDEXES = {
+        index1: { KEY: ['name', 'guild'], SORT_KEY: ['rank'] }
+      }
+    }
+    const setupDB = require('../../src/dynamodb/src/dynamodb')
+    const dbParams = {
+      dynamoDBClient: db.Model.dbClient,
+      dynamoDBDocumentClient: db.Model.documentClient,
+      enableDynamicResourceCreation: true,
+      autoscalingClient: undefined
+    }
+    const onDemandDB = setupDB(dbParams)
+
+    await IndexDBModel.createResource()
+    const tableDescription = await onDemandDB.Model.dbClient
+      .describeTable({ TableName: IndexDBModel.fullTableName })
+      .promise()
+    expect(tableDescription.Table.GlobalSecondaryIndexes.length).toBe(1)
+
+    let updateParams = {}
+    const originalUpdateTableFn = dbParams.dynamoDBClient.updateTable
+    const mock = jest.fn().mockImplementation((params) => { updateParams = params })
+    dbParams.dynamoDBClient.updateTable = mock
+
+    async function resetAndCreateTable () {
+      delete IndexDBModel.__setupDone
+      delete IndexDBModel.__createdResource
+      delete IndexDBModel.__CACHED_KEY_ORDER
+      delete IndexDBModel.__CACHED_SCHEMA
+      await IndexDBModel.createResource()
+    }
+
+    IndexDBModel.INDEXES = {}
+    await resetAndCreateTable()
+    expect(updateParams.GlobalSecondaryIndexUpdates[0].Delete.IndexName).toBe('index1')
+
+    IndexDBModel.INDEXES = {
+      index1: { KEY: ['name', 'guild'], SORT_KEY: ['rank'] },
+      index2: { KEY: ['rank'] }
+    }
+    await resetAndCreateTable()
+    expect(updateParams.GlobalSecondaryIndexUpdates[0].Create.IndexName).toBe('index2')
+
+    IndexDBModel.INDEXES = {
+      index3: { KEY: ['rank'] }
+    }
+    expect(resetAndCreateTable()).rejects.toThrow(AWSError)
+    dbParams.dynamoDBClient.updateTable = originalUpdateTableFn
+  }
+
+  async testIndexKeyResourceGeneration () {
+    const IndexDBModel = class extends db.Model {
+      static KEY = { name: S.str }
+      static SORT_KEY = { rank: S.int, score: S.int }
+      static FIELDS = { guild: S.str, arrField: S.arr(S.obj({ a: S.int })) }
+      static INDEXES = {
+        index1: { KEY: ['name', 'guild'], SORT_KEY: ['rank', 'score'] },
+        index2: { KEY: ['rank'], SORT_KEY: ['name', 'guild'] },
+        index3: { KEY: ['name'], SORT_KEY: ['guild'] },
+        index4: { KEY: ['arrField'] }
+      }
+    }
+
+    const definitions = IndexDBModel.__getResourceDefinitions()
+    const tableParams = Object.values(definitions)
+      .filter(val => val.Type === 'AWS::DynamoDB::Table')[0]
+      .Properties
+
+    const expectedAttr = ['_id', '_sk', '_c_rank', '_c_guild_name', '_c_arrField', 'guild']
+    const actualAttr = tableParams.AttributeDefinitions.map(attr => attr.AttributeName).sort()
+    expect(actualAttr).toEqual(expectedAttr.sort())
+    expect(tableParams.GlobalSecondaryIndexes.length).toBe(4)
   }
 
   async testUpdateBillingMode () {
