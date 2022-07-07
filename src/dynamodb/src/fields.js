@@ -1,10 +1,65 @@
 const assert = require('assert')
 
 const deepeq = require('deep-equal')
+const jsonStringify = require('fast-json-stable-stringify')
 const deepcopy = require('rfdc')()
 
-const { InvalidFieldError, InvalidOptionsError } = require('./errors')
+const { InvalidFieldError, InvalidOptionsError, NotImplementedError } = require('./errors')
 const { validateValue } = require('./utils')
+
+/**
+ * Abstract class representing a field / property of a Model.
+ *
+ * @private
+ * @memberof Internal
+ */
+class __FieldPrototype {
+  constructor () {
+    if (this.constructor === __FieldPrototype) {
+      throw new Error('Can not instantiate abstract class')
+    }
+  }
+
+  get __awsName () {
+    throw new NotImplementedError()
+  }
+
+  get mutated () {
+    throw new NotImplementedError()
+  }
+
+  get __mayHaveMutated () {
+    throw new NotImplementedError()
+  }
+
+  get accessed () {
+    throw new NotImplementedError()
+  }
+
+  get () {
+    throw new NotImplementedError()
+  }
+
+  set (val) {
+    throw new NotImplementedError()
+  }
+
+  __updateExpression (exprKey) {
+    throw new NotImplementedError()
+  }
+
+  get canUpdateWithoutCondition () {
+    throw new NotImplementedError()
+  }
+
+  __conditionExpression (exprKey) {
+    throw new NotImplementedError()
+  }
+
+  validate () {
+    throw new NotImplementedError()
+  }
+}
 
 /**
  * @namespace Fields
@@ -21,7 +76,7 @@ const { validateValue } = require('./utils')
  * @private
  * @memberof Internal
  */
-class __Field {
+class __Field extends __FieldPrototype {
   static __validateFieldOptions (modelName, keyType, fieldName, schema) {
     if (fieldName.startsWith('_')) {
       throw new InvalidFieldError(
@@ -109,6 +164,7 @@ class __Field {
     isForUpdate,
     isForDelete
   }) {
+    super()
     for (const [key, value] of Object.entries(opts)) {
       Object.defineProperty(this, key, { value, writable: false })
     }
@@ -492,6 +548,123 @@ class ArrayField extends __Field {
   }
 }
 
+/**
+ * Internal object used to create a compound field containing one or more fields
+ *
+ * @private
+ * @memberof Internal
+ */
+class CompoundField extends __FieldPrototype {
+  constructor (idx, name, isNew, ...fields) {
+    super()
+    if (fields.every(field => field instanceof __Field) === false) {
+      throw new InvalidFieldError(name, 'Compound field can contain only Field objects')
+    }
+    this.name = name
+    this.__fields = fields
+    this.__idx = idx
+    this.__isNew = isNew
+    this.__initialValue = this.__value
+  }
+
+  get __awsName () {
+    return `#${this.__idx}`
+  }
+
+  get mutated () {
+    return this.__isNew || this.__value !== this.__initialValue
+  }
+
+  get __mayHaveMutated () {
+    return this.__isNew || this.__fields.some(field => field.__mayHaveMutated)
+  }
+
+  get accessed () {
+    return this.__fields.some(field => field.accessed)
+  }
+
+  /**
+  * Generates the value for the compound property. If any of the underlying
+  * field is undefined, compound value returns undefined.
+  * Currently, it supports only generated fields used in Index.
+  *
+  * @returns encoded value for the compound field
+  **/
+  get __value () {
+    if (this.__fields.some(field => field.__value === undefined)) {
+      return undefined
+    }
+    const allVal = this.__fields.reduce((result, field) => {
+      result[field.name] = field.__value
+      return result
+    }, {})
+    return this.constructor.__encodeCompoundValue(Object.keys(allVal), allVal)
+  }
+
+  static __encodeCompoundValue (fields, values) {
+    const pieces = []
+    fields = fields.sort()
+    if (fields.length === 1 && typeof (values[fields[0]]) === 'number') {
+      return values[fields[0]]
+    }
+    for (const field of fields) {
+      const val = values[field]
+      if (val === undefined) {
+        throw new InvalidFieldError(field, 'must be provided')
+      }
+      if (typeof (val) === 'string') {
+        if (val.indexOf('\0') !== -1) {
+          throw new InvalidFieldError(field,
+            'cannot put null bytes in strings in compound values')
+        }
+        pieces.push(val)
+      } else {
+        pieces.push(jsonStringify(val))
+      }
+    }
+    return pieces.join('\0')
+  }
+
+  get () {
+    return this.__value
+  }
+
+  set (val) {
+    throw new InvalidFieldError(this.name, 'Compound fields are immutable.')
+  }
+
+  __updateExpression (exprKey) {
+    const val = this.__value
+    if (!this.mutated || (this.__isNew && val === undefined)) {
+      return []
+    }
+
+    if (val === undefined) {
+      return [undefined, {}, true]
+    }
+
+    return [
+      `${this.__awsName}=${exprKey}`,
+      { [exprKey]: val },
+      false
+    ]
+  }
+
+  get canUpdateWithoutCondition () {
+    return true
+  }
+
+  __conditionExpression (exprKey) {
+    return []
+  }
+
+  validate () {
+    for (const field of this.__fields) {
+      field.validate()
+    }
+  }
+}
+
 const SCHEMA_TYPE_TO_FIELD_CLASS_MAP = {
   array: ArrayField,
   boolean: BooleanField,
@@ -503,11 +676,13 @@ const SCHEMA_TYPE_TO_FIELD_CLASS_MAP = {
 }
 
 module.exports = {
+  __FieldPrototype,
   __Field,
   NumberField,
   ArrayField,
   BooleanField,
   StringField,
   ObjectField,
+  CompoundField,
   SCHEMA_TYPE_TO_FIELD_CLASS_MAP
 }

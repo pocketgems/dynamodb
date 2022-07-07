@@ -175,6 +175,13 @@ class InvalidFilterError extends Error {
   }
 }
 
+class NotImplementedError extends Error {
+  constructor (reason) {
+    super(reason)
+    this.name = this.constructor.name
+  }
+}
+
 module.exports = {
   GenericModelError,
   InvalidCachedModelError,
@@ -188,6 +195,7 @@ module.exports = {
   ModelAlreadyExistsError,
   ModelDeletedTwiceError,
   ModelTrackedTwiceError,
+  NotImplementedError,
   TransactionFailedError,
   WriteAttemptedInReadOnlyTxError
 }
