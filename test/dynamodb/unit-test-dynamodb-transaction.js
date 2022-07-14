@@ -40,7 +40,14 @@ class TransactionModel extends db.Model {
       }).optional()
     }).optional()
   }
+
+  static INDEXES = {
+    index1: { KEY: ['id'], SORT_KEY: ['field1', 'field2'] },
+    index2: { KEY: ['arrField'] },
+    index3: { KEY: ['id', 'field1'] }
+  }
 }
+
 class TransactionModelWithRequiredField extends TransactionModel {
   static FIELDS = { ...super.FIELDS, required: S.double }
 }
@@ -441,9 +448,11 @@ class TransactionWriteTest extends QuickTransactionTest {
     await db.Transaction.run(async (tx) => {
       const txModel = await tx.get(data, { createIfMissing: true })
       txModel.field1 = val
+      txModel.field2 = 200
     })
     const model = await txGet(data)
     expect(model.field1).toBe(val)
+    expect(model._c_field1_field2).toBe([val, 200].join('\0'))
   }
 
   async testWriteNew () {
@@ -458,6 +467,18 @@ class TransactionWriteTest extends QuickTransactionTest {
     const model = await txGet(data)
     expect(model.isNew).toBe(false)
     expect(model.field1).toBe(val)
+    expect(model._c_field1_field2).toBe(undefined)
+    expect(model._c_field1_id).toBe([val, modelName].join('\0'))
+  }
+
+  async testWriteIndexData () {
+    const data = TransactionModel.data(this.modelName)
+    expect(async () => {
+      await db.Transaction.run(async (tx) => {
+        const txModel = await tx.get(data, { createIfMissing: true })
+        txModel._c_field1_field2 = 'wrong data'
+      })
+    }).rejects.toThrow(db.InvalidFieldError)
   }
 
   async testMultipleCreateErrors () {
@@ -491,6 +512,8 @@ class TransactionWriteTest extends QuickTransactionTest {
     })
     const model = await txGet(name)
     expect(model.field1).toBe(987)
+    expect(model._c_field1_field2).toBe([987, 1].join('\0'))
+    expect(model._c_field1_id).toBe([987, name].join('\0'))
   }
 
   async testWriteExistingAsNew () {
@@ -733,6 +756,7 @@ class TransactionWriteTest extends QuickTransactionTest {
     })
     const updated = await txGet(data)
     expect(updated.field1).toBe(newVal)
+    expect(updated._c_field1_id).toBe([newVal, this.modelName].join('\0'))
   }
 
   async testUpdateWithID () {
@@ -755,6 +779,8 @@ class TransactionWriteTest extends QuickTransactionTest {
     })
     const model = await txGet(this.modelName)
     expect(model.field1).toBe(1)
+    expect(model._c_field1_field2).toBe([1, 2].join('\0'))
+    expect(model._c_field1_id).toBe([1, this.modelName].join('\0'))
   }
 
   async testDeleteFieldByUpdate () {
@@ -767,6 +793,7 @@ class TransactionWriteTest extends QuickTransactionTest {
     })
     const model = await txGet(this.modelName)
     expect(model.field2).toBe(undefined)
+    expect(model._field1_field2).toBe(undefined)
   }
 
   async testCreatePartialModel () {
@@ -815,6 +842,7 @@ class TransactionWriteTest extends QuickTransactionTest {
     const model = await txGetRequired(this.modelName)
     expect(model.field1).toBe(111222)
     expect(model.required).toBe(333444)
+    expect(model._c_field1_id).toBe([111222, this.modelName].join('\0'))
   }
 
   async testCreateNewModel () {
@@ -942,6 +970,7 @@ class TransactionWriteTest extends QuickTransactionTest {
     })
     const updated = await txGetRequired({ id: modelName })
     expect(updated.field1).toBe(newVal)
+    expect(updated._c_field1_id).toBe([newVal, modelName].join('\0'))
   }
 
   async testEmptyUpdate () {
@@ -1475,7 +1504,10 @@ class ModelDiffsTest extends BaseTest {
           field1: undefined,
           field2: undefined,
           arrField: undefined,
-          objField: undefined
+          objField: undefined,
+          _c_field1_field2: undefined,
+          _c_field1_id: undefined,
+          _c_arrField: undefined
         }
       }
     }
@@ -1514,6 +1546,7 @@ class ModelDiffsTest extends BaseTest {
 
     expectation.TransactionModel.data._id = id
     expectation.TransactionModel.data.field1 = 321
+    expectation.TransactionModel.data._c_field1_id = [321, id].join('\0')
     expect(result.after[0]).toStrictEqual(expectation)
   }
 
@@ -1594,6 +1627,7 @@ class ModelDiffsTest extends BaseTest {
     })
     expectation.TransactionModel.data._id = id
     expectation.TransactionModel.data.field1 = 1
+    expectation.TransactionModel.data._c_field1_id = [1, id].join('\0')
     expect(result2).toStrictEqual({
       before: [expectation],
       after: [{

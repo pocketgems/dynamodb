@@ -17,7 +17,7 @@ const {
   ModelAlreadyExistsError,
   ModelDeletedTwiceError
 } = require('./errors')
-const { __Field, SCHEMA_TYPE_TO_FIELD_CLASS_MAP } = require('./fields')
+const { __Field, SCHEMA_TYPE_TO_FIELD_CLASS_MAP, CompoundField } = require('./fields')
 const { Key } = require('./key')
 const {
   validateValue,
@@ -78,6 +78,13 @@ class Model {
     for (const [name, opts] of Object.entries(this.constructor._attrs)) {
       this.__addField(fieldIdx++, name, opts, vals)
     }
+
+    for (const keys of Object.values(this.constructor.INDEXES)) {
+      this.__addCompoundField(fieldIdx++, keys.KEY, isNew)
+      if (keys.SORT_KEY !== undefined) {
+        this.__addCompoundField(fieldIdx++, keys.SORT_KEY, isNew)
+      }
+    }
     Object.seal(this)
   }
 
@@ -120,6 +127,34 @@ class Model {
     if (this.isNew) {
       getCachedField() // create the field now to trigger validation
     }
+    Object.defineProperty(this, name, {
+      get: (...args) => {
+        const field = getCachedField()
+        return field.get()
+      },
+      set: (val) => {
+        const field = getCachedField()
+        field.set(val)
+      }
+    })
+  }
+
+  __addCompoundField (idx, fieldNames, isNew) {
+    const name = this.constructor.__encodeCompoundFieldName(fieldNames)
+    if (this.__attr_getters[name] !== undefined || ['_id', '_sk'].includes(name)) {
+      return
+    }
+    const fields = fieldNames.map(field => this.__attr_getters[field]())
+    const getCachedField = () => {
+      if (this.__cached_attrs[name]) {
+        return this.__cached_attrs[name]
+      }
+      const field = new CompoundField(idx, name, isNew, ...fields)
+      this.__cached_attrs[name] = field
+      return field
+    }
+    this.__attr_getters[name] = getCachedField
+    getCachedField()
     Object.defineProperty(this, name, {
       get: (...args) => {
         const field = getCachedField()

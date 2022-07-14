@@ -878,6 +878,39 @@ class KeyTest extends BaseTest {
   }
 }
 
+class IndexModel extends db.Model {
+  static KEY = { name: S.str, title: S.str }
+  static FIELDS = { rank: S.int }
+  static INDEXES = {
+    index1: { KEY: ['name'], SORT_KEY: ['title', 'rank'] },
+    index2: { KEY: ['rank'] }
+  }
+}
+
+class IndexTest extends BaseTest {
+  async beforeAll () {
+    await IndexModel.createResource()
+  }
+
+  async testIndexFieldGeneration () {
+    function validate (model, fields, val) {
+      const fieldName = IndexModel.__encodeCompoundFieldName(fields)
+      expect(model.__cached_attrs[fieldName].get()).toBe(val)
+    }
+    const name = uuidv4()
+    const model1 = await txCreate(IndexModel, { name: name, title: 'b', rank: 0 })
+    validate(model1, IndexModel.INDEXES.index1.KEY, name)
+    validate(model1, IndexModel.INDEXES.index1.SORT_KEY, [0, 'b'].join('\0'))
+    validate(model1, IndexModel.INDEXES.index2.KEY, 0)
+  }
+
+  async testEditIndexField () {
+    const name = uuidv4()
+    const model1 = await txCreate(IndexModel, { name: name, title: 'b', rank: 0 })
+    expect(() => { model1._c_rank_title = 'xyz' }).toThrow(db.InvalidFieldError)
+  }
+}
+
 class JSONModel extends db.Model {
   static FIELDS = {
     objNoDefaultNoRequired: S.obj().optional(),
@@ -1929,6 +1962,7 @@ runTests(
   ErrorTest,
   GetArgsParserTest,
   IDSchemaTest,
+  IndexTest,
   JSONModelTest,
   KeyTest,
   NewModelTest,
