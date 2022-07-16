@@ -663,6 +663,11 @@ class TestModel extends db.Model {
     field1: S.str,
     field2: S.str
   }
+
+  static INDEXES = {
+    index1: { KEY: [ 'id1', 'id2' ], SORT_KEY: [ 'field1' ] },
+    index2: { KEY: [ 'id1', 'sk1' ], SORT_KEY: [ 'field1', 'field2' ] }
+  }
 }
 ```
 

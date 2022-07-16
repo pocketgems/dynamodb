@@ -33,6 +33,18 @@ class __DBIterator {
     this.__ModelCls = ModelCls
     this.__fetchParams = {}
     Object.assign(this, options)
+    __DBIterator.__assertValidInputs(ModelCls, options)
+  }
+
+  static __assertValidInputs (ModelCls, options) {
+    if (options.index !== undefined) {
+      if (options.inconsistentRead === false) {
+        throw new InvalidOptionsError('index and inconsistent read. Reading from index needs to be inconsistent')
+      }
+      if (Object.keys(ModelCls.INDEXES).includes(options.index) === false) {
+        throw new InvalidOptionsError(`index ${options.index}`)
+      }
+    }
   }
 
   static get METHOD () {
@@ -83,6 +95,10 @@ class __DBIterator {
       const params = {
         TableName: this.__ModelCls.fullTableName,
         ConsistentRead: !this.inconsistentRead
+      }
+
+      if (this.index !== undefined) {
+        params.IndexName = this.index
       }
 
       this.__addConditionExpression(params, '__getKeyConditionExpression')
@@ -137,7 +153,9 @@ class __DBIterator {
       if (m.__hasExpired) {
         return undefined
       }
-      this.__writeBatcher.track(m)
+      if (this.index === undefined) {
+        this.__writeBatcher.track(m)
+      }
       return m
     }).filter(m => !!m)
 
@@ -232,9 +250,10 @@ class Scan extends __DBIterator {
   }) {
     Scan.__assertValidInputs(options)
     options = loadOptionDefaults(options, {
-      inconsistentRead: false,
+      inconsistentRead: options.index !== undefined,
       shardCount: undefined,
-      shardIndex: undefined
+      shardIndex: undefined,
+      index: undefined
     })
     super({ ModelCls, writeBatcher, options })
     Object.freeze(this)
@@ -280,7 +299,8 @@ class Query extends __DBIterator {
     options = loadOptionDefaults(options, {
       allowLazyFilter: false,
       descending: false,
-      inconsistentRead: false
+      inconsistentRead: options.index !== undefined,
+      index: undefined
     })
     super({ ModelCls, writeBatcher, options })
     this.__data = {}

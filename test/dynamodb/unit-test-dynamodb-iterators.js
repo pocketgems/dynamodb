@@ -9,7 +9,7 @@ const {
   Scan
 } = db.__private
 
-class TestModel extends db.Model {
+class TestIteratorModel extends db.Model {
   static KEY = {
     id1: S.str,
     id2: S.int
@@ -24,12 +24,17 @@ class TestModel extends db.Model {
     field1: S.str,
     field2: S.str
   }
+
+  static INDEXES = {
+    index1: { KEY: ['id1', 'id2'], SORT_KEY: ['field1'] },
+    index2: { KEY: ['id1', 'sk1'], SORT_KEY: ['field1', 'field2'] }
+  }
 }
 
 class IteratorTest extends BaseTest {
   async beforeAll () {
     await super.beforeAll()
-    await TestModel.createResource()
+    await TestIteratorModel.createResource()
   }
 
   async testConstructorInputValidation () {
@@ -59,6 +64,21 @@ class IteratorTest extends BaseTest {
     }).toThrow(/Invalid option value for allowLazyFilter/)
     expect(() => {
       // eslint-disable-next-line no-new
+      new Scan({ ModelCls: TestIteratorModel, options: { index: 'invalidIndex' } })
+    }).toThrow(/Invalid option value for index invalidIndex/)
+    expect(() => {
+      // eslint-disable-next-line no-new
+      new Query({ ModelCls: TestIteratorModel, options: { index: 'invalidIndex' } })
+    }).toThrow(/Invalid option value for index invalidIndex/)
+    expect(() => {
+      // eslint-disable-next-line no-new
+      new Query({
+        ModelCls: TestIteratorModel,
+        options: { index: 'index1', inconsistentRead: false } 
+})
+    }).toThrow(/Invalid option value for index and inconsistent read/)
+    expect(() => {
+      // eslint-disable-next-line no-new
       new Scan({
         method: 'scan',
         options: {
@@ -78,44 +98,64 @@ class IteratorTest extends BaseTest {
 
   testDefaultFlags () {
     const scan = new Scan({
-      ModelCls: TestModel
+      ModelCls: TestIteratorModel
     })
     expect(scan.inconsistentRead).toBe(false)
     expect(scan.shardIndex).toBe(undefined)
     expect(scan.shardCount).toBe(undefined)
+    expect(scan.index).toBe(undefined)
 
     const query = new Query({
-      ModelCls: TestModel
+      ModelCls: TestIteratorModel
     })
     expect(query.allowLazyFilter).toBe(false)
     expect(query.descending).toBe(false)
     expect(query.inconsistentRead).toBe(false)
+    expect(query.index).toBe(undefined)
+
+    const scan2 = new Scan({
+      ModelCls: TestIteratorModel,
+      options: { index: 'index1' }
+    })
+    expect(scan2.index).toBe('index1')
+    expect(scan2.inconsistentRead).toBe(true)
+
+    const query2 = new Query({
+      ModelCls: TestIteratorModel,
+      options: { index: 'index1' }
+    })
+    expect(query2.index).toBe('index1')
+    expect(query2.inconsistentRead).toBe(true)
   }
 
   testValidFlags () {
     const query = new Query({
-      ModelCls: TestModel,
+      ModelCls: TestIteratorModel,
       options: {
         allowLazyFilter: true,
         inconsistentRead: true,
-        descending: true
+        descending: true,
+        index: 'index1'
       }
     })
     expect(query.descending).toBe(true)
     expect(query.allowLazyFilter).toBe(true)
     expect(query.inconsistentRead).toBe(true)
+    expect(query.index).toBe('index1')
 
     const scan = new Scan({
-      ModelCls: TestModel,
+      ModelCls: TestIteratorModel,
       options: {
         inconsistentRead: true,
         shardIndex: 1,
-        shardCount: 2
+        shardCount: 2,
+        index: 'index1'
       }
     })
     expect(scan.inconsistentRead).toBe(true)
     expect(scan.shardIndex).toBe(1)
     expect(scan.shardCount).toBe(2)
+    expect(scan.index).toBe('index1')
   }
 
   testGetKeyNames () {
@@ -136,14 +176,14 @@ class IteratorTest extends BaseTest {
 
   testKeyFilters () {
     const query = new Query({
-      ModelCls: TestModel
+      ModelCls: TestIteratorModel
     })
     expect(() => {
       query.id1('!=', '123')
     }).toThrow('Only equality filters are allowed on partition keys')
 
     const query1 = new Query({
-      ModelCls: TestModel
+      ModelCls: TestIteratorModel
     })
     // example filter chaining start
     query1.id1('xyz').id2(123).sk1('>', '1')
@@ -157,7 +197,7 @@ class IteratorTest extends BaseTest {
   testLazyFilter () {
     // query not allowing lazy filters throws when filter on non-key fields
     const query = new Query({
-      ModelCls: TestModel
+      ModelCls: TestIteratorModel
     })
     query.id1('123')
     expect(() => {
@@ -166,7 +206,7 @@ class IteratorTest extends BaseTest {
 
     // query allowing lazy filters works when filter exists on non-key fields
     const query1 = new Query({
-      ModelCls: TestModel,
+      ModelCls: TestIteratorModel,
       options: {
         allowLazyFilter: true
       }
@@ -179,17 +219,17 @@ class IteratorTest extends BaseTest {
 
   testKeyCondition () {
     const query = new Query({
-      ModelCls: TestModel
+      ModelCls: TestIteratorModel
     })
     expect(() => {
-      query.__getKeyConditionExpression(TestModel)
+      query.__getKeyConditionExpression(TestIteratorModel)
     }).toThrow(/Query must contain partition key filters/)
 
     // example equality filter start
     query.id1('xyz')
     query.id2(321)
     // example equality filter end
-    expect(query.__getKeyConditionExpression(TestModel)).toEqual([
+    expect(query.__getKeyConditionExpression(TestIteratorModel)).toEqual([
       ['#_id=:_id'],
       { '#_id': '_id' },
       { ':_id': 'xyz' + '\0' + '321' }
@@ -197,10 +237,10 @@ class IteratorTest extends BaseTest {
 
     query.sk1('>', '23')
     expect(() => {
-      query.__getKeyConditionExpression(TestModel)
+      query.__getKeyConditionExpression(TestIteratorModel)
     }).toThrow(/sk2 must be provided/)
     query.sk2('>', '34')
-    expect(query.__getKeyConditionExpression(TestModel)).toEqual([
+    expect(query.__getKeyConditionExpression(TestIteratorModel)).toEqual([
       ['#_id=:_id', '#_sk>:_sk'],
       { '#_id': '_id', '#_sk': '_sk' },
       { ':_id': 'xyz' + '\0' + '321', ':_sk': '23' + '\0' + '34' }
@@ -209,7 +249,7 @@ class IteratorTest extends BaseTest {
 
   testFilterCondition () {
     const query = new Query({
-      ModelCls: TestModel,
+      ModelCls: TestIteratorModel,
       options: {
         allowLazyFilter: true
       }
@@ -236,7 +276,7 @@ class IteratorTest extends BaseTest {
 
   testAddConditionExpression () {
     const query = new Query({
-      ModelCls: TestModel,
+      ModelCls: TestIteratorModel,
       options: {
         allowLazyFilter: true
       }
@@ -263,7 +303,7 @@ class IteratorTest extends BaseTest {
   testSetupParams () {
     // Changes made to returned params don't affect next call's result
     const query = new Query({
-      ModelCls: TestModel
+      ModelCls: TestIteratorModel
     })
     query.id1('123').id2(234)
     const expected = query.__setupParams()
@@ -278,7 +318,7 @@ class IteratorTest extends BaseTest {
 
   testSetupParamsFlag () {
     const query = new Query({
-      ModelCls: TestModel,
+      ModelCls: TestIteratorModel,
       options: {
         descending: true
       }
@@ -288,7 +328,7 @@ class IteratorTest extends BaseTest {
     expect(query.__setupParams().ScanIndexForward).toBe(false)
 
     const scan = new Scan({
-      ModelCls: TestModel,
+      ModelCls: TestIteratorModel,
       options: {
         shardIndex: 0,
         shardCount: 2
@@ -306,7 +346,13 @@ class ScanModel extends db.Model {
   }
 
   static FIELDS = {
-    ts: S.int
+    ts: S.int,
+    rank: S.int.optional()
+  }
+
+  static INDEXES = {
+    index1: { KEY: ['rank'], SORT_KEY: ['ts'] },
+    index2: { KEY: ['id'] }
   }
 }
 
@@ -328,12 +374,14 @@ class ScanTest extends BaseTest {
     const ts = Math.floor(new Date().getTime() / 1000) - 99999
     await db.Transaction.run(tx => {
       const models = []
-      for (let index = 0; index < 5; index++) {
+      for (let index = 0; index < 4; index++) {
         models.push(ScanModel.data({
           id: this.getName(index),
-          ts
+          rank: index % 2,
+          ts: ts
         }))
       }
+      models.push(ScanModel.data({ id: this.getName(5), ts: (ts - 10) }))
       return tx.get(models, { createIfMissing: true })
     })
   }
@@ -343,66 +391,89 @@ class ScanTest extends BaseTest {
   }
 
   async testScanFetchFew () {
-    // Fetching a few rows
-    const [models, nextToken] = await db.Transaction.run(async tx => {
-      // example scanHandle start
-      const scan = tx.scan(ScanModel)
-      // example scanHandle end
-      return scan.fetch(3)
-    })
-    expect(models.length).toBe(3)
-    expect(nextToken).toBeDefined()
+    const validate = async (expected, opt = {}) => {
+      const [models, nextToken] = await db.Transaction.run(async tx => {
+        // example scanHandle start
+        const scan = tx.scan(ScanModel, opt)
+        // example scanHandle end
+        return scan.fetch(3)
+      })
+      expect(models.length).toBe(expected)
+      expect(nextToken).toBeDefined()
+    }
+    await validate(3)
+    await validate(3, { index: 'index1' })
+    await validate(3, { index: 'index2' })
   }
 
   async testScanFetchAll () {
+    const validate = async (expected, opt = {}) => {
     // Fetching all rows
-    const [models, nextToken] = await db.Transaction.run(async tx => {
-      const scan = tx.scan(ScanModel)
-      return scan.fetch(100)
-    })
-    expect(models.length).toBe(5)
-    expect(nextToken).toBeUndefined()
+      const [models, nextToken] = await db.Transaction.run(async tx => {
+        const scan = tx.scan(ScanModel, opt)
+        return scan.fetch(100)
+      })
+      expect(models.length).toBe(expected)
+      expect(nextToken).toBeUndefined()
+    }
+    await validate(5)
+    await validate(4, { index: 'index1' })
+    await validate(5, { index: 'index2' })
   }
 
   async testScanFetchNext () {
-    const [models, nextToken] = await db.Transaction.run(async tx => {
-      const ret = []
-      // example scan start
-      const scan = tx.scan(ScanModel)
-      const [page1, nextToken1] = await scan.fetch(2)
-      const [page2, nextToken2] = await scan.fetch(10, nextToken1)
-      // example scan end
-      ret.push(...page1, ...page2)
-      return [ret, nextToken2]
-    })
-    expect(models.length).toBe(5)
-    expect(nextToken).toBeUndefined()
+    const validate = async (expected, opt = {}) => {
+      const [models, nextToken] = await db.Transaction.run(async tx => {
+        const ret = []
+        // example scan start
+        const scan = tx.scan(ScanModel, opt)
+        const [page1, nextToken1] = await scan.fetch(2)
+        const [page2, nextToken2] = await scan.fetch(10, nextToken1)
+        // example scan end
+        ret.push(...page1, ...page2)
+        return [ret, nextToken2]
+      })
+      expect(models.length).toBe(expected)
+      expect(nextToken).toBeUndefined()
+    }
+    await validate(5)
+    await validate(4, { index: 'index1' })
+    await validate(5, { index: 'index2' })
   }
 
   async testScanRunFew () {
-    // Run a few rows
-    const ret = await db.Transaction.run(async tx => {
-      const scan = tx.scan(ScanModel)
-      const models = []
-      for await (const model of scan.run(3)) {
-        models.push(model)
-      }
-      return models
-    })
-    expect(ret.length).toBe(3)
+    const validate = async (expected, opt = {}) => {
+      // Run a few rows
+      const ret = await db.Transaction.run(async tx => {
+        const scan = tx.scan(ScanModel, opt)
+        const models = []
+        for await (const model of scan.run(3)) {
+          models.push(model)
+        }
+        return models
+      })
+      expect(ret.length).toBe(expected)
+    }
+
+    await validate(3)
+    await validate(3, { index: 'index1' })
   }
 
   async testScanRunAll () {
-    // Run all row
-    const ret = await db.Transaction.run(async tx => {
-      const scan = tx.scan(ScanModel)
-      const models = []
-      for await (const model of scan.run(100)) {
-        models.push(model)
-      }
-      return models
-    })
-    expect(ret.length).toBe(5)
+    const validate = async (expected, opt = {}) => {
+      // Run all row
+      const ret = await db.Transaction.run(async tx => {
+        const scan = tx.scan(ScanModel, opt)
+        const models = []
+        for await (const model of scan.run(100)) {
+          models.push(model)
+        }
+        return models
+      })
+      expect(ret.length).toBe(expected)
+    }
+    await validate(5)
+    await validate(4, { index: 'index1' })
   }
 
   // It's easier to test is here then in the TTL suite
@@ -410,16 +481,21 @@ class ScanTest extends BaseTest {
     // Turn on TTL locally
     ScanModel.EXPIRE_EPOCH_FIELD = 'ts'
 
-    const models = await db.Transaction.run(async tx => {
-      const scan = tx.scan(ScanModel)
-      const ms = []
-      for await (const m of scan.run(100)) {
-        ms.push(m)
-      }
-      return ms
-    })
-    expect(models.length).toBe(0)
+    const validate = async (opt = {}) => {
+      const models = await db.Transaction.run(async tx => {
+        const scan = tx.scan(ScanModel, opt)
+        const ms = []
+        for await (const m of scan.run(100)) {
+          ms.push(m)
+        }
+        return ms
+      })
+      expect(models.length).toBe(0)
+    }
 
+    await validate()
+    await validate({ index: 'index1' })
+    await validate({ index: 'index2' })
     ScanModel.EXPIRE_EPOCH_FIELD = undefined
   }
 
@@ -436,6 +512,13 @@ class ScanTest extends BaseTest {
       return ms
     })
     expect(models.length).toBe(1)
+
+    await db.Transaction.run(async tx => {
+      const scan = tx.scan(ScanModel, { index: 'index1' })
+      const models2 = await scan.fetch(10)[0]
+      expect(models2.length).toBe(4)
+      expect(tx.__writeBatcher.__allModels.length).toBe(0)
+    })
   }
 
   async testInconsistentRead () {
@@ -450,6 +533,10 @@ class ScanTest extends BaseTest {
     await db.Transaction.run(async tx => {
       const scan = tx.scan(ScanModel, { shardCount: 2, shardIndex: 0 })
       return scan.fetch(10)
+    })
+    await db.Transaction.run(async tx => {
+      const scan2 = tx.scan(ScanModel, { index: 'index1', shardCount: 2, shardIndex: 0 })
+      return scan2.fetch(10)
     })
   }
 }
