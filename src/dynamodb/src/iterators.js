@@ -51,9 +51,12 @@ class __DBIterator {
     return this.name.toLowerCase()
   }
 
-  static __getKeyNames (Cls) {
+  static __getKeyNames (Cls, index) {
     const extractKey = (name) => {
-      return new Set(Object.keys(Cls[name]))
+      if (index === undefined) {
+        return new Set(Object.keys(Cls[name]))
+      }
+      return new Set(Cls.INDEXES[index][name])
     }
     const partitionKeys = extractKey('KEY')
     const sortKeys = extractKey('SORT_KEY')
@@ -306,7 +309,7 @@ class Query extends __DBIterator {
     this.__data = {}
 
     let index = 0
-    this.__KEY_NAMES = this.constructor.__getKeyNames(ModelCls)
+    this.__KEY_NAMES = this.constructor.__getKeyNames(ModelCls, this.index)
     const { partitionKeys, sortKeys } = this.__KEY_NAMES
     for (const name of Object.keys(ModelCls.schema.objectSchemas)) {
       let keyType
@@ -340,11 +343,31 @@ can allow lazy filter to enable filtering non-key fields.`)
     Object.freeze(this)
   }
 
+  __getEncodedVal (key, vals) {
+    let funcName
+    const pascalName = key[0].toUpperCase() + key.substring(1)
+    if (this.index === undefined) {
+      funcName = `__get${pascalName}`
+      return this.__ModelCls[funcName](vals)
+    } else {
+      funcName = `__get${pascalName}ForIndex`
+      return this.__ModelCls[funcName](vals, this.index)
+    }
+  }
+
+  __getAWSKeyName (key) {
+    if (this.index === undefined) {
+      return `_${key}`
+    }
+    return this.__ModelCls.__getKeyNamesForIndex(this.index)[`_${key}`]
+  }
+
   __getKeyConditionExpression () {
     const { partitionKeys, sortKeys } = this.__KEY_NAMES
     const keys = { id: partitionKeys, sk: sortKeys }
     const ret = [[], {}, {}]
     for (const keyName of ['id', 'sk']) {
+      const awsKeyName = this.__getAWSKeyName(keyName)
       const keyComponents = {}
       let op
       for (const key of keys[keyName]) {
@@ -357,8 +380,6 @@ can allow lazy filter to enable filtering non-key fields.`)
       if (Object.keys(keyComponents).length === 0) {
         continue
       }
-      const pascalName = keyName[0].toUpperCase() + keyName.substring(1)
-      const funcName = `__get${pascalName}`
       if (op === 'between') {
         const betweenKeyComponents = [{}, {}]
         for (const [key, value] of Object.entries(keyComponents)) {
@@ -367,27 +388,27 @@ can allow lazy filter to enable filtering non-key fields.`)
           }
         }
         const [leftKeyComponents, rightKeyComponents] = betweenKeyComponents
-        const leftValue = this.__ModelCls[funcName](leftKeyComponents)
-        const rightValue = this.__ModelCls[funcName](rightKeyComponents)
+        const leftValue = this.__getEncodedVal(keyName, leftKeyComponents)
+        const rightValue = this.__getEncodedVal(keyName, rightKeyComponents)
 
         const condition = `#_${keyName} BETWEEN :l_${keyName} AND :r_${keyName}`
         mergeCondition(ret, [
           [condition],
-          { [`#_${keyName}`]: `_${keyName}` },
+          { [`#_${keyName}`]: `${awsKeyName}` },
           {
             [`:l_${keyName}`]: leftValue,
             [`:r_${keyName}`]: rightValue
           }
         ])
       } else {
-        const value = this.__ModelCls[funcName](keyComponents)
+        const value = this.__getEncodedVal(keyName, keyComponents)
         let condition = `#_${keyName}${op}:_${keyName}`
         if (op === 'prefix') {
           condition = `begins_with(#_${keyName},:_${keyName})`
         }
         mergeCondition(ret, [
           [condition],
-          { [`#_${keyName}`]: `_${keyName}` },
+          { [`#_${keyName}`]: `${awsKeyName}` },
           { [`:_${keyName}`]: value }
         ])
       }

@@ -22,12 +22,14 @@ class TestIteratorModel extends db.Model {
 
   static FIELDS = {
     field1: S.str,
-    field2: S.str
+    field2: S.str,
+    field3: S.arr(S.obj({ a: S.int })).optional()
   }
 
   static INDEXES = {
     index1: { KEY: ['id1', 'id2'], SORT_KEY: ['field1'] },
-    index2: { KEY: ['id1', 'sk1'], SORT_KEY: ['field1', 'field2'] }
+    index2: { KEY: ['id1', 'sk1'], SORT_KEY: ['field1', 'field2'] },
+    index3: { KEY: ['field3'] }
   }
 }
 
@@ -74,8 +76,8 @@ class IteratorTest extends BaseTest {
       // eslint-disable-next-line no-new
       new Query({
         ModelCls: TestIteratorModel,
-        options: { index: 'index1', inconsistentRead: false } 
-})
+        options: { index: 'index1', inconsistentRead: false }
+      })
     }).toThrow(/Invalid option value for index and inconsistent read/)
     expect(() => {
       // eslint-disable-next-line no-new
@@ -172,6 +174,11 @@ class IteratorTest extends BaseTest {
     expect(keyNames.partitionKeys).toEqual(new Set(['k1', 'k2']))
     expect(keyNames.sortKeys).toEqual(new Set(['sk1', 'sk2']))
     expect(keyNames.allKeys).toEqual(new Set(['k1', 'k2', 'sk1', 'sk2']))
+
+    const keyNamesWithIndex = Query.__getKeyNames(TestIteratorModel, 'index2')
+    expect(keyNamesWithIndex.partitionKeys).toEqual(new Set(['id1', 'sk1']))
+    expect(keyNamesWithIndex.sortKeys).toEqual(new Set(['field1', 'field2']))
+    expect(keyNamesWithIndex.allKeys).toEqual(new Set(['id1', 'sk1', 'field1', 'field2']))
   }
 
   testKeyFilters () {
@@ -194,6 +201,24 @@ class IteratorTest extends BaseTest {
     }).toThrow('Filter operations on keys')
   }
 
+  testKeyFiltersWithIndex () {
+    const query = new Query({
+      ModelCls: TestIteratorModel,
+      options: { index: 'index2' }
+    })
+    expect(() => {
+      query.id1('!=', '123')
+    }).toThrow('Only equality filters are allowed on partition keys')
+    expect(() => {
+      query.sk1('!=', '123')
+    }).toThrow('Only equality filters are allowed on partition keys')
+
+    query.id1('xyz').sk1(123).field1('<', '1')
+    expect(() => {
+      query.__checkKeyFilters()
+    }).toThrow('Filter operations on keys')
+  }
+
   testLazyFilter () {
     // query not allowing lazy filters throws when filter on non-key fields
     const query = new Query({
@@ -212,6 +237,29 @@ class IteratorTest extends BaseTest {
       }
     })
     query1.id1('123')
+    expect(() => {
+      query1.field1('345')
+    }).not.toThrow()
+  }
+
+  testLazyFilterWithIndex () {
+    const query = new Query({
+      ModelCls: TestIteratorModel,
+      options: { index: 'index2' }
+    })
+    // id2 isn't a key in the index2 secondary index
+    expect(() => {
+      query.id2('345')
+    }).toThrow(/May not filter on non-key fields/)
+
+    // query allowing lazy filters works when filter exists on non-key fields
+    const query1 = new Query({
+      ModelCls: TestIteratorModel,
+      options: {
+        allowLazyFilter: true,
+        index: 'index2'
+      }
+    })
     expect(() => {
       query1.field1('345')
     }).not.toThrow()
@@ -247,6 +295,52 @@ class IteratorTest extends BaseTest {
     ])
   }
 
+  testKeyConditionWithIndex () {
+    const query = new Query({
+      ModelCls: TestIteratorModel,
+      options: { index: 'index1' }
+    })
+    expect(() => {
+      query.__getKeyConditionExpression(TestIteratorModel)
+    }).toThrow(/Query must contain partition key filters/)
+
+    query.id1('xyz')
+    query.id2(321)
+    query.field1('>', '10')
+    // Index re-uses _id/_sk if the underlying fields are the same
+    expect(query.__getKeyConditionExpression(TestIteratorModel)).toEqual([
+      ['#_id=:_id', '#_sk>:_sk'],
+      { '#_id': '_id', '#_sk': 'field1' },
+      { ':_id': 'xyz' + '\0' + '321', ':_sk': '10' }
+    ])
+
+    const query2 = new Query({
+      ModelCls: TestIteratorModel,
+      options: { index: 'index2' }
+    })
+    query2.id1('xyz').sk1('abc').field1('>', '10')
+    expect(() => {
+      query2.__getKeyConditionExpression(TestIteratorModel)
+    }).toThrow('field2 must be provided')
+    query2.field2('>', '34')
+    expect(query2.__getKeyConditionExpression(TestIteratorModel)).toEqual([
+      ['#_id=:_id', '#_sk>:_sk'],
+      { '#_id': '_c_id1_sk1', '#_sk': '_c_field1_field2' },
+      { ':_id': 'xyz' + '\0' + 'abc', ':_sk': '10' + '\0' + '34' }
+    ])
+
+    const query3 = new Query({
+      ModelCls: TestIteratorModel,
+      options: { index: 'index3' }
+    })
+    query3.field3([{ a: 10 }])
+    expect(query3.__getKeyConditionExpression(TestIteratorModel)).toEqual([
+      ['#_id=:_id'],
+      { '#_id': '_c_field3' },
+      { ':_id': '[{"a":10}]' }
+    ])
+  }
+
   testFilterCondition () {
     const query = new Query({
       ModelCls: TestIteratorModel,
@@ -271,6 +365,33 @@ class IteratorTest extends BaseTest {
       [`#_${awsName}>:_${awsName}`],
       { [`#_${awsName}`]: 'field1' },
       { [`:_${awsName}`]: '23' }
+    ])
+  }
+
+  testFilterConditionWithIndex () {
+    const query = new Query({
+      ModelCls: TestIteratorModel,
+      options: {
+        index: 'index2',
+        allowLazyFilter: true
+      }
+    })
+    query.id1('xyz')
+    query.sk1('abc')
+    expect(query.__getFilterExpression()).toEqual([[], {}, {}])
+
+    query.field1('>', '23')
+    expect(() => {
+      query.__getFilterExpression()
+    }).toThrow(/Filter operations on keys/)
+    query.field2('>', '230')
+
+    query.sk2('>', '123')
+    const awsName = query.__data.sk2.__awsName
+    expect(query.__getFilterExpression()).toEqual([
+      [`#_${awsName}>:_${awsName}`],
+      { [`#_${awsName}`]: 'sk2' },
+      { [`:_${awsName}`]: '123' }
     ])
   }
 
@@ -325,16 +446,20 @@ class IteratorTest extends BaseTest {
     })
     query.id1('xyz')
     query.id2(123)
-    expect(query.__setupParams().ScanIndexForward).toBe(false)
+    const queryParams = query.__setupParams()
+    expect(queryParams.ScanIndexForward).toBe(false)
+    expect(queryParams.IndexName).toBe(undefined)
 
     const scan = new Scan({
       ModelCls: TestIteratorModel,
       options: {
+        index: 'index1',
         shardIndex: 0,
         shardCount: 2
       }
     })
     const params = scan.__setupParams()
+    expect(params.IndexName).toBe('index1')
     expect(params.Segment).toBe(0)
     expect(params.TotalSegments).toBe(2)
   }
@@ -515,7 +640,7 @@ class ScanTest extends BaseTest {
 
     await db.Transaction.run(async tx => {
       const scan = tx.scan(ScanModel, { index: 'index1' })
-      const models2 = await scan.fetch(10)[0]
+      const models2 = (await scan.fetch(10))[0]
       expect(models2.length).toBe(4)
       expect(tx.__writeBatcher.__allModels.length).toBe(0)
     })
@@ -554,6 +679,12 @@ class QueryModel extends db.Model {
   static FIELDS = {
     field: S.int
   }
+
+  static INDEXES = {
+    index1: { KEY: ['id1', 'id2'], SORT_KEY: ['field'] },
+    index2: { KEY: ['id1', 'sk1'], SORT_KEY: ['id2'] },
+    index3: { KEY: ['id1'], SORT_KEY: ['field'] }
+  }
 }
 
 class SortModel extends db.Model {
@@ -565,6 +696,10 @@ class SortModel extends db.Model {
     sk: S.obj({
       arr: S.arr(S.int)
     })
+  }
+
+  static INDEXES = {
+    index: { KEY: ['sk'] }
   }
 }
 
@@ -616,6 +751,22 @@ class QueryTest extends BaseTest {
     expect(results[1].sk1).toBe('123')
   }
 
+  async testQueryIdWithIndex () {
+    await db.Transaction.run(async tx => {
+      let query = tx.query(QueryModel, { index: 'index1' })
+      query.id1('1').id2(1)
+      let result = (await query.fetch(10))[0]
+      expect(result.length).toBe(2)
+      expect([result[0].field, result[1].field]).toEqual([0, 1])
+
+      query = tx.query(QueryModel, { index: 'index2' })
+      query.id1('1').sk1('0')
+      result = (await query.fetch(10))[0]
+      expect(result.length).toBe(1)
+      expect(result[0].sk1).toBe('0')
+    })
+  }
+
   async testQueryNonExistentId () {
     const results = await db.Transaction.run(async tx => {
       const query = tx.query(QueryModel)
@@ -624,6 +775,14 @@ class QueryTest extends BaseTest {
       return (await query.fetch(10))[0]
     })
     expect(results.length).toBe(0)
+
+    const results2 = await db.Transaction.run(async tx => {
+      const query = tx.query(QueryModel, { index: 'index1' })
+      query.id1('invalid')
+      query.id2(1)
+      return (await query.fetch(10))[0]
+    })
+    expect(results2.length).toBe(0)
   }
 
   async testQuerySortKey () {
@@ -635,6 +794,18 @@ class QueryTest extends BaseTest {
       return (await query.fetch(10))[0]
     })
     expect(results.length).toBe(1)
+  }
+
+  async testQuerySortKeyWithIndex () {
+    const results2 = await db.Transaction.run(async tx => {
+      const query = tx.query(QueryModel, { index: 'index1' })
+      query.id1('1')
+      query.id2(1)
+      query.field('>', 0)
+
+      return (await query.fetch(10))[0]
+    })
+    expect(results2.length).toBe(1)
   }
 
   async testBetweenSortKey () {
@@ -667,6 +838,16 @@ class QueryTest extends BaseTest {
     expect(results[1].sk1).toBe('0')
   }
 
+  async testQueryDescendingWithIndex () {
+    await db.Transaction.run(async tx => {
+      const query = tx.query(QueryModel, { index: 'index3', descending: true })
+      query.id1('1')
+      const results = (await query.fetch(10))[0]
+      expect(results.length).toBe(2)
+      expect(results[0].field).toBe(1)
+    })
+  }
+
   async testLazyFilter () {
     const results = await db.Transaction.run(async tx => {
       // example lazyFilter start
@@ -682,6 +863,25 @@ class QueryTest extends BaseTest {
       return ret
     })
     expect(results.length).toBe(1)
+  }
+
+  async testLazyFilterWithIndex () {
+    await db.Transaction.run(async tx => {
+      // example lazyFilter start
+      const query = tx.query(QueryModel, { index: 'index2', allowLazyFilter: true })
+      // example lazyFilter end
+      query.id1('1').sk1('0')
+      const results = (await query.fetch(10))[0]
+      expect(results.length).toBe(1)
+      expect(results[0].field).toBe(0)
+
+      const query2 = tx.query(QueryModel, { index: 'index2', allowLazyFilter: true })
+      // example lazyFilter end
+      query2.id1('1').sk1('0')
+      query2.field('>', '0')
+      const results2 = (await query2.fetch(10))[0]
+      expect(results2.length).toBe(0)
+    })
   }
 
   async testInconsistentRead () {

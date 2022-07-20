@@ -598,6 +598,28 @@ class Model {
     return this.__encodeCompoundValue(this.__keyOrder.sort, vals, useNumericKey)
   }
 
+  static __getIndexCompoundValue (keys, vals) {
+    if (keys.length === 1 && typeof vals[keys[0]] !== 'object') {
+      return vals[keys[0]]
+    }
+    const fieldName = this.__encodeCompoundFieldName(keys)
+    if (['_id', '_sk'].includes(fieldName)) {
+      // using model key encoding so use existing logic
+      return this.__encodeCompoundValue(keys, vals, this.__useNumericKey(keys))
+    }
+    return CompoundField.__encodeCompoundValue(keys, vals)
+  }
+
+  static __getIdForIndex (vals, index) {
+    const keys = this.INDEXES[index].KEY.sort()
+    return this.__getIndexCompoundValue(keys, vals)
+  }
+
+  static __getSkForIndex (vals, index) {
+    const keys = this.INDEXES[index].SORT_KEY.sort()
+    return this.__getIndexCompoundValue(keys, vals)
+  }
+
   /**
    * Generate a compound field name given a list of fields.
    * For compound field containing a single field that is not either a PK or SK,
