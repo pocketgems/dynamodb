@@ -79,11 +79,8 @@ class Model {
       this.__addField(fieldIdx++, name, opts, vals)
     }
 
-    for (const keys of Object.values(this.constructor.INDEXES)) {
-      this.__addCompoundField(fieldIdx++, keys.KEY, isNew)
-      if (keys.SORT_KEY !== undefined) {
-        this.__addCompoundField(fieldIdx++, keys.SORT_KEY, isNew)
-      }
+    for (const field of this.constructor.__compoundFields) {
+      this.__addCompoundField(fieldIdx++, field.split('\0'), isNew)
     }
     Object.seal(this)
   }
@@ -283,6 +280,7 @@ class Model {
     // this model. This is the combination of attributes (keys) defined by KEY,
     // SORT_KEY and FIELDS.
     this._attrs = {}
+    this.__compoundFields = new Set()
     this.__KEY_COMPONENT_NAMES = new Set()
     const partitionKeys = new Set(this.__keyOrder.partition)
     const sortKeys = new Set(this.__keyOrder.sort)
@@ -298,6 +296,16 @@ class Model {
       this._attrs[fieldName] = finalFieldOpts
       if (keyType) {
         this.__KEY_COMPONENT_NAMES.add(fieldName)
+      }
+    }
+    if (this.ENABLE_LAZY_FILTER_ON_KEY_FIELDS) {
+      this.__compoundFields = new Set(
+        [...Object.keys(this.KEY), ...Object.keys(this.SORT_KEY)])
+    }
+    for (const keys of Object.values(this.INDEXES)) {
+      this.__compoundFields.add(keys.KEY.join('\0'))
+      if (keys.SORT_KEY !== undefined) {
+        this.__compoundFields.add(keys.SORT_KEY.join('\0'))
       }
     }
   }
@@ -550,6 +558,15 @@ class Model {
    *   }
    */
   static INDEXES = {}
+
+  /**
+   * If this is enabled, we will create individual fields internally for
+   * all the field in KEY, SORT_KEY. This will incrase the storage cost but
+   * enable users to use lazy filter on individual key fields.
+   * This works only for querying via indexes, if the key field isn't part
+   * of a key in that index.
+   */
+  static ENABLE_LAZY_FILTER_ON_KEY_FIELDS = false
 
   get _id () {
     return this.__getKey(this.constructor.__keyOrder.partition,

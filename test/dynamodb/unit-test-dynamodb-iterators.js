@@ -33,6 +33,23 @@ class TestIteratorModel extends db.Model {
   }
 }
 
+class LazyFilterKeyModel extends db.Model {
+  static ENABLE_LAZY_FILTER_ON_KEY_FIELDS = true
+
+  static KEY = {
+    id: S.str,
+    num: S.int
+  }
+
+  static FIELDS = {
+    field: S.str
+  }
+
+  static INDEXES = {
+    index: { KEY: ['field'] }
+  }
+}
+
 class IteratorTest extends BaseTest {
   async beforeAll () {
     await super.beforeAll()
@@ -263,6 +280,7 @@ class IteratorTest extends BaseTest {
     expect(() => {
       query1.field1('345')
     }).not.toThrow()
+    expect(() => query1.sk2('0')).toThrow(/May not filter on sk2/)
   }
 
   testKeyCondition () {
@@ -368,7 +386,7 @@ class IteratorTest extends BaseTest {
     ])
   }
 
-  testFilterConditionWithIndex () {
+  async testFilterConditionWithIndex () {
     const query = new Query({
       ModelCls: TestIteratorModel,
       options: {
@@ -384,14 +402,36 @@ class IteratorTest extends BaseTest {
     expect(() => {
       query.__getFilterExpression()
     }).toThrow(/Filter operations on keys/)
-    query.field2('>', '230')
 
-    query.sk2('>', '123')
-    const awsName = query.__data.sk2.__awsName
-    expect(query.__getFilterExpression()).toEqual([
+    const query2 = new Query({
+      ModelCls: TestIteratorModel,
+      options: {
+        index: 'index1',
+        allowLazyFilter: true
+      }
+    })
+    query2.id1('xyz').id2(3).field2('>', '23')
+    const awsName = query2.__data.field2.__awsName
+    expect(query2.__getFilterExpression()).toEqual([
       [`#_${awsName}>:_${awsName}`],
-      { [`#_${awsName}`]: 'sk2' },
-      { [`:_${awsName}`]: '123' }
+      { [`#_${awsName}`]: 'field2' },
+      { [`:_${awsName}`]: '23' }
+    ])
+
+    await LazyFilterKeyModel.createResource()
+    const query3 = new Query({
+      ModelCls: LazyFilterKeyModel,
+      options: {
+        index: 'index',
+        allowLazyFilter: true
+      }
+    })
+    query3.field('1').num(2)
+    const awsName2 = query3.__data.num.__awsName
+    expect(query3.__getFilterExpression()).toEqual([
+      [`#_${awsName2}=:_${awsName2}`],
+      { [`#_${awsName2}`]: '_c_num' },
+      { [`:_${awsName2}`]: 2 }
     ])
   }
 
@@ -867,20 +907,51 @@ class QueryTest extends BaseTest {
 
   async testLazyFilterWithIndex () {
     await db.Transaction.run(async tx => {
-      // example lazyFilter start
       const query = tx.query(QueryModel, { index: 'index2', allowLazyFilter: true })
-      // example lazyFilter end
       query.id1('1').sk1('0')
       const results = (await query.fetch(10))[0]
       expect(results.length).toBe(1)
       expect(results[0].field).toBe(0)
 
       const query2 = tx.query(QueryModel, { index: 'index2', allowLazyFilter: true })
-      // example lazyFilter end
       query2.id1('1').sk1('0')
       query2.field('>', '0')
       const results2 = (await query2.fetch(10))[0]
       expect(results2.length).toBe(0)
+    })
+
+    LazyFilterKeyModel.createResource()
+    await db.Transaction.run(async tx => {
+      const models = [
+        LazyFilterKeyModel.data({
+          id: '1',
+          num: 1,
+          field: 'test'
+        }),
+        LazyFilterKeyModel.data({
+          id: '2',
+          num: 1,
+          field: 'test'
+        }),
+        LazyFilterKeyModel.data({
+          id: '1',
+          num: 2,
+          field: 'test'
+        }),
+        LazyFilterKeyModel.data({
+          id: '2',
+          num: 2,
+          field: 'test'
+        })
+      ]
+      return tx.get(models, { createIfMissing: true })
+    })
+
+    await db.Transaction.run(async tx => {
+      const query = tx.query(LazyFilterKeyModel, { index: 'index', allowLazyFilter: true })
+      query.field('test').num('>', 1)
+      const results = (await query.fetch(10))[0]
+      expect(results.length).toBe(2)
     })
   }
 

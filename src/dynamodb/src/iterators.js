@@ -309,8 +309,11 @@ class Query extends __DBIterator {
     this.__data = {}
 
     let index = 0
+    // Use the PK, SK for the index if present
     this.__KEY_NAMES = this.constructor.__getKeyNames(ModelCls, this.index)
     const { partitionKeys, sortKeys } = this.__KEY_NAMES
+    // We want to know the PK, SK for the model for lazy filtering
+    const modelKeys = this.constructor.__getKeyNames(ModelCls)
     for (const name of Object.keys(ModelCls.schema.objectSchemas)) {
       let keyType
       if (partitionKeys.has(name)) {
@@ -318,14 +321,23 @@ class Query extends __DBIterator {
       } else if (sortKeys.has(name)) {
         keyType = 'SORT'
       }
-
-      const handle = new Filter(this.constructor.METHOD, name, `${index}`,
+      let filterName = name
+      if (this.index !== undefined && !keyType && modelKeys.allKeys.has(name)) {
+        // We are trying to filter on a field from the model's key
+        filterName = ModelCls.__encodeCompoundFieldName([name])
+      }
+      const handle = new Filter(this.constructor.METHOD, filterName, `${index}`,
         keyType)
       this.__data[name] = handle
       if (!keyType && !this.allowLazyFilter) {
         this[name] = () => {
           throw new InvalidFilterError(`May not filter on non-key fields. You
 can allow lazy filter to enable filtering non-key fields.`)
+        }
+      } else if (!keyType && filterName !== name && !ModelCls.__compoundFields.has(name)) {
+        this[name] = () => {
+          throw new InvalidFilterError(`May not filter on ${name}
+          if ENABLE_LAZY_FILTER_ON_KEY_FIELDS is false`)
         }
       } else {
         const self = this
