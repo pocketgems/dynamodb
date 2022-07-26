@@ -13,9 +13,9 @@ const { validateValue } = require('./utils')
  * @private
  * @memberof Internal
  */
-class __FieldPrototype {
+class __FieldInterface {
   constructor () {
-    if (this.constructor === __FieldPrototype) {
+    if (this.constructor === __FieldInterface) {
       throw new Error('Can not instantiate abstract class')
     }
   }
@@ -48,10 +48,6 @@ class __FieldPrototype {
     throw new NotImplementedError()
   }
 
-  get canUpdateWithoutCondition () {
-    throw new NotImplementedError()
-  }
-
   __conditionExpression (exprKey) {
     throw new NotImplementedError()
   }
@@ -76,7 +72,7 @@ class __FieldPrototype {
  * @private
  * @memberof Internal
  */
-class __Field extends __FieldPrototype {
+class __Field extends __FieldInterface {
   static __validateFieldOptions (modelName, keyType, fieldName, schema) {
     if (fieldName.startsWith('_')) {
       throw new InvalidFieldError(
@@ -554,8 +550,8 @@ class ArrayField extends __Field {
  * @private
  * @memberof Internal
  */
-class CompoundField extends __FieldPrototype {
-  constructor (idx, name, isNew, ...fields) {
+class __CompoundField extends __FieldInterface {
+  constructor ({ idx, name, isNew, fields }) {
     super()
     if (fields.every(field => field instanceof __Field) === false) {
       throw new InvalidFieldError(name, 'Compound field can contain only Field objects')
@@ -565,6 +561,7 @@ class CompoundField extends __FieldPrototype {
     this.__idx = idx
     this.__isNew = isNew
     this.__initialValue = this.__value
+    this.canUpdateWithoutCondition = true
   }
 
   get __awsName () {
@@ -572,7 +569,7 @@ class CompoundField extends __FieldPrototype {
   }
 
   get mutated () {
-    return this.__isNew || this.__value !== this.__initialValue
+    return this.__isNew || (this.__mayHaveMutated && this.__value !== this.__initialValue)
   }
 
   get __mayHaveMutated () {
@@ -591,17 +588,17 @@ class CompoundField extends __FieldPrototype {
   * @returns encoded value for the compound field
   **/
   get __value () {
-    if (this.__fields.some(field => field.__value === undefined)) {
-      return undefined
+    const allVal = {}
+    for (const field of this.__fields) {
+      if (field.__value === undefined) {
+        return undefined
+      }
+      allVal[field.name] = field.__value
     }
-    const allVal = this.__fields.reduce((result, field) => {
-      result[field.name] = field.__value
-      return result
-    }, {})
-    return this.constructor.__encodeCompoundValue(Object.keys(allVal), allVal)
+    return this.constructor.__encodeValues(Object.keys(allVal), allVal)
   }
 
-  static __encodeCompoundValue (fields, values) {
+  static __encodeValues (fields, values) {
     const pieces = []
     fields = fields.sort()
     if (fields.length === 1 && typeof (values[fields[0]]) === 'number') {
@@ -650,18 +647,14 @@ class CompoundField extends __FieldPrototype {
     ]
   }
 
-  get canUpdateWithoutCondition () {
-    return true
-  }
-
   __conditionExpression (exprKey) {
     return []
   }
 
   validate () {
-    for (const field of this.__fields) {
-      field.validate()
-    }
+    // All the underlying fields are validated in it's own section, no need to
+    // re-validate them here
+    return true
   }
 }
 
@@ -676,13 +669,13 @@ const SCHEMA_TYPE_TO_FIELD_CLASS_MAP = {
 }
 
 module.exports = {
-  __FieldPrototype,
+  __FieldInterface,
   __Field,
   NumberField,
   ArrayField,
   BooleanField,
   StringField,
   ObjectField,
-  CompoundField,
+  __CompoundField,
   SCHEMA_TYPE_TO_FIELD_CLASS_MAP
 }

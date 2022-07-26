@@ -1,5 +1,5 @@
 const { InvalidFieldError, NotImplementedError } = require('../../src/dynamodb/src/errors')
-const { CompoundField, __FieldPrototype } = require('../../src/dynamodb/src/fields')
+const { __CompoundField, __FieldInterface } = require('../../src/dynamodb/src/fields')
 const S = require('../../src/schema/src/schema')
 const { BaseTest, runTests } = require('../base-unit-test')
 const db = require('../db-with-field-maker')
@@ -661,13 +661,12 @@ class CompoundFieldTest extends BaseTest {
   async testInvalidFieldTypes () {
     expect(() => {
       // eslint-disable-next-line no-new
-      new CompoundField('1', 'fail', this.__numField, 'str')
+      new __CompoundField({ idx: '1', fields: [this.__numField, 'str'] })
     }).toThrow(InvalidFieldError)
   }
 
   async testValueEncoding () {
-    const field = new CompoundField(
-      '1', 'test', false, this.__numField, this.__strField, this.__objField)
+    const field = new __CompoundField({ idx: '1', fields: [this.__numField, this.__strField, this.__objField] })
     expect(field.get()).toBe(['10', '{"a":{"b":1}}', 'test'].join('\0'))
     this.__numField.incrementBy(5)
     this.__objField.__value.a.b = 4
@@ -679,22 +678,22 @@ class CompoundFieldTest extends BaseTest {
       () => field.get()
     ).toThrow(/str cannot put null bytes in strings in compound values/)
 
-    const field2 = new CompoundField('1', 'test', false, this.__numField)
+    const field2 = new __CompoundField({ fields: [this.__numField] })
     expect(field2.get()).toBe(this.__numField.__value)
   }
 
   async testValidate () {
-    const field = new CompoundField(
-      '1', 'test', false, this.__numField, this.__strField, this.__objField)
-    expect(() => { field.validate() }).not.toThrowError()
+    const field = new __CompoundField({ fields: [this.__numField, this.__strField, this.__objField] })
+    expect(field.validate()).toBe(true)
+    // Compound field returns true always. This is because of the assumption
+    // that the underlying fields are validated already and we don't want to add redundant validations.
     this.__numField.__value = 'a'
-    expect(() => { field.validate() }).toThrow()
+    expect(field.validate()).toBe(true)
   }
 
   async testAccessed () {
-    const field1 = new CompoundField('1', 'test', false, this.__numField)
-    const field2 = new CompoundField(
-      '1', 'test', true, this.__numField, this.__strField, this.__objField)
+    const field1 = new __CompoundField({ fields: [this.__numField] })
+    const field2 = new __CompoundField({ fields: [this.__numField, this.__strField, this.__objField] })
 
     expect(field1.accessed).toBe(false)
     expect(field2.accessed).toBe(false)
@@ -708,10 +707,9 @@ class CompoundFieldTest extends BaseTest {
   }
 
   async testMutated () {
-    const field1 = new CompoundField('1', 'test', false, this.__numField)
-    const field2 = new CompoundField('1', 'test', true, this.__numField)
-    const field3 = new CompoundField(
-      '1', 'test', true, this.__numField, this.__strField)
+    const field1 = new __CompoundField({ isNew: false, fields: [this.__numField] })
+    const field2 = new __CompoundField({ isNew: true, fields: [this.__numField] })
+    const field3 = new __CompoundField({ isNew: true, fields: [this.__numField, this.__strField] })
 
     expect(field1.mutated).toBe(false)
     expect(field2.mutated).toBe(true)
@@ -721,7 +719,7 @@ class CompoundFieldTest extends BaseTest {
     expect(field1.__mayHaveMutated).toBe(false)
     expect(field2.__mayHaveMutated).toBe(true)
 
-    expect(field1.mutated).toBe(true)
+    expect(field1.mutated).toBe(false)
     expect(field2.mutated).toBe(true)
     expect(field3.mutated).toBe(true)
 
@@ -730,22 +728,22 @@ class CompoundFieldTest extends BaseTest {
   }
 
   async testSetValue () {
-    const field = new CompoundField('1', 'test', false, this.__numField)
+    const field = new __CompoundField({ name: 'dummy', fields: [this.__numField] })
     expect(() => {
       field.set(10)
     }).toThrow(InvalidFieldError)
   }
 
   async testUpdateExpression () {
-    const field = new CompoundField('1', 'test', false, this.__numField)
+    const field = new __CompoundField({ idx: '1', isNew: false, fields: [this.__numField] })
     expect(field.__updateExpression('1')).toEqual([])
 
     const exprKey = '_1'
-    const field2 = new CompoundField('1', 'test', true, this.__numField)
+    const field2 = new __CompoundField({ idx: '1', isNew: true, fields: [this.__numField] })
     expect(field2.__updateExpression(exprKey)).toEqual(
       ['#1=_1', { [exprKey]: field2.__value }, false])
 
-    const field3 = new CompoundField('1', 'test', false, this.__numField, this.__strField)
+    const field3 = new __CompoundField({ idx: '1', isNew: false, fields: [this.__numField, this.__strField] })
     this.__numField.incrementBy(10)
     const [set, vals, remove] = field3.__updateExpression(exprKey)
     expect(set).toBe('#1=_1')
@@ -766,11 +764,11 @@ class CompoundFieldTest extends BaseTest {
 class AbstractFieldTest extends BaseTest {
   testCreatingAbstractField () {
     // eslint-disable-next-line no-new
-    expect(() => { new __FieldPrototype() }).toThrow(Error)
+    expect(() => { new __FieldInterface() }).toThrow(Error)
   }
 
   testAbstractMethods () {
-    class DummyCls extends __FieldPrototype {}
+    class DummyCls extends __FieldInterface {}
     const obj = new DummyCls()
     expect(() => obj.__awsName).toThrow(NotImplementedError)
     expect(() => obj.mutated).toThrow(NotImplementedError)
@@ -779,7 +777,6 @@ class AbstractFieldTest extends BaseTest {
     expect(() => obj.get()).toThrow(NotImplementedError)
     expect(() => obj.set('')).toThrow(NotImplementedError)
     expect(() => obj.__updateExpression('')).toThrow(NotImplementedError)
-    expect(() => obj.canUpdateWithoutCondition).toThrow(NotImplementedError)
     expect(() => obj.__conditionExpression('')).toThrow(NotImplementedError)
     expect(() => obj.validate()).toThrow(NotImplementedError)
   }

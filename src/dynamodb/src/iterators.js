@@ -37,11 +37,11 @@ class __DBIterator {
   }
 
   static __assertValidInputs (ModelCls, options) {
-    if (options.index !== undefined) {
+    if (options.index) {
       if (options.inconsistentRead === false) {
         throw new InvalidOptionsError('index and inconsistent read. Reading from index needs to be inconsistent')
       }
-      if (Object.keys(ModelCls.INDEXES).includes(options.index) === false) {
+      if (!ModelCls.INDEXES[options.index]) {
         throw new InvalidOptionsError(`index ${options.index}`)
       }
     }
@@ -53,10 +53,10 @@ class __DBIterator {
 
   static __getKeyNames (Cls, index) {
     const extractKey = (name) => {
-      if (index === undefined) {
-        return new Set(Object.keys(Cls[name]))
+      if (index) {
+        return new Set(Cls.INDEXES[index][name])
       }
-      return new Set(Cls.INDEXES[index][name])
+      return new Set(Object.keys(Cls[name]))
     }
     const partitionKeys = extractKey('KEY')
     const sortKeys = extractKey('SORT_KEY')
@@ -100,7 +100,7 @@ class __DBIterator {
         ConsistentRead: !this.inconsistentRead
       }
 
-      if (this.index !== undefined) {
+      if (this.index) {
         params.IndexName = this.index
       }
 
@@ -152,13 +152,11 @@ class __DBIterator {
 
     const models = result.Items.map(item => {
       const m = new this.__ModelCls(ITEM_SOURCE[method.toUpperCase()], false,
-        item)
+        item, !!this.index)
       if (m.__hasExpired) {
         return undefined
       }
-      if (this.index === undefined) {
-        this.__writeBatcher.track(m)
-      }
+      this.__writeBatcher.track(m)
       return m
     }).filter(m => !!m)
 
@@ -322,7 +320,7 @@ class Query extends __DBIterator {
         keyType = 'SORT'
       }
       let filterName = name
-      if (this.index !== undefined && !keyType && modelKeys.allKeys.has(name)) {
+      if (this.index && !keyType && modelKeys.allKeys.has(name)) {
         // We are trying to filter on a field from the model's key
         filterName = ModelCls.__encodeCompoundFieldName([name])
       }
@@ -337,7 +335,7 @@ can allow lazy filter to enable filtering non-key fields.`)
       } else if (!keyType && filterName !== name && !ModelCls.__compoundFields.has(name)) {
         this[name] = () => {
           throw new InvalidFilterError(`May not filter on ${name}
-          if ENABLE_LAZY_FILTER_ON_KEY_FIELDS is false`)
+          if INDEX_INCLUDE_KEYS is false`)
         }
       } else {
         const self = this
@@ -358,20 +356,20 @@ can allow lazy filter to enable filtering non-key fields.`)
   __getEncodedVal (key, vals) {
     let funcName
     const pascalName = key[0].toUpperCase() + key.substring(1)
-    if (this.index === undefined) {
-      funcName = `__get${pascalName}`
-      return this.__ModelCls[funcName](vals)
-    } else {
+    if (this.index) {
       funcName = `__get${pascalName}ForIndex`
       return this.__ModelCls[funcName](vals, this.index)
+    } else {
+      funcName = `__get${pascalName}`
+      return this.__ModelCls[funcName](vals)
     }
   }
 
   __getAWSKeyName (key) {
-    if (this.index === undefined) {
-      return `_${key}`
+    if (this.index) {
+      return this.__ModelCls.__getKeyNamesForIndex(this.index)[`_${key}`]
     }
-    return this.__ModelCls.__getKeyNamesForIndex(this.index)[`_${key}`]
+    return `_${key}`
   }
 
   __getKeyConditionExpression () {

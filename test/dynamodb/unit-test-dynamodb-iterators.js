@@ -34,7 +34,7 @@ class TestIteratorModel extends db.Model {
 }
 
 class LazyFilterKeyModel extends db.Model {
-  static ENABLE_LAZY_FILTER_ON_KEY_FIELDS = true
+  static INDEX_INCLUDE_KEYS = true
 
   static KEY = {
     id: S.str,
@@ -682,7 +682,7 @@ class ScanTest extends BaseTest {
       const scan = tx.scan(ScanModel, { index: 'index1' })
       const models2 = (await scan.fetch(10))[0]
       expect(models2.length).toBe(4)
-      expect(tx.__writeBatcher.__allModels.length).toBe(0)
+      expect(() => models2[0].rank++).toThrow('Can not modify a read-only model')
     })
   }
 
@@ -793,15 +793,16 @@ class QueryTest extends BaseTest {
 
   async testQueryIdWithIndex () {
     await db.Transaction.run(async tx => {
-      let query = tx.query(QueryModel, { index: 'index1' })
+      const query = tx.query(QueryModel, { index: 'index1' })
       query.id1('1').id2(1)
-      let result = (await query.fetch(10))[0]
+      const result = (await query.fetch(10))[0]
       expect(result.length).toBe(2)
       expect([result[0].field, result[1].field]).toEqual([0, 1])
-
-      query = tx.query(QueryModel, { index: 'index2' })
+    })
+    await db.Transaction.run(async tx => {
+      const query = tx.query(QueryModel, { index: 'index2' })
       query.id1('1').sk1('0')
-      result = (await query.fetch(10))[0]
+      const result = (await query.fetch(10))[0]
       expect(result.length).toBe(1)
       expect(result[0].sk1).toBe('0')
     })

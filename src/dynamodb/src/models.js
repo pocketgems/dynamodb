@@ -17,7 +17,7 @@ const {
   ModelAlreadyExistsError,
   ModelDeletedTwiceError
 } = require('./errors')
-const { __Field, SCHEMA_TYPE_TO_FIELD_CLASS_MAP, CompoundField } = require('./fields')
+const { __Field, SCHEMA_TYPE_TO_FIELD_CLASS_MAP, __CompoundField } = require('./fields')
 const { Key } = require('./key')
 const {
   validateValue,
@@ -35,9 +35,9 @@ class Model {
    * Create a representation of a database Item. Should only be used by the
    * library.
    */
-  constructor (src, isNew, vals) {
+  constructor (src, isNew, vals, readOnly = false) {
     this.isNew = !!isNew
-
+    this.__readOnly = readOnly
     if (!ITEM_SOURCES.has(src)) {
       throw new InvalidParameterError('src', 'invalid item source type')
     }
@@ -82,6 +82,7 @@ class Model {
     for (const field of this.constructor.__compoundFields) {
       this.__addCompoundField(fieldIdx++, field.split('\0'), isNew)
     }
+
     Object.seal(this)
   }
 
@@ -130,6 +131,9 @@ class Model {
         return field.get()
       },
       set: (val) => {
+        if (this.__readOnly) {
+          throw new InvalidFieldError('', 'Can not modify a read-only model')
+        }
         const field = getCachedField()
         field.set(val)
       }
@@ -146,7 +150,7 @@ class Model {
       if (this.__cached_attrs[name]) {
         return this.__cached_attrs[name]
       }
-      const field = new CompoundField(idx, name, isNew, ...fields)
+      const field = new __CompoundField({ idx, name, isNew, fields })
       this.__cached_attrs[name] = field
       return field
     }
@@ -298,7 +302,7 @@ class Model {
         this.__KEY_COMPONENT_NAMES.add(fieldName)
       }
     }
-    if (this.ENABLE_LAZY_FILTER_ON_KEY_FIELDS) {
+    if (this.INDEX_INCLUDE_KEYS) {
       this.__compoundFields = new Set(
         [...Object.keys(this.KEY), ...Object.keys(this.SORT_KEY)])
     }
@@ -566,7 +570,7 @@ class Model {
    * This works only for querying via indexes, if the key field isn't part
    * of a key in that index.
    */
-  static ENABLE_LAZY_FILTER_ON_KEY_FIELDS = false
+  static INDEX_INCLUDE_KEYS = false
 
   get _id () {
     return this.__getKey(this.constructor.__keyOrder.partition,
@@ -624,7 +628,7 @@ class Model {
       // using model key encoding so use existing logic
       return this.__encodeCompoundValue(keys, vals, this.__useNumericKey(keys))
     }
-    return CompoundField.__encodeCompoundValue(keys, vals)
+    return __CompoundField.__encodeValues(keys, vals)
   }
 
   static __getIdForIndex (vals, index) {
@@ -647,9 +651,6 @@ class Model {
    * @returns a string denoting the compound field's internal name
    */
   static __encodeCompoundFieldName (fields) {
-    // Check if the field is array or object schema type - if not then use as-is
-    // Write Unit tests for this
-    // Test it again on querying an index
     if (fields.length === 1 && this.FIELDS[fields[0]] &&
       !['array', 'object'].includes(this.FIELDS[fields[0]].getProp('type'))) {
       return fields[0]
