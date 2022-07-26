@@ -79,8 +79,11 @@ class Model {
       this.__addField(fieldIdx++, name, opts, vals)
     }
 
-    for (const field of this.constructor.__compoundFields) {
-      this.__addCompoundField(fieldIdx++, field.split('\0'), isNew)
+    for (let field of this.constructor.__compoundFields) {
+      if (typeof (field) === 'string') {
+        field = [field]
+      }
+      this.__addCompoundField(fieldIdx++, field, isNew)
     }
 
     Object.seal(this)
@@ -268,6 +271,25 @@ class Model {
     return this.__CACHED_KEY_ORDER
   }
 
+  static __validateIndexKeys (index, data) {
+    const isFieldOptional = (fields) => {
+      if (fields.some(field => this._attrs[field].optional)) {
+        return true
+      }
+      return false
+    }
+    if (!data.SPARSE) {
+      if (isFieldOptional(data.KEY) || (data.SORT_KEY && isFieldOptional(data.SORT_KEY))) {
+        throw new InvalidIndexError(index, `Can not use optional fields as key.
+        Make it a sparse index to use optional fields`)
+      }
+    }
+    this.__compoundFields.add(data.KEY)
+    if (data.SORT_KEY) {
+      this.__compoundFields.add(data.SORT_KEY)
+    }
+  }
+
   /**
    * Check that field names don't overlap, etc.
    */
@@ -306,11 +328,8 @@ class Model {
       this.__compoundFields = new Set(
         [...Object.keys(this.KEY), ...Object.keys(this.SORT_KEY)])
     }
-    for (const keys of Object.values(this.INDEXES)) {
-      this.__compoundFields.add(keys.KEY.join('\0'))
-      if (keys.SORT_KEY !== undefined) {
-        this.__compoundFields.add(keys.SORT_KEY.join('\0'))
-      }
+    for (const [index, keys] of Object.entries(this.INDEXES)) {
+      this.__validateIndexKeys(index, keys)
     }
   }
 

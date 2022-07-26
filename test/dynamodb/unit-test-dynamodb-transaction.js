@@ -42,9 +42,9 @@ class TransactionModel extends db.Model {
   }
 
   static INDEXES = {
-    index1: { KEY: ['id'], SORT_KEY: ['field1', 'field2'] },
-    index2: { KEY: ['arrField'] },
-    index3: { KEY: ['id', 'field1'] }
+    index1: { KEY: ['id'], SORT_KEY: ['field1', 'field2'], SPARSE: true },
+    index2: { KEY: ['arrField'], SPARSE: true },
+    index3: { KEY: ['id', 'field1'], SPARSE: true }
   }
 }
 

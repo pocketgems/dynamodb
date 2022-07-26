@@ -233,6 +233,14 @@ class SimpleModelTest extends BaseTest {
     await resetAndCreateTable()
     expect(updateParams.GlobalSecondaryIndexUpdates[0].Create.IndexName).toBe('index2')
 
+    IndexDBModel.FIELDS.rank = S.int.optional()
+    expect(resetAndCreateTable()).rejects.toThrow(/Can not use optional fields as key/)
+
+    IndexDBModel.INDEXES.index1.SPARSE = true
+    IndexDBModel.INDEXES.index2.SPARSE = true
+    resetAndCreateTable()
+
+    IndexDBModel.FIELDS.rank = S.int
     IndexDBModel.INDEXES = {
       index3: { KEY: ['rank'] }
     }
