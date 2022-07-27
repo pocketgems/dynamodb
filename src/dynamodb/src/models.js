@@ -1020,6 +1020,7 @@ class Model {
     if (Object.keys(exprValues).length) {
       ret.ExpressionAttributeValues = exprValues
     }
+    // istanbul ignore else
     if (Object.keys(exprAttrNames).length) {
       ret.ExpressionAttributeNames = exprAttrNames
     }
