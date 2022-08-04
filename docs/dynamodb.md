@@ -64,7 +64,7 @@ is composed of one or more _Columns_ (also known as _Fields_).
 Each row is uniquely identified by a [_Key_](#keys) (more on this later).
 
 ## Minimal Example
-Define a new table like this:
+Define a new table like this, which uses the [Todea Schema library](./schema.md) to enfore Table schema:
 ```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:scope:Order -->
 class Order extends db.Model {
   static FIELDS = {
@@ -104,7 +104,7 @@ changed.
 
 You can override the default and define your key to be composed of one _or
 more_ fields with arbitrary
-[Todea schema](./schema.md)s (`R`):
+[Todea schema](./schema.md)s (`S`):
 ```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:scope:RaceResult -->
 class RaceResult extends db.Model {
   static KEY = {
@@ -147,8 +147,9 @@ the same key.
 
 
 ### Fields
-Fields are pieces of data attached to a row. Fields and columns are the same thing.
-They are defined similar to `KEY`:
+Fields are pieces of data attached to an item. They are defined similar to
+`KEY` -- fields can be composed of one _or more_ fields with arbitrary
+[Todea schema](./schema.md)s (`S`) :
 ```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:scope:ModelWithFields -->
 class ModelWithFields extends db.Model {
   static FIELDS = {
