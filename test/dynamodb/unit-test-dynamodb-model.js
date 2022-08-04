@@ -1,13 +1,12 @@
 const uuidv4 = require('uuid').v4
 
+const AWSError = require('../../src/dynamodb/src/aws-error')
 const S = require('../../src/schema/src/schema')
 const { BaseTest, runTests } = require('../base-unit-test')
 const db = require('../db-with-field-maker')
 
 const CONDITION_EXPRESSION_STR = 'ConditionExpression'
 const UPDATE_EXPRESSION_STR = 'UpdateExpression'
-
-const AWSError = require('../../src/dynamodb/src/aws-error')
 
 class BadModelTest extends BaseTest {
   check (cls, msg) {
