@@ -7,6 +7,7 @@ high-level abstractions to structure data and prevent race conditions.
   - [Tables](#tables)
     - [Keys](#keys)
     - [Fields](#fields)
+    - [Indexes](#indexes)
     - [Schema Enforcement](#schema-enforcement)
     - [Custom Methods](#custom-methods)
   - [Transactions](#transactions)
@@ -32,10 +33,12 @@ high-level abstractions to structure data and prevent race conditions.
       - [Sorting](#sorting)
       - [Read Consistency](#read-consistency-1)
       - [Lazy Filter](#lazy-filter)
+      - [Indexes](#indexes-1)
     - [Scan](#scan)
       - [Execution](#execution-1)
       - [Sharding](#sharding)
       - [Read Consistency](#read-consistency-2)
+      - [Indexes](#indexes-2)
   - [Performance](#performance)
     - [DAX](#dax)
     - [Blind Writes](#blind-writes)
@@ -46,6 +49,7 @@ high-level abstractions to structure data and prevent race conditions.
   - [Time To Live](#time-to-live)
   - [Table Creation & Persistence](#table-creation--persistence)
   - [Sort Keys](#sort-keys)
+  - [Indexes](#indexes-3)
   - [Overlapping Models](#overlapping-models)
   - [Repeated Reads](#repeated-reads)
   - [Key Collection](#key-collection)
@@ -216,6 +220,64 @@ class ModelWithComplexFields extends db.Model {
         'immutableInt is immutable so value cannot be changed')
 ```
 
+### Indexes
+Indexes can optimize some DynamoDB data access patterns like filtering and sorting. Indexes are automatically kept up to date but are only **eventually consistent**.
+You can read more about DynamoDB GlobalSecondaryIndex [here](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/GSI.html).
+
+You can define a new index like this inside your model class:
+```javascript
+class SupportModel extends db.Model {
+  static KEY = { udid }
+  static FIELDS = [ reporteeUID, reportType, reportTS, ]
+  static INDEXES = {
+	  indexByReport: { KEY = [ reportType ], SORT_KEY = [ reportTS ] }
+  }
+}
+```
+
+An index can be useful is scenarios like:
+- Lookup rows by something other than their KEY. e.g. In the below example, we can use `pxPayoutsIndex` to find all payouts given out by a specific employee on a specified date
+  ```javascript
+  class PXPayout extends db.Model {
+    static FIELDS = { admin, date, payout, reason, etc. }
+    static INDEXES = {
+      pxPayoutsIndex: { KEY = [ admin, date ] }
+    }
+  }
+  ```
+- Sort/Filter multiple ways efficiently.
+  ```javascript
+  class SupportModel extends db.Model {
+    static KEY = { udid }
+    static FIELDS = [ reporteeUID, reportType, reportTS, actionTS ]
+    static INDEXES = {
+      indexByReport: { KEY = [ reportType ], SORT_KEY = [ reportTS ] },
+      indexByReportee: { KEY = [ reportType ], SORT_KEY = [ reporteeUID ] },
+    }
+  }
+  ```
+  We can use the indexes in this table to achieve efficient sort/filter like
+  - See all reports reported via chat sorted by reported time
+    ```javascript
+    await tx.query(
+      SupportModel,
+      { index: 'indexByReport' }
+    ).reportType('chat').fetch()
+    ```
+  - See all reports reported via chat sorted by reporter udid
+    ```javascript
+    await tx.query(
+      SupportModel,
+      { index: 'indexByReportee' }
+    ).reportType('chat').fetch()
+    ```
+
+**KEYS**
+- Like tables, indexes must have a `KEY` and may have a `SORT_KEY`.
+- You can use one or more columns in the table to define the KEY /  SORT_KEY for an index. Columns can be from the original table's KEY / SORT_KEY / FIELDS
+- Index rows don’t need to have a unique `KEY + SORT_KEY` value.
+
+  e.g., In the `PXPayoutsIndex` above. If an admin issues multiple credits on one day, there will be a row for each of those in this index and they'll all have the same key and sort key (but other values may differ).
 
 ### Schema Enforcement
 A model's schema (i.e., the structure of its data) is enforced by this library
@@ -774,6 +836,18 @@ on.
 Lazy filters support all filter conditions except "prefix", and add support
 for inequality condition "!=".
 
+#### Indexes
+Querying an index uses the same syntax as querying a table.  Once you define the index in your query, you need to define an equality filter on each of the `KEY` columns defined in your index.
+
+You can optionally add filters on the index’s `SORT_KEY` as well. You can add additional filters on the rest of the columns after enabling lazyFilter (_however these filters are performed after a query is run and is less performant in general_)
+
+**NOTE**: Querying an index supports only eventual consistent data. Passing `{ inconsistentRead: false }` isn't allowed while querying an index.
+
+```javascript
+await tx.query(SupportModel, { index: 'indexByReport' })
+  .reportType('chat').fetch()
+```
+
 ### Scan
 A scan accesses all rows in a table one by one. Transaction context
 `tx` provides `scan` method that returns a handle for conducting a scan
@@ -825,6 +899,13 @@ consistency can improve performance and reduce cost by 50%.
       return scan.__setupParams().ConsistentRead
     })
 ```
+
+#### Indexes
+Scanning an index uses the same syntax as scanning a table. You only need to define the index to scan using the index.
+```javascript
+await tx.scan(SupportModel, { index: 'indexByReport' }).fetch()
+```
+
 
 ## Performance
 ### DAX
@@ -1081,6 +1162,86 @@ In this case, every customer for a store would be on the same database node.
 It'd be much better for the customer to be part of the partition key instead of
 the sort key. Sort keys should be used for highly related data that will often
 be used together. It should not be used for overly large or unrelated data.
+
+
+## Indexes
+
+Indexes can optimize some DynamoDB data access patterns like filtering and sorting. Indexes are automatically kept up to date but are only eventually consistent.
+
+**Eventual Consistency**
+
+Indexes are eventually consistent. This means that when a database row is updated, its index(es) are updated sometime later. Usually this happens quickly (within seconds) but it could be longer (potentially much longer). Therefore you need to be careful when querying an index and account for this.
+
+Consider this index for tracking who is banned (not a good design; just for illustrative purposes). If we ban a player and then query the BannedUsersIndex shortly thereafter, the index might not reflect that the user is banned yet.
+
+```javascript
+class User extends db.Model {
+  	static KEY = { uid }
+  	static FIELDS = { banned, ... }
+	  static INDEXES = {
+			bannedUsersIndex = { KEY = [ 'banned' ] }
+  }
+}
+```
+
+**Creating new Index(es)**
+
+`Backfilling`: When you create a new index, it is not guaranteed to backfill. Index is guaranteed to update ONLY when a model row is saved. Backfilling works only if your index KEY/SORT_KEY are using single columns from FIELD.
+
+In the below example, only `payoutReasonIndex` will be backfilled.
+```javascript
+  class PXPayout extends db.Model {
+    static FIELDS = { admin, date, payout, reason, etc. }
+    static INDEXES = {
+      pxPayoutsIndex: { KEY = [ admin, date ] },
+      payoutReasonIndex: { KEY = [reason] }
+    }
+  }
+
+```
+
+`Modifying multiple Indexes`: For an **existing table**, you can edit only one index per deployment. If you intend to edit multiple, you have to make one addition/deletion per deployment and wait for some time as dynamodb takes some time to process it. It generally takes a few mins for a small table, but for large table, it can become substantial.
+
+
+**Cost**
+
+Indexes increase the physical storage and data write cost for the model. Each index maintains a copy of the entire table (if the index key column isn't undefined).
+
+e.g. If you have 3 indexes for a table, your data storage cost is 4x (3x for each index and 1x for the original table), and your data write cost would also be 4x.
+
+**Sorting an Entire Table**
+
+If you want an index to sort/filter across the entire table, create a dummy field that contains a constant (small) value and use that as the key in your index.
+
+This is only appropriate for small tables since this will put all the load on a single machine. [Partition Limitation](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/bp-partition-key-design.html) for standard table also applies for index.
+- 10 GB of data
+- 1,000 WCUs (~ 500 transactions/sec with 4KB data)
+- 3,000 RCUs (~1500 transactions/sec with 4KB data)
+
+**Lazy Filtering on Index to query model’s Key/Sort Key**
+
+Indexes support lazy filtering on all the columns defined in FIELDS by default. If you want to filter on a column that is in the KEY/SORT_KEY of the model, you need to set the following field to true.
+
+```javascript
+  static ENABLE_LAZY_FILTER_ON_KEY_FIELDS = true
+```
+
+However, if you have an index that has this column as it’s KEY/SORT_KEY, you dont need to do this.
+
+**Sparse Index Keys**
+
+To create an index with sparse indexing, define `SPARSE: true` for your index. Sparse index can optimize your query performances for large tables. If this flag is enabled, you can use optional fields for index KEY/SORT_KEY
+
+```javascript
+  class User extends db.Model {
+    static KEY = { uid }
+    static FIELDS = { banned = S.str.optional(), ... }
+    static INDEXES = {
+      bannedUsersIndex = { KEY = [ 'banned' ], SPARSE = true }
+    }
+  }
+```
+
 
 
 ## Overlapping Models
