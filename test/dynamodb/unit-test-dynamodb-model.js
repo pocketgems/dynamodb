@@ -186,13 +186,16 @@ class SimpleModelTest extends BaseTest {
   }
 
   async testCreateIndex () {
-    const IndexDBModel = class extends db.Model {
+    // GuildMetadataStart
+    const GuildMetadata = class extends db.Model {
       static KEY = { name: S.str }
-      static FIELDS = { guild: S.str, rank: S.int }
+      static FIELDS = { league: S.str, rank: S.int }
       static INDEXES = {
-        index1: { KEY: ['name', 'guild'], SORT_KEY: ['rank'] }
+        guildByLeague: { KEY: ['league'], SORT_KEY: ['rank'] },
+        guildByRank: { KEY: ['rank'], SORT_KEY: ['league'] }
       }
     }
+    // GuildMetadataEnd
     const setupDB = require('../../src/dynamodb/src/dynamodb')
     const dbParams = {
       dynamoDBClient: db.Model.dbClient,
@@ -202,11 +205,11 @@ class SimpleModelTest extends BaseTest {
     }
     const onDemandDB = setupDB(dbParams)
 
-    await IndexDBModel.createResource()
+    await GuildMetadata.createResource()
     const tableDescription = await onDemandDB.Model.dbClient
-      .describeTable({ TableName: IndexDBModel.fullTableName })
+      .describeTable({ TableName: GuildMetadata.fullTableName })
       .promise()
-    expect(tableDescription.Table.GlobalSecondaryIndexes.length).toBe(1)
+    expect(tableDescription.Table.GlobalSecondaryIndexes.length).toBe(2)
 
     let updateParams = {}
     const originalUpdateTableFn = dbParams.dynamoDBClient.updateTable
@@ -214,34 +217,37 @@ class SimpleModelTest extends BaseTest {
     dbParams.dynamoDBClient.updateTable = mock
 
     async function resetAndCreateTable () {
-      delete IndexDBModel.__setupDone
-      delete IndexDBModel.__createdResource
-      delete IndexDBModel.__CACHED_KEY_ORDER
-      delete IndexDBModel.__CACHED_SCHEMA
-      await IndexDBModel.createResource()
+      delete GuildMetadata.__setupDone
+      delete GuildMetadata.__createdResource
+      delete GuildMetadata.__CACHED_KEY_ORDER
+      delete GuildMetadata.__CACHED_SCHEMA
+      await GuildMetadata.createResource()
     }
 
-    IndexDBModel.INDEXES = {}
+    GuildMetadata.INDEXES = { guildByRank: { KEY: ['rank'] } }
     await resetAndCreateTable()
-    expect(updateParams.GlobalSecondaryIndexUpdates[0].Delete.IndexName).toBe('index1')
+    expect(updateParams.GlobalSecondaryIndexUpdates[0].Delete.IndexName).toBe('guildByLeague')
 
-    IndexDBModel.INDEXES = {
-      index1: { KEY: ['name', 'guild'], SORT_KEY: ['rank'] },
-      index2: { KEY: ['rank'] }
+    GuildMetadata.INDEXES = {
+      guildByLeague: { KEY: ['league'], SORT_KEY: ['rank'] },
+      guildByRank: { KEY: ['rank'] },
+      anotherIndex: { KEY: ['league', 'rank'] }
     }
     await resetAndCreateTable()
-    expect(updateParams.GlobalSecondaryIndexUpdates[0].Create.IndexName).toBe('index2')
+    expect(updateParams.GlobalSecondaryIndexUpdates[0].Create.IndexName).toBe('anotherIndex')
+    delete GuildMetadata.INDEXES.anotherIndex
 
-    IndexDBModel.FIELDS.rank = S.int.optional()
+    GuildMetadata.FIELDS.rank = S.int.optional()
     expect(resetAndCreateTable()).rejects.toThrow(/Can not use optional fields as key/)
 
-    IndexDBModel.INDEXES.index1.SPARSE = true
-    IndexDBModel.INDEXES.index2.SPARSE = true
+    GuildMetadata.INDEXES.guildByLeague.SPARSE = true
+    GuildMetadata.INDEXES.guildByRank.SPARSE = true
+
     resetAndCreateTable()
 
-    IndexDBModel.FIELDS.rank = S.int
-    IndexDBModel.INDEXES = {
-      index3: { KEY: ['rank'] }
+    GuildMetadata.FIELDS.rank = S.int
+    GuildMetadata.INDEXES = {
+      guildByRank2: { KEY: ['rank'] }
     }
     expect(resetAndCreateTable()).rejects.toThrow(AWSError)
     dbParams.dynamoDBClient.updateTable = originalUpdateTableFn
@@ -885,36 +891,36 @@ class KeyTest extends BaseTest {
   }
 }
 
-class IndexModel extends db.Model {
-  static KEY = { name: S.str, title: S.str }
-  static FIELDS = { rank: S.int }
+class PXPayout extends db.Model {
+  static KEY = { player: S.str, admin: S.str }
+  static FIELDS = { payout: S.int }
   static INDEXES = {
-    index1: { KEY: ['name'], SORT_KEY: ['title', 'rank'] },
-    index2: { KEY: ['rank'] }
+    payoutByPlayer: { KEY: ['player'], SORT_KEY: ['admin', 'payout'] },
+    payoutByAdmin: { KEY: ['admin'], SORT_KEY: ['payout'] }
   }
 }
 
 class IndexTest extends BaseTest {
   async beforeAll () {
-    await IndexModel.createResource()
+    await PXPayout.createResource()
   }
 
   async testIndexFieldGeneration () {
     function validate (model, fields, val) {
-      const fieldName = IndexModel.__encodeCompoundFieldName(fields)
+      const fieldName = PXPayout.__encodeCompoundFieldName(fields)
       expect(model.__cached_attrs[fieldName].get()).toBe(val)
     }
     const name = uuidv4()
-    const model1 = await txCreate(IndexModel, { name: name, title: 'b', rank: 0 })
-    validate(model1, IndexModel.INDEXES.index1.KEY, name)
-    validate(model1, IndexModel.INDEXES.index1.SORT_KEY, [0, 'b'].join('\0'))
-    validate(model1, IndexModel.INDEXES.index2.KEY, 0)
+    const model1 = await txCreate(PXPayout, { player: name, admin: 'b', payout: 0 })
+    validate(model1, PXPayout.INDEXES.payoutByPlayer.KEY, name)
+    validate(model1, PXPayout.INDEXES.payoutByPlayer.SORT_KEY, ['b', 0].join('\0'))
+    validate(model1, PXPayout.INDEXES.payoutByAdmin.KEY, 'b')
   }
 
   async testEditIndexField () {
     const name = uuidv4()
-    const model1 = await txCreate(IndexModel, { name: name, title: 'b', rank: 0 })
-    expect(() => { model1._c_rank_title = 'xyz' }).toThrow(db.InvalidFieldError)
+    const model1 = await txCreate(PXPayout, { player: name, admin: 'b', payout: 0 })
+    expect(() => { model1._c_admin_payout = 'xyz' }).toThrow(db.InvalidFieldError)
   }
 }
 
