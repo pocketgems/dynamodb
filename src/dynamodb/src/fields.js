@@ -1,6 +1,6 @@
 const assert = require('assert')
 
-const deepeq = require('deep-equal')
+const deepeq = require('fast-deep-equal')
 const jsonStringify = require('fast-json-stable-stringify')
 const deepcopy = require('rfdc')()
 
