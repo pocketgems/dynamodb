@@ -30,7 +30,9 @@ module.exports = {
   },
   externals: {
     '../../schema/src/schema': './schema.cjs',
-    assert: './assert.cjs'
+    assert: './assert.cjs',
+    'amazon-dax-client': 'invalid',
+    'aws-sdk': 'invalid'
   },
   plugins: [
     new webpack.DefinePlugin({
