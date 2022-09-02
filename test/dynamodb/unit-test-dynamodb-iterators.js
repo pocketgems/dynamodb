@@ -717,13 +717,16 @@ class QueryModel extends db.Model {
   }
 
   static FIELDS = {
-    field: S.int
+    field: S.int,
+    field2: S.int
   }
 
   static INDEXES = {
     index1: { KEY: ['id1', 'id2'], SORT_KEY: ['field'] },
     index2: { KEY: ['id1', 'sk1'], SORT_KEY: ['id2'] },
-    index3: { KEY: ['id1'], SORT_KEY: ['field'] }
+    index3: { KEY: ['id1'], SORT_KEY: ['field'] },
+    index4: { KEY: ['id1'], INCLUDE_ONLY: [] },
+    index5: { KEY: ['id1'], INCLUDE_ONLY: ['field2'] }
   }
 }
 
@@ -756,13 +759,15 @@ class QueryTest extends BaseTest {
           id1: '1',
           id2: 1,
           sk1: '0',
-          field: 0
+          field: 0,
+          field2: 10
         }),
         QueryModel.data({
           id1: '1',
           id2: 1,
           sk1: '123',
-          field: 1
+          field: 1,
+          field2: 11
         }),
         SortModel.data({
           id: '0',
@@ -805,6 +810,27 @@ class QueryTest extends BaseTest {
       const result = (await query.fetch(10))[0]
       expect(result.length).toBe(1)
       expect(result[0].sk1).toBe('0')
+    })
+    await db.Transaction.run(async tx => {
+      const query = tx.query(QueryModel, { index: 'index4' })
+      query.id1('1')
+      const result = (await query.fetch(10))[0]
+      expect(result.length).toBe(2)
+      expect(result[0].id1).toBeDefined()
+      expect(result[0].sk1).toBeDefined()
+      expect(result[0].field).toBeUndefined()
+      expect(result[0].field2).toBeUndefined()
+    })
+
+    await db.Transaction.run(async tx => {
+      const query = tx.query(QueryModel, { index: 'index5' })
+      query.id1('1')
+      const result = (await query.fetch(10))[0]
+      expect(result.length).toBe(2)
+      expect(result[0].id1).toBeDefined()
+      expect(result[0].sk1).toBeDefined()
+      expect(result[0].field2).toBeDefined()
+      expect(result[0].field).toBeUndefined()
     })
   }
 

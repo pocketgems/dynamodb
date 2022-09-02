@@ -52,6 +52,7 @@ high-level abstractions to structure data and prevent race conditions.
   - [Indexes](#indexes-3)
     - [Eventual Consistency](#eventual-consistency)
     - [Creating/Editing Index(es)](#creatingediting-indexes)
+    - [Data Projection](#data-projection)
     - [Cost of Indexing](#cost-of-indexing)
     - [Limitations](#limitations)
     - [Lazy Filtering model’s Key/Sort Key](#lazy-filtering-models-keysort-key)
@@ -233,10 +234,14 @@ You can define a new index like this inside your model class:
 ```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-model.js:scope:class PXPayout -->
 class PXPayout extends db.Model {
   static KEY = { player: S.str, admin: S.str }
-  static FIELDS = { payout: S.int }
+  static FIELDS = {
+    payout: S.int, date: S.str.optional(), notes: S.str.optional(), status: S.bool
+  }
+
   static INDEXES = {
     payoutByPlayer: { KEY: ['player'], SORT_KEY: ['admin', 'payout'] },
-    payoutByAdmin: { KEY: ['admin'], SORT_KEY: ['payout'] }
+    payoutByAdmin: { KEY: ['admin'], SORT_KEY: ['payout'] },
+    payoutByStatus: { KEY: ['status'], INCLUDE_ONLY: ['date'] }
   }
 }
 ```
@@ -830,10 +835,14 @@ Querying an index uses the same syntax as querying a table.  Once you define the
 ```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-model.js:scope:class PXPayout -->
 class PXPayout extends db.Model {
   static KEY = { player: S.str, admin: S.str }
-  static FIELDS = { payout: S.int }
+  static FIELDS = {
+    payout: S.int, date: S.str.optional(), notes: S.str.optional(), status: S.bool
+  }
+
   static INDEXES = {
     payoutByPlayer: { KEY: ['player'], SORT_KEY: ['admin', 'payout'] },
-    payoutByAdmin: { KEY: ['admin'], SORT_KEY: ['payout'] }
+    payoutByAdmin: { KEY: ['admin'], SORT_KEY: ['payout'] },
+    payoutByStatus: { KEY: ['status'], INCLUDE_ONLY: ['date'] }
   }
 }
 ```
@@ -1199,6 +1208,30 @@ Consider this index `guildByLeague` that maps guild to a league. If you query th
 TIPS: You can take advantage of our MapReduce service to backfill your table by read/write of all the rows.
 
 `Modifying multiple Indexes`: For an **existing table**, you can edit only one index per deployment. If you intend to edit multiple, you have to make one addition/deletion per deployment and wait for some time to finish processing the last change. It takes a few mins for a small table, but for large table, it can become substantial.
+
+### Data Projection
+By default, we project ALL columns in every index. This is helpful in most cases. However, in certain situations, we might want to project only a few columns. This can reduce the size of the index significantly.
+
+e.g. in the `PXPayout` model, we might want to find all the payouts done on a certain date and not care about the actual payout or the notes left by the admin.
+
+
+```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-model.js:scope:class PXPayout -->
+class PXPayout extends db.Model {
+  static KEY = { player: S.str, admin: S.str }
+  static FIELDS = {
+    payout: S.int, date: S.str.optional(), notes: S.str.optional(), status: S.bool
+  }
+
+  static INDEXES = {
+    payoutByPlayer: { KEY: ['player'], SORT_KEY: ['admin', 'payout'] },
+    payoutByAdmin: { KEY: ['admin'], SORT_KEY: ['payout'] },
+    payoutByStatus: { KEY: ['status'], INCLUDE_ONLY: ['date'] }
+  }
+}
+```
+**TIPS**: Space optimization can help design systems where a few partition keys might contain a large amount of data (e.g. an individual queue in a taskqueue)
+
+KEY/SORT_KEY are always projected. If you want to project only the keys you can do something like `INCLUDE_ONLY: []`.
 
 
 ### Cost of Indexing

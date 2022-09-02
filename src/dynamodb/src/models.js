@@ -102,6 +102,13 @@ class Model {
 
   __addField (idx, name, opts, vals) {
     const valSpecified = Object.hasOwnProperty.call(vals, name)
+    if (!valSpecified && this.__readOnly) {
+      /*
+        If the model is a read-only (aka derived using index) and column val
+        isn't specified, let's mark the field optional
+      */
+      opts.optional = true
+    }
     const getCachedField = () => {
       if (this.__cached_attrs[name]) {
         return this.__cached_attrs[name]
@@ -288,6 +295,17 @@ class Model {
     if (data.SORT_KEY) {
       this.__compoundFields.add(data.SORT_KEY)
     }
+
+    if (data.INCLUDE_ONLY) {
+      for (const field of data.INCLUDE_ONLY) {
+        if (!this._attrs[field]) {
+          throw new InvalidIndexError(index, `Field ${field} doesn't exist in the model`)
+        }
+        if (this.__keyOrder.partition.includes(field) || this.__keyOrder.sort.includes(field)) {
+          throw new InvalidIndexError(index, `Field ${field} is a key attribute and is automatically included`)
+        }
+      }
+    }
   }
 
   /**
@@ -394,6 +412,16 @@ class Model {
           IndexName: index,
           KeySchema: [{ AttributeName: keyNames._id, KeyType: 'HASH' }],
           Projection: { ProjectionType: 'ALL' }
+        }
+        if (props.INCLUDE_ONLY) {
+          if (props.INCLUDE_ONLY.length === 0) {
+            indexProps.Projection.ProjectionType = 'KEYS_ONLY'
+          } else {
+            indexProps.Projection = {
+              ProjectionType: 'INCLUDE',
+              NonKeyAttributes: props.INCLUDE_ONLY
+            }
+          }
         }
         if (dedupeAttr.has(keyNames._id) === false) {
           attrs.push({

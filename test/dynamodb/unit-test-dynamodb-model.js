@@ -94,6 +94,8 @@ class BadModelTest extends BaseTest {
   testIndexFieldName () {
     class BadModel extends db.Model {
       static KEY = { name: S.str }
+      static SORT_KEY = { rank: S.int }
+      static FIELDS = { objField: S.obj() }
       static INDEXES = { badIndex: {} }
     }
     this.check(BadModel, 'partition key is required')
@@ -109,6 +111,18 @@ class BadModelTest extends BaseTest {
     BadModel.INDEXES = { badIndex: { KEY: ['name'], SORT_KEY: ['name'] } }
     delete BadModel.__setupDone
     this.check(BadModel, 'field name cannot be used more than once')
+
+    BadModel.INDEXES = { badIndex: { KEY: ['name'], INCLUDE_ONLY: ['invalid'] } }
+    delete BadModel.__setupDone
+    this.check(BadModel, 'Field invalid doesn\'t exist in the model')
+
+    BadModel.INDEXES = { badIndex: { KEY: ['name'], INCLUDE_ONLY: ['rank'] } }
+    delete BadModel.__setupDone
+    this.check(BadModel, 'Field rank is a key attribute and is automatically included')
+
+    BadModel.INDEXES = { badIndex: { KEY: ['objField'], INCLUDE_ONLY: ['name'] } }
+    delete BadModel.__setupDone
+    this.check(BadModel, 'Field name is a key attribute and is automatically included')
   }
 }
 
@@ -262,7 +276,7 @@ class SimpleModelTest extends BaseTest {
         index1: { KEY: ['name', 'guild'], SORT_KEY: ['rank', 'score'] },
         index2: { KEY: ['rank'], SORT_KEY: ['name', 'guild'] },
         index3: { KEY: ['name'], SORT_KEY: ['guild'] },
-        index4: { KEY: ['arrField'] }
+        index4: { KEY: ['arrField'], INCLUDE_ONLY: ['guild'] }
       }
     }
 
@@ -275,6 +289,9 @@ class SimpleModelTest extends BaseTest {
     const actualAttr = tableParams.AttributeDefinitions.map(attr => attr.AttributeName).sort()
     expect(actualAttr).toEqual(expectedAttr.sort())
     expect(tableParams.GlobalSecondaryIndexes.length).toBe(4)
+
+    expect(tableParams.GlobalSecondaryIndexes[3].Projection.ProjectionType).toBe('INCLUDE')
+    expect(tableParams.GlobalSecondaryIndexes[3].Projection.NonKeyAttributes).toEqual(['guild'])
   }
 
   async testUpdateBillingMode () {
@@ -893,10 +910,14 @@ class KeyTest extends BaseTest {
 
 class PXPayout extends db.Model {
   static KEY = { player: S.str, admin: S.str }
-  static FIELDS = { payout: S.int }
+  static FIELDS = {
+    payout: S.int, date: S.str.optional(), notes: S.str.optional(), status: S.bool
+  }
+
   static INDEXES = {
     payoutByPlayer: { KEY: ['player'], SORT_KEY: ['admin', 'payout'] },
-    payoutByAdmin: { KEY: ['admin'], SORT_KEY: ['payout'] }
+    payoutByAdmin: { KEY: ['admin'], SORT_KEY: ['payout'] },
+    payoutByStatus: { KEY: ['status'], INCLUDE_ONLY: ['date'] }
   }
 }
 
@@ -911,7 +932,7 @@ class IndexTest extends BaseTest {
       expect(model.__cached_attrs[fieldName].get()).toBe(val)
     }
     const name = uuidv4()
-    const model1 = await txCreate(PXPayout, { player: name, admin: 'b', payout: 0 })
+    const model1 = await txCreate(PXPayout, { player: name, admin: 'b', payout: 0, status: true })
     validate(model1, PXPayout.INDEXES.payoutByPlayer.KEY, name)
     validate(model1, PXPayout.INDEXES.payoutByPlayer.SORT_KEY, ['b', 0].join('\0'))
     validate(model1, PXPayout.INDEXES.payoutByAdmin.KEY, 'b')
@@ -919,7 +940,7 @@ class IndexTest extends BaseTest {
 
   async testEditIndexField () {
     const name = uuidv4()
-    const model1 = await txCreate(PXPayout, { player: name, admin: 'b', payout: 0 })
+    const model1 = await txCreate(PXPayout, { player: name, admin: 'b', payout: 0, status: true })
     expect(() => { model1._c_admin_payout = 'xyz' }).toThrow(db.InvalidFieldError)
   }
 }
