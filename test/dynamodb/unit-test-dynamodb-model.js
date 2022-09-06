@@ -271,12 +271,13 @@ class SimpleModelTest extends BaseTest {
     const IndexDBModel = class extends db.Model {
       static KEY = { name: S.str }
       static SORT_KEY = { rank: S.int, score: S.int }
-      static FIELDS = { guild: S.str, arrField: S.arr(S.obj({ a: S.int })) }
+      static FIELDS = { guild: S.str, bool: S.bool, arrField: S.arr(S.obj({ a: S.int })) }
       static INDEXES = {
         index1: { KEY: ['name', 'guild'], SORT_KEY: ['rank', 'score'] },
         index2: { KEY: ['rank'], SORT_KEY: ['name', 'guild'] },
         index3: { KEY: ['name'], SORT_KEY: ['guild'] },
-        index4: { KEY: ['arrField'], INCLUDE_ONLY: ['guild'] }
+        index4: { KEY: ['arrField'], INCLUDE_ONLY: ['guild'] },
+        index5: { KEY: ['bool'] }
       }
     }
 
@@ -285,10 +286,10 @@ class SimpleModelTest extends BaseTest {
       .filter(val => val.Type === 'AWS::DynamoDB::Table')[0]
       .Properties
 
-    const expectedAttr = ['_id', '_sk', '_c_rank', '_c_guild_name', '_c_arrField', 'guild']
+    const expectedAttr = ['_id', '_sk', '_c_rank', '_c_guild_name', '_c_arrField', 'guild', '_c_bool']
     const actualAttr = tableParams.AttributeDefinitions.map(attr => attr.AttributeName).sort()
     expect(actualAttr).toEqual(expectedAttr.sort())
-    expect(tableParams.GlobalSecondaryIndexes.length).toBe(4)
+    expect(tableParams.GlobalSecondaryIndexes.length).toBe(5)
 
     expect(tableParams.GlobalSecondaryIndexes[3].Projection.ProjectionType).toBe('INCLUDE')
     expect(tableParams.GlobalSecondaryIndexes[3].Projection.NonKeyAttributes).toEqual(['guild'])
@@ -936,6 +937,7 @@ class IndexTest extends BaseTest {
     validate(model1, PXPayout.INDEXES.payoutByPlayer.KEY, name)
     validate(model1, PXPayout.INDEXES.payoutByPlayer.SORT_KEY, ['b', 0].join('\0'))
     validate(model1, PXPayout.INDEXES.payoutByAdmin.KEY, 'b')
+    validate(model1, PXPayout.INDEXES.payoutByStatus.KEY, 'true')
   }
 
   async testEditIndexField () {

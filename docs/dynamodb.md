@@ -722,7 +722,8 @@ class TestIteratorModel extends db.Model {
   static INDEXES = {
     index1: { KEY: ['id1', 'id2'], SORT_KEY: ['field1'] },
     index2: { KEY: ['id1', 'sk1'], SORT_KEY: ['field1', 'field2'] },
-    index3: { KEY: ['field3'], SPARSE: true }
+    index3: { KEY: ['field3'], SPARSE: true },
+    index4: { KEY: ['field1'] }
   }
 }
 ```

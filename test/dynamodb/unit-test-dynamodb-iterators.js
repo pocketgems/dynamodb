@@ -29,7 +29,8 @@ class TestIteratorModel extends db.Model {
   static INDEXES = {
     index1: { KEY: ['id1', 'id2'], SORT_KEY: ['field1'] },
     index2: { KEY: ['id1', 'sk1'], SORT_KEY: ['field1', 'field2'] },
-    index3: { KEY: ['field3'], SPARSE: true }
+    index3: { KEY: ['field3'], SPARSE: true },
+    index4: { KEY: ['field1'] }
   }
 }
 
@@ -356,6 +357,17 @@ class IteratorTest extends BaseTest {
       ['#_id=:_id'],
       { '#_id': '_c_field3' },
       { ':_id': '[{"a":10}]' }
+    ])
+
+    const query4 = new Query({
+      ModelCls: TestIteratorModel,
+      options: { index: 'index4' }
+    })
+    query4.field1('a')
+    expect(query4.__getKeyConditionExpression(TestIteratorModel)).toEqual([
+      ['#_id=:_id'],
+      { '#_id': 'field1' },
+      { ':_id': 'a' }
     ])
   }
 

@@ -667,7 +667,7 @@ class Model {
   }
 
   static __getIndexCompoundValue (keys, vals) {
-    if (keys.length === 1 && typeof vals[keys[0]] !== 'object') {
+    if (keys.length === 1 && ['string', 'number'].includes(typeof vals[keys[0]])) {
       return vals[keys[0]]
     }
     const fieldName = this.__encodeCompoundFieldName(keys)
@@ -699,7 +699,7 @@ class Model {
    */
   static __encodeCompoundFieldName (fields) {
     if (fields.length === 1 && this.FIELDS[fields[0]] &&
-      !['array', 'object'].includes(this.FIELDS[fields[0]].getProp('type'))) {
+      !['array', 'object', 'boolean'].includes(this.FIELDS[fields[0]].getProp('type'))) {
       return fields[0]
     }
 
