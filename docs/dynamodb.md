@@ -1211,7 +1211,7 @@ TIPS: You can take advantage of our MapReduce service to backfill your table by 
 `Modifying multiple Indexes`: For an **existing table**, you can edit only one index per deployment. If you intend to edit multiple, you have to make one addition/deletion per deployment and wait for some time to finish processing the last change. It takes a few mins for a small table, but for large table, it can become substantial.
 
 ### Data Projection
-By default, we project ALL columns in every index. This is helpful in most cases. However, in certain situations, we might want to project only a few columns. This can reduce the size of the index significantly.
+By default, we project ALL columns in every index. This is helpful in most cases. However, in certain situations, we might want to project only a few columns. This can reduce the size of the index significantly. [Read more about projection here](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Projection.html).
 
 e.g. in the `PXPayout` model, we might want to find all the payouts done on a certain date and not care about the actual payout or the notes left by the admin.
 
@@ -1230,7 +1230,7 @@ class PXPayout extends db.Model {
   }
 }
 ```
-**TIPS**: Space optimization can help design systems where a few partition keys might contain a large amount of data (e.g. an individual queue in a taskqueue)
+**TIPS**: Space optimization can help design systems where a few partition keys might contain a large amount of data (e.g. an individual queue in a taskqueue). [Tips to choose projection](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/bp-indexes-general.html#bp-indexes-general-projections).
 
 KEY/SORT_KEY are always projected. If you want to project only the keys you can do something like `INCLUDE_ONLY: []`.
 
