@@ -598,6 +598,10 @@ class __CompoundField extends __FieldInterface {
     return this.constructor.__encodeValues(Object.keys(allVal), allVal)
   }
 
+  static __encodeName (fields) {
+    return ['_c', ...fields.sort()].join('_')
+  }
+
   static __encodeValues (fields, values) {
     const pieces = []
     fields = fields.sort()

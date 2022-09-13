@@ -710,7 +710,7 @@ class Model {
       return '_sk'
     }
 
-    return ['_c', ...fields.sort()].join('_')
+    return __CompoundField.__encodeName(fields)
   }
 
   static __getKeyNamesForIndex (index) {
