@@ -101,19 +101,27 @@ class Model {
   }
 
   __addField (idx, name, opts, vals) {
-    const valSpecified = Object.hasOwnProperty.call(vals, name)
+    let valSpecified = Object.hasOwnProperty.call(vals, name)
+    let val = vals[name]
     if (!valSpecified && this.__readOnly) {
       /*
         If the model is a read-only (aka derived using index) and column val
         isn't specified, let's mark the field optional
       */
       opts.optional = true
+      for (const [encodedName, encodedVal] of Object.entries(vals)) {
+        const fieldData = __CompoundField.__decodeValues(encodedName, encodedVal)
+        if (Object.hasOwnProperty.call(fieldData, name)) {
+          valSpecified = true
+          val = fieldData[name]
+          break
+        }
+      }
     }
     const getCachedField = () => {
       if (this.__cached_attrs[name]) {
         return this.__cached_attrs[name]
       }
-      const val = vals[name]
       const Cls = SCHEMA_TYPE_TO_FIELD_CLASS_MAP[opts.schema.type]
       // can't force validation of undefined values for blind updates because
       //   they are permitted to omit fields

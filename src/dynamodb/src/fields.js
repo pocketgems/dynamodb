@@ -4,7 +4,7 @@ const deepeq = require('fast-deep-equal')
 const jsonStringify = require('fast-json-stable-stringify')
 const deepcopy = require('rfdc')()
 
-const { InvalidFieldError, InvalidOptionsError, NotImplementedError } = require('./errors')
+const { InvalidFieldError, InvalidOptionsError, NotImplementedError, InvalidParameterError } = require('./errors')
 const { validateValue } = require('./utils')
 
 /**
@@ -624,6 +624,34 @@ class __CompoundField extends __FieldInterface {
       }
     }
     return pieces.join('\0')
+  }
+
+  static __decodeValues (propName, propVal) {
+    if (!propName.startsWith('_c')) {
+      // the propName provided doesn't match the name format for compound field
+      // We will simply return with no data
+      return {}
+    }
+    const props = propName.substring(3).split('_')
+    const data = {}
+    if (typeof (propVal) === 'number') {
+      data[props[0]] = propVal
+      return data
+    }
+    const vals = propVal.split('\0')
+    if (props.length !== vals.length) {
+      throw new InvalidParameterError('Trying to decode compound field value with unequal amount of properties')
+    }
+    props.forEach((key, index) => {
+      const val = vals[index]
+      try {
+        data[key] = JSON.parse(val)
+      } catch (error) {
+        // val was native int/string type
+        data[key] = val
+      }
+    })
+    return data
   }
 
   get () {

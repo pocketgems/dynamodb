@@ -1,4 +1,4 @@
-const { InvalidFieldError, NotImplementedError } = require('../../src/dynamodb/src/errors')
+const { InvalidFieldError, NotImplementedError, InvalidParameterError } = require('../../src/dynamodb/src/errors')
 const { __CompoundField, __FieldInterface } = require('../../src/dynamodb/src/fields')
 const S = require('../../src/schema/src/schema')
 const { BaseTest, runTests } = require('../base-unit-test')
@@ -680,6 +680,26 @@ class CompoundFieldTest extends BaseTest {
 
     const field2 = new __CompoundField({ fields: [this.__numField] })
     expect(field2.get()).toBe(this.__numField.__value)
+  }
+
+  async testValueDecoding () {
+    function validateDecoding (data) {
+      const fields = Object.keys(data)
+      const encodedName = __CompoundField.__encodeName(fields)
+      const encodedVal = __CompoundField.__encodeValues(fields, data)
+      expect(__CompoundField.__decodeValues(encodedName, encodedVal)).toEqual(data)
+    }
+
+    expect(__CompoundField.__decodeValues('randomName', '1')).toEqual({})
+    expect(() => __CompoundField.__decodeValues('_c_a', [1, 2].join('\0'))
+    ).toThrow(/Trying to decode compound field value with unequal amount of properties/)
+
+    validateDecoding({ intField: 1 })
+    validateDecoding({ strField: 'abc' })
+    validateDecoding({ boolField: true })
+    validateDecoding({ arrField: [1, 'a'] })
+    validateDecoding({ objField: { a: 1, b: 2 } })
+    validateDecoding({ intField: 1, arrField: [10, 'a'] })
   }
 
   async testValidate () {
