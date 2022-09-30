@@ -1247,7 +1247,7 @@ class Model {
     // value rather than a map of key component names to values
     assert(this.__setupDone,
       `model ${this.name} one-time setup was not done (remember to export ` +
-      'the model and in unit tests remember to call createResource()')
+      'the model and in unit tests remember to call createResources()')
     const pKeyOrder = this.__keyOrder.partition
     if (pKeyOrder.length === 1 && this.__keyOrder.sort.length === 0) {
       const pFieldName = pKeyOrder[0]

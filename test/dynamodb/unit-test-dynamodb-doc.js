@@ -30,7 +30,7 @@ class RaceResult extends db.Model {
   }
 }
 
-class ModelWithFields extends db.Model {
+class ModelWithFieldsExample extends db.Model {
   static FIELDS = {
     someInt: S.int.min(0),
     someBool: S.bool,
@@ -53,14 +53,14 @@ class ModelWithComplexFields extends db.Model {
 // correctly (and continues to do so after any library changes)
 class DBReadmeTest extends BaseTest {
   async beforeAll () {
-    await Order.createResource()
-    await RaceResult.createResource()
-    await ModelWithFields.createResource()
-    await ModelWithComplexFields.createResource()
+    await Order.createResources()
+    await RaceResult.createResources()
+    await ModelWithFieldsExample.createResources()
+    await ModelWithComplexFields.createResources()
   }
 
   async testMinimalExample () {
-    await Order.createResource()
+    await Order.createResources()
     const id = uuidv4()
     await db.Transaction.run(tx => {
       const order = tx.create(Order, { id, product: 'coffee', quantity: 1 })
@@ -83,7 +83,7 @@ class DBReadmeTest extends BaseTest {
   }
 
   async testKeys () {
-    await RaceResult.createResource()
+    await RaceResult.createResources()
     await db.Transaction.run(async tx => {
       const raceResult = await tx.get(
         RaceResult,
@@ -95,7 +95,7 @@ class DBReadmeTest extends BaseTest {
   }
 
   async testFields () {
-    await ModelWithComplexFields.createResource()
+    await ModelWithComplexFields.createResources()
     async function _check (how, expErr, values) {
       const id = uuidv4()
       const expBool = values.anOptBool
@@ -189,7 +189,7 @@ class DBReadmeTest extends BaseTest {
   }
 
   async testSchemaEnforcement () {
-    await ModelWithFields.createResource()
+    await ModelWithFields.createResources()
     const id = uuidv4()
     await db.Transaction.run(tx => {
       // fields are checked immediately when creating a new row; this throws
@@ -261,7 +261,7 @@ class DBReadmeTest extends BaseTest {
   }
 
   async testCustomMethods () {
-    await OrderWithPrice.createResource()
+    await OrderWithPrice.createResources()
     await db.Transaction.run(tx => {
       const id = uuidv4()
       const order = tx.create(OrderWithPrice, {
@@ -277,7 +277,7 @@ class DBReadmeTest extends BaseTest {
     class Guestbook extends db.Model {
       static FIELDS = { names: S.arr(S.str) }
     }
-    await Guestbook.createResource()
+    await Guestbook.createResources()
     const id = uuidv4()
     await db.Transaction.run(tx => {
       tx.create(Guestbook, { id, names: [] })
@@ -324,12 +324,12 @@ class DBReadmeTest extends BaseTest {
       static KEY = { resort: S.str }
       static FIELDS = { numSkiers: S.int.min(0).default(0) }
     }
-    await SkierStats.createResource()
+    await SkierStats.createResources()
     class LiftStats extends db.Model {
       static KEY = { resort: S.str }
       static FIELDS = { numLiftRides: S.int.min(0).default(0) }
     }
-    await LiftStats.createResource()
+    await LiftStats.createResources()
 
     async function liftRideTaken (resort, isNewSkier) {
       await db.Transaction.run(async tx => {
@@ -485,7 +485,7 @@ class DBReadmeTest extends BaseTest {
 
       static FIELDS = { epoch: S.int }
     }
-    await LastUsedFeature.createResource()
+    await LastUsedFeature.createResources()
     await db.Transaction.run(async tx => {
       // Overwrite the row regardless of the content
       const ret = tx.createOrPut(LastUsedFeature,
@@ -609,7 +609,7 @@ class DBReadmeTest extends BaseTest {
     class StringKeyWithNullBytes extends db.Model {
       static KEY = { id: S.obj().prop('raw', S.str) }
     }
-    await StringKeyWithNullBytes.createResource()
+    await StringKeyWithNullBytes.createResources()
     const strWithNullByte = 'I can contain \0, no pr\0blem!'
     await expect(db.Transaction.run(tx => {
       const row = tx.create(StringKeyWithNullBytes, {
@@ -627,7 +627,7 @@ class DBReadmeTest extends BaseTest {
       static KEY = { store: S.str }
       static SORT_KEY = { customer: S.str }
     }
-    await CustomerData.createResource()
+    await CustomerData.createResources()
     await db.Transaction.run(tx => {
       tx.create(CustomerData, { store: 'Wallymart', customer: uuidv4() })
     })
@@ -658,7 +658,7 @@ class DBReadmeTest extends BaseTest {
     class Currency extends Inventory {
       static INVENTORY_ITEM_TYPE = 'money'
     }
-    await Currency.createResource()
+    await Currency.createResources()
     class Weapon extends Inventory {
       static INVENTORY_ITEM_TYPE = 'weapon'
       static FIELDS = {
@@ -666,7 +666,7 @@ class DBReadmeTest extends BaseTest {
         weaponSkillLevel: S.int
       }
     }
-    await Weapon.createResource()
+    await Weapon.createResources()
 
     // both items will be stored in the Inventory; both will also be stored on
     // the same database node since they share the same partition key (userID)
@@ -690,7 +690,7 @@ class DBReadmeTest extends BaseTest {
     class WebsiteHitCounter extends db.Model {
       static FIELDS = { count: S.int.min(0) }
     }
-    await WebsiteHitCounter.createResource()
+    await WebsiteHitCounter.createResources()
 
     async function slowlyIncrement (id) {
       return db.Transaction.run(async tx => {

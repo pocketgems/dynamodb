@@ -233,7 +233,7 @@ function setup (config) {
   if (config.enableDynamicResourceCreation) {
     assert(config.dynamoDBClient,
       'Must provide dynamoDBClient when enableDynamicResourceCreation is on')
-    Model.createResource = makeCreateResourceFunc(
+    Model.createResources = makeCreateResourceFunc(
       config.dynamoDBClient, config.autoscalingClient)
   }
 

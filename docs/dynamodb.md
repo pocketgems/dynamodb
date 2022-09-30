@@ -127,7 +127,7 @@ class RaceResult extends db.Model {
 Access each component of a key just like any other field:
 ```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:scope:DBReadmeTest:testKeys -->
   async testKeys () {
-    await RaceResult.createResource()
+    await RaceResult.createResources()
     await db.Transaction.run(async tx => {
       const raceResult = await tx.get(
         RaceResult,
@@ -161,7 +161,7 @@ Fields are pieces of data attached to an item. They are defined similar to
 `KEY` -- fields can be composed of one _or more_ fields with arbitrary
 [Todea schema](./schema.md)s (`S`) :
 ```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:scope:ModelWithFields -->
-class ModelWithFields extends db.Model {
+class ModelWithFieldsExample extends db.Model {
   static FIELDS = {
     someInt: S.int.min(0),
     someBool: S.bool,
@@ -957,7 +957,7 @@ feature or not. When they use it, we may just want to blindly record it:
 
       static FIELDS = { epoch: S.int }
     }
-    await LastUsedFeature.createResource()
+    await LastUsedFeature.createResources()
     await db.Transaction.run(async tx => {
       // Overwrite the row regardless of the content
       const ret = tx.createOrPut(LastUsedFeature,

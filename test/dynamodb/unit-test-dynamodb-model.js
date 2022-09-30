@@ -174,7 +174,7 @@ class SimpleModel extends db.Model {}
 class SimpleModelTest extends BaseTest {
   async beforeAll () {
     // Create new table should work
-    await SimpleModel.createResource()
+    await SimpleModel.createResources()
   }
 
   testInvalidSetup () {
@@ -196,7 +196,7 @@ class SimpleModelTest extends BaseTest {
 
   async testRecreatingTable () {
     // Re-creating the same table shouldn't error out
-    await SimpleModel.createResource()
+    await SimpleModel.createResources()
   }
 
   async testCreateIndex () {
@@ -219,7 +219,7 @@ class SimpleModelTest extends BaseTest {
     }
     const onDemandDB = setupDB(dbParams)
 
-    await GuildMetadata.createResource()
+    await GuildMetadata.createResources()
     const tableDescription = await onDemandDB.Model.dbClient
       .describeTable({ TableName: GuildMetadata.fullTableName })
       .promise()
@@ -235,7 +235,7 @@ class SimpleModelTest extends BaseTest {
       delete GuildMetadata.__createdResource
       delete GuildMetadata.__CACHED_KEY_ORDER
       delete GuildMetadata.__CACHED_SCHEMA
-      await GuildMetadata.createResource()
+      await GuildMetadata.createResources()
     }
 
     GuildMetadata.INDEXES = { guildByRank: { KEY: ['rank'] } }
@@ -305,7 +305,7 @@ class SimpleModelTest extends BaseTest {
     }
     const onDemandDB = setupDB(dbParams)
     let CapacityModel = class extends onDemandDB.Model {}
-    await CapacityModel.createResource()
+    await CapacityModel.createResources()
     let tableDescription = await onDemandDB.Model.dbClient
       .describeTable({ TableName: CapacityModel.fullTableName })
       .promise()
@@ -328,7 +328,7 @@ class SimpleModelTest extends BaseTest {
     }
     const provisionedDB = setupDB(dbParams)
     CapacityModel = class extends provisionedDB.Model {}
-    await CapacityModel.createResource()
+    await CapacityModel.createResources()
     tableDescription = await provisionedDB.Model.dbClient
       .describeTable({ TableName: CapacityModel.fullTableName })
       .promise()
@@ -342,7 +342,7 @@ class SimpleModelTest extends BaseTest {
     const oldVal = process.env.INDEBUGGER
     process.env.INDEBUGGER = 0
     const tempDB = require('../../src/dynamodb/src/default-db')
-    expect(tempDB.Model.createResource).toBe(undefined)
+    expect(tempDB.Model.createResources).toBe(undefined)
     expect(tempDB.Model.__private).toBe(undefined)
     process.env.INDEBUGGER = oldVal
     jest.resetModules()
@@ -476,10 +476,10 @@ class IntKeyModel extends db.Model {
 
 class IDSchemaTest extends BaseTest {
   async beforeAll () {
-    await IDWithSchemaModel.createResource()
-    await CompoundIDModel.createResource()
-    await ObjKeyModel.createResource()
-    await IntKeyModel.createResource()
+    await IDWithSchemaModel.createResources()
+    await CompoundIDModel.createResources()
+    await ObjKeyModel.createResources()
+    await IntKeyModel.createResources()
   }
 
   async testSimpleIDWithSchema () {
@@ -584,7 +584,7 @@ class BasicModel extends db.Model {
 
 class WriteTest extends BaseTest {
   async beforeAll () {
-    await BasicModel.createResource()
+    await BasicModel.createResources()
     this.modelName = uuidv4()
     await txGet(BasicModel, this.modelName, model => {
       model.noRequiredNoDefault = 0
@@ -708,7 +708,7 @@ class WriteTest extends BaseTest {
 
 class ConditionCheckTest extends BaseTest {
   async beforeAll () {
-    await BasicModel.createResource()
+    await BasicModel.createResources()
     this.modelName = uuidv4()
     await txGet(BasicModel, this.modelName)
   }
@@ -762,8 +762,8 @@ class RangeKeyModel extends db.Model {
 class KeyTest extends BaseTest {
   async beforeAll () {
     await Promise.all([
-      SimpleModel.createResource(),
-      RangeKeyModel.createResource()
+      SimpleModel.createResources(),
+      RangeKeyModel.createResources()
     ])
   }
 
@@ -924,7 +924,7 @@ class PXPayout extends db.Model {
 
 class IndexTest extends BaseTest {
   async beforeAll () {
-    await PXPayout.createResource()
+    await PXPayout.createResources()
   }
 
   async testIndexFieldGeneration () {
@@ -970,7 +970,7 @@ class JSONModel extends db.Model {
 
 class JSONModelTest extends BaseTest {
   async beforeAll () {
-    await JSONModel.createResource()
+    await JSONModel.createResources()
   }
 
   async testRequiredFields () {
@@ -1046,7 +1046,7 @@ class JSONModelTest extends BaseTest {
 class GetArgsParserTest extends BaseTest {
   async beforeAll () {
     await super.beforeAll()
-    await SimpleModel.createResource()
+    await SimpleModel.createResources()
   }
 
   async testJustAModel () {
@@ -1139,7 +1139,7 @@ class GetArgsParserTest extends BaseTest {
 
 class WriteBatcherTest extends BaseTest {
   async beforeAll () {
-    await BasicModel.createResource()
+    await BasicModel.createResources()
     this.modelNames = [uuidv4(), uuidv4()]
     const promises = this.modelNames.map(name => {
       return txGet(BasicModel, name, (m) => {
@@ -1204,7 +1204,7 @@ class WriteBatcherTest extends BaseTest {
     class ReservedAttrName extends db.Model {
       static FIELDS = { items: S.obj(), count: S.int, token: S.str }
     }
-    await ReservedAttrName.createResource()
+    await ReservedAttrName.createResources()
     await db.Transaction.run(tx => {
       tx.create(ReservedAttrName, {
         id: uuidv4(), items: {}, count: 0, token: 'x'
@@ -1348,7 +1348,7 @@ class WriteBatcherTest extends BaseTest {
    * Verify modifying keyparts is not allowed
    */
   async testMutatingKeyparts () {
-    await CompoundIDModel.createResource()
+    await CompoundIDModel.createResources()
     const compoundID = { year: 1900, make: 'Honda', upc: uuidv4() }
     let createPromise = db.Transaction.run(async tx => {
       const model = tx.create(CompoundIDModel, compoundID)
@@ -1387,7 +1387,7 @@ class DefaultsTest extends BaseTest {
         }).default({})
       }
     }
-    await NestedDefaultsModel.createResource()
+    await NestedDefaultsModel.createResources()
     const id = uuidv4()
 
     await db.Transaction.run(async tx => {
@@ -1434,7 +1434,7 @@ class DefaultsTest extends BaseTest {
       static FIELDS = fields
     }
 
-    await NestedDefaultsModel.createResource()
+    await NestedDefaultsModel.createResources()
     const id = uuidv4()
 
     await db.Transaction.run(async tx => {
@@ -1478,7 +1478,7 @@ class OptDefaultModelTest extends BaseTest {
         }
       }
     }
-    await OptDefaultModel.createResource()
+    await OptDefaultModel.createResources()
 
     function check (obj, def, opt, defOpt, def2, opt2, defOpt2) {
       expect(obj.def).toBe(def)
@@ -1534,7 +1534,7 @@ class OptDefaultModelTest extends BaseTest {
         defOpt2: S.int.default(8).optional()
       }
     }
-    await OptDefaultModel2.createResource()
+    await OptDefaultModel2.createResources()
 
     // the default value for new fields isn't stored in the db yet (old rows
     // have not been changed yet)
@@ -1605,7 +1605,7 @@ class OptionalFieldConditionTest extends BaseTest {
         }
       }
     }
-    await OptNumModel.createResource()
+    await OptNumModel.createResources()
 
     const id = uuidv4()
     await db.Transaction.run(tx => {
@@ -1642,8 +1642,8 @@ class NoTTLModel extends TTLModel {
 class TTLTest extends BaseTest {
   async beforeAll () {
     await super.beforeAll()
-    await TTLModel.createResource()
-    await NoTTLModel.createResource()
+    await TTLModel.createResources()
+    await NoTTLModel.createResources()
   }
 
   async testTTL () {
@@ -1860,7 +1860,7 @@ class TTLTest extends BaseTest {
 class SnapshotTest extends BaseTest {
   async beforeAll () {
     await super.beforeAll()
-    await JSONModel.createResource()
+    await JSONModel.createResources()
     this.modelID = uuidv4()
     await db.Transaction.run(async tx => {
       await tx.get(JSONModel, {

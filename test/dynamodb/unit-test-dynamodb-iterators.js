@@ -54,7 +54,7 @@ class LazyFilterKeyModel extends db.Model {
 class IteratorTest extends BaseTest {
   async beforeAll () {
     await super.beforeAll()
-    await TestIteratorModel.createResource()
+    await TestIteratorModel.createResources()
   }
 
   async testConstructorInputValidation () {
@@ -430,7 +430,7 @@ class IteratorTest extends BaseTest {
       { [`:_${awsName}`]: '23' }
     ])
 
-    await LazyFilterKeyModel.createResource()
+    await LazyFilterKeyModel.createResources()
     const query3 = new Query({
       ModelCls: LazyFilterKeyModel,
       options: {
@@ -546,7 +546,7 @@ class OrderModel extends db.Model {
 class ScanTest extends BaseTest {
   async beforeAll () {
     await super.beforeAll()
-    await ScanModel.createResource()
+    await ScanModel.createResources()
 
     const ts = Math.floor(new Date().getTime() / 1000) - 99999
     await db.Transaction.run(tx => {
@@ -761,9 +761,9 @@ class SortModel extends db.Model {
 class QueryTest extends BaseTest {
   async beforeAll () {
     await super.beforeAll()
-    await QueryModel.createResource()
-    await SortModel.createResource()
-    await OrderModel.createResource()
+    await QueryModel.createResources()
+    await SortModel.createResources()
+    await OrderModel.createResources()
 
     await db.Transaction.run(tx => {
       const models = [
@@ -970,7 +970,7 @@ class QueryTest extends BaseTest {
       expect(results2.length).toBe(0)
     })
 
-    LazyFilterKeyModel.createResource()
+    LazyFilterKeyModel.createResources()
     await db.Transaction.run(async tx => {
       const models = [
         LazyFilterKeyModel.data({
