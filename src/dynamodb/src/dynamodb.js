@@ -46,7 +46,7 @@ function makeCreateResourceFunc (dynamoDB, autoscaling) {
     this.__createdResource = true
 
     this.__doOneTimeModelPrep()
-    const definitions = this.__getResourceDefinitions()
+    const definitions = this.resourceDefinitions
     const tableParams = Object.values(definitions)
       .filter(val => val.Type === 'AWS::DynamoDB::Table')[0]
       .Properties

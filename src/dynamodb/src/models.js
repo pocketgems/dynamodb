@@ -396,7 +396,7 @@ class Model {
     return isNumericKey
   }
 
-  static __getResourceDefinitions () {
+  static get resourceDefinitions () {
     this.__doOneTimeModelPrep()
     // the partition key attribute is always "_id"
     const keyType = this.__useNumericKey(this.KEY) ? 'N' : 'S'

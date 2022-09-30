@@ -281,7 +281,7 @@ class SimpleModelTest extends BaseTest {
       }
     }
 
-    const definitions = IndexDBModel.__getResourceDefinitions()
+    const definitions = IndexDBModel.resourceDefinitions
     const tableParams = Object.values(definitions)
       .filter(val => val.Type === 'AWS::DynamoDB::Table')[0]
       .Properties
@@ -1668,7 +1668,7 @@ class TTLTest extends BaseTest {
   }
 
   async testCFResource () {
-    expect(Object.values(TTLModel.__getResourceDefinitions())[0].Properties)
+    expect(Object.values(TTLModel.resourceDefinitions)[0].Properties)
       .toHaveProperty('TimeToLiveSpecification')
   }
 
@@ -1677,26 +1677,26 @@ class TTLTest extends BaseTest {
       static EXPIRE_EPOCH_FIELD = 'notTime'
     }
     expect(() => {
-      Cls1.__getResourceDefinitions()
+      Cls1.resourceDefinitions // eslint-disable-line
     }).toThrow('must refer to an integer or double field')
 
     const Cls2 = class extends TTLModel {
       static EXPIRE_EPOCH_FIELD = 'optionalTime'
     }
-    Cls2.__getResourceDefinitions() // works ok
+    Cls2.resourceDefinitions // eslint-disable-line
 
     const Cls3 = class extends TTLModel {
       static EXPIRE_EPOCH_FIELD = 'doubleTime'
     }
     expect(() => {
-      Cls3.__getResourceDefinitions()
+      Cls3.resourceDefinitions // eslint-disable-line
     }).not.toThrow()
 
     const Cls4 = class extends TTLModel {
       static EXPIRE_EPOCH_FIELD = 'invalid'
     }
     expect(() => {
-      Cls4.__getResourceDefinitions()
+      Cls4.resourceDefinitions // eslint-disable-line
     }).toThrow('EXPIRE_EPOCH_FIELD must refer to an existing field')
   }
 
