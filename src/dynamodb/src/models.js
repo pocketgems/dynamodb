@@ -316,6 +316,26 @@ class Model {
     }
   }
 
+  static __validateTableName () {
+    const tableName = this.tableName
+    try {
+      assert.ok(!tableName.endsWith('Model'), 'not include "Model"')
+      assert.ok(!tableName.endsWith('Table'), 'not include "Table"')
+      assert.ok(tableName.indexOf('_') < 0, 'not include underscores')
+      assert.ok(tableName[0].match(/[A-Z]/), 'be capitalized')
+      assert.ok(tableName.match(/[a-zA-Z0-9]*/), 'only use permitted chars')
+      // we will eventually need to allow this in some cases since some
+      // singular words also end in the letter "s"
+      if (tableName.endsWith('s')) {
+        const whiteList = ['Stats']
+        const isWhiteListed = whiteList.some(p => tableName.endsWith(p))
+        assert.ok(isWhiteListed, 'not be plural')
+      }
+    } catch (e) {
+      throw new Error(`Bad table name "${tableName}": it must ${e.message}`)
+    }
+  }
+
   /**
    * Check that field names don't overlap, etc.
    */
@@ -328,6 +348,7 @@ class Model {
     }
     this.__setupDone = true
 
+    this.__validateTableName()
     // _attrs maps the name of attributes that are visible to users of
     // this model. This is the combination of attributes (keys) defined by KEY,
     // SORT_KEY and FIELDS.

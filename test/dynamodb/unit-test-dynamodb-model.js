@@ -187,6 +187,17 @@ class SimpleModelTest extends BaseTest {
     check({ isCreate: true })
   }
 
+  testNamingConvention () {
+    expect(() => {
+      class SomeModel extends db.Model {}
+      SomeModel.resourceDefinitions // eslint-disable-line
+    }).toThrow(/not include "Model"/)
+    expect(() => {
+      class SomeTable extends db.Model {}
+      SomeTable.resourceDefinitions // eslint-disable-line
+    }).toThrow(/not include "Table"/)
+  }
+
   async testFieldNotExtendable () {
     await expect(db.Transaction.run(tx => {
       const row = tx.create(SimpleModel, { id: uuidv4() })
