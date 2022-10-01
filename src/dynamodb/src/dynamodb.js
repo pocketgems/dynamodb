@@ -40,6 +40,8 @@ const {
 
 function makeCreateResourceFunc (dynamoDB, autoscaling) {
   return async function () {
+    assert(dynamoDB,
+      'Must provide dynamoDBClient when using createResources')
     if (Object.hasOwnProperty.call(this, '__createdResource')) {
       return // already created resource
     }
@@ -203,8 +205,7 @@ function makeCreateResourceFunc (dynamoDB, autoscaling) {
 const DefaultConfig = {
   autoscalingClient: undefined,
   dynamoDBClient: undefined,
-  dynamoDBDocumentClient: undefined,
-  enableDynamicResourceCreation: false
+  dynamoDBDocumentClient: undefined
 }
 
 /**
@@ -216,26 +217,19 @@ const DefaultConfig = {
  *
  * @param {Object} [config] Configurations for the library
  * @param {Object} [config.dynamoDBClient=undefined] AWS DynamoDB Client used
- *   to manage table resources. Required when enableDynamicResourceCreation is
- *   true.
+ *   to manage table resources. Required when createResources is used.
  * @param {String} [config.dynamoDBDocumentClient] AWS DynamoDB document client
  *   used to interact with db items.
  * @param {Object} [config.autoscalingClient=undefined] AWS Application
  *   AutoScaling client used to provision auto scaling rules on DB tables.
- * @param {Boolean} [config.enableDynamicResourceCreation=false] Wether to
- *   enable dynamic table resource creations.
  * @returns {Object} Symbols that clients of this library can use.
  * @private
  */
 function setup (config) {
   config = loadOptionDefaults(config, DefaultConfig)
 
-  if (config.enableDynamicResourceCreation) {
-    assert(config.dynamoDBClient,
-      'Must provide dynamoDBClient when enableDynamicResourceCreation is on')
-    Model.createResources = makeCreateResourceFunc(
-      config.dynamoDBClient, config.autoscalingClient)
-  }
+  Model.createResources = makeCreateResourceFunc(
+    config.dynamoDBClient, config.autoscalingClient)
 
   // Make DynamoDB document client available to these classes
   const documentClient = config.dynamoDBDocumentClient

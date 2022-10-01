@@ -225,7 +225,6 @@ class SimpleExampleTest extends BaseTest {
     const dbParams = {
       dynamoDBClient: db.Model.dbClient,
       dynamoDBDocumentClient: db.Model.documentClient,
-      enableDynamicResourceCreation: true,
       autoscalingClient: undefined
     }
     const onDemandDB = setupDB(dbParams)
@@ -311,7 +310,6 @@ class SimpleExampleTest extends BaseTest {
     const dbParams = {
       dynamoDBClient: db.Model.dbClient,
       dynamoDBDocumentClient: db.Model.documentClient,
-      enableDynamicResourceCreation: true,
       autoscalingClient: undefined
     }
     const onDemandDB = setupDB(dbParams)
@@ -353,7 +351,7 @@ class SimpleExampleTest extends BaseTest {
     const oldVal = process.env.INDEBUGGER
     process.env.INDEBUGGER = 0
     const tempDB = require('../../src/dynamodb/src/default-db')
-    expect(tempDB.Model.createResources).toBe(undefined)
+    expect(tempDB.Model.createResources).toBeDefined()
     expect(tempDB.Model.__private).toBe(undefined)
     process.env.INDEBUGGER = oldVal
     jest.resetModules()

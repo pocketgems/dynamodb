@@ -34,7 +34,5 @@ if (!inDebugger &&
 
 module.exports = setup({
   dynamoDBClient,
-  dynamoDBDocumentClient,
-  // By default, production code should provision resources via infra-as-code
-  enableDynamicResourceCreation: inDebugger
+  dynamoDBDocumentClient
 })
