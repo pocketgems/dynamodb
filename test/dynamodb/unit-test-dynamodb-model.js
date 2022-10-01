@@ -14,10 +14,10 @@ class BadModelTest extends BaseTest {
   }
 
   testMissingPrimaryKey () {
-    class BadModel extends db.Model {
+    class BadExample extends db.Model {
       static KEY = {}
     }
-    this.check(BadModel, /at least one partition key field/)
+    this.check(BadExample, /at least one partition key field/)
     class BadModel2 extends db.Model {
       static KEY = null
     }
@@ -26,11 +26,11 @@ class BadModelTest extends BaseTest {
 
   testDuplicateField () {
     const expMsg = /more than once/
-    class BadModel extends db.Model {
+    class BadExample extends db.Model {
       static KEY = { name: S.str }
       static FIELDS = { name: S.str }
     }
-    this.check(BadModel, expMsg)
+    this.check(BadExample, expMsg)
 
     class BadModel2 extends db.Model {
       static SORT_KEY = { name: S.str }
@@ -40,10 +40,10 @@ class BadModelTest extends BaseTest {
   }
 
   testReservedName () {
-    class BadModel extends db.Model {
+    class BadExample extends db.Model {
       static SORT_KEY = { isNew: S.str }
     }
-    this.check(BadModel, /field name is reserved/)
+    this.check(BadExample, /field name is reserved/)
 
     class BadModel2 extends db.Model {
       static SORT_KEY = { getField: S.str }
@@ -52,21 +52,21 @@ class BadModelTest extends BaseTest {
   }
 
   testIDName () {
-    class SortKeyMustProvideNames extends db.Model {
+    class SortKeyMustProvideNamesExample extends db.Model {
       static SORT_KEY = S.double
     }
-    this.check(SortKeyMustProvideNames, /must define key component name/)
+    this.check(SortKeyMustProvideNamesExample, /must define key component name/)
 
-    class PartitionKeyMustProvideNames extends db.Model {
+    class PartitionKeyMustProvideNamesExample extends db.Model {
       static KEY = S.double
     }
-    this.check(PartitionKeyMustProvideNames, /must define key component name/)
+    this.check(PartitionKeyMustProvideNamesExample, /must define key component name/)
 
-    class OkModel extends db.Model {
+    class OkExample extends db.Model {
       static KEY = { id: S.str }
       static SORT_KEY = null
     }
-    OkModel.__doOneTimeModelPrep()
+    OkExample.__doOneTimeModelPrep()
 
     class IDCanBePartOfACompoundPartitionKey extends db.Model {
       static KEY = { id: S.str, n: S.double }
@@ -92,37 +92,37 @@ class BadModelTest extends BaseTest {
   }
 
   testIndexFieldName () {
-    class BadModel extends db.Model {
+    class BadExample extends db.Model {
       static KEY = { name: S.str }
       static SORT_KEY = { rank: S.int }
       static FIELDS = { objField: S.obj() }
       static INDEXES = { badIndex: {} }
     }
-    this.check(BadModel, 'partition key is required')
+    this.check(BadExample, 'partition key is required')
 
-    BadModel.INDEXES = { badIndex: { KEY: ['name'], SORT_KEY: ['dummy', 'missing'] } }
-    delete BadModel.__setupDone
-    this.check(BadModel, 'all field names must exist in the table')
+    BadExample.INDEXES = { badIndex: { KEY: ['name'], SORT_KEY: ['dummy', 'missing'] } }
+    delete BadExample.__setupDone
+    this.check(BadExample, 'all field names must exist in the table')
 
-    BadModel.INDEXES = { badIndex: { KEY: ['missing'], SORT_KEY: ['name'] } }
-    delete BadModel.__setupDone
-    this.check(BadModel, 'all field names must exist in the table')
+    BadExample.INDEXES = { badIndex: { KEY: ['missing'], SORT_KEY: ['name'] } }
+    delete BadExample.__setupDone
+    this.check(BadExample, 'all field names must exist in the table')
 
-    BadModel.INDEXES = { badIndex: { KEY: ['name'], SORT_KEY: ['name'] } }
-    delete BadModel.__setupDone
-    this.check(BadModel, 'field name cannot be used more than once')
+    BadExample.INDEXES = { badIndex: { KEY: ['name'], SORT_KEY: ['name'] } }
+    delete BadExample.__setupDone
+    this.check(BadExample, 'field name cannot be used more than once')
 
-    BadModel.INDEXES = { badIndex: { KEY: ['name'], INCLUDE_ONLY: ['invalid'] } }
-    delete BadModel.__setupDone
-    this.check(BadModel, 'Field invalid doesn\'t exist in the model')
+    BadExample.INDEXES = { badIndex: { KEY: ['name'], INCLUDE_ONLY: ['invalid'] } }
+    delete BadExample.__setupDone
+    this.check(BadExample, 'Field invalid doesn\'t exist in the model')
 
-    BadModel.INDEXES = { badIndex: { KEY: ['name'], INCLUDE_ONLY: ['rank'] } }
-    delete BadModel.__setupDone
-    this.check(BadModel, 'Field rank is a key attribute and is automatically included')
+    BadExample.INDEXES = { badIndex: { KEY: ['name'], INCLUDE_ONLY: ['rank'] } }
+    delete BadExample.__setupDone
+    this.check(BadExample, 'Field rank is a key attribute and is automatically included')
 
-    BadModel.INDEXES = { badIndex: { KEY: ['objField'], INCLUDE_ONLY: ['name'] } }
-    delete BadModel.__setupDone
-    this.check(BadModel, 'Field name is a key attribute and is automatically included')
+    BadExample.INDEXES = { badIndex: { KEY: ['objField'], INCLUDE_ONLY: ['name'] } }
+    delete BadExample.__setupDone
+    this.check(BadExample, 'Field name is a key attribute and is automatically included')
   }
 }
 
@@ -169,18 +169,18 @@ async function txCreate (...args) {
   })
 }
 
-class SimpleModel extends db.Model {}
+class SimpleExample extends db.Model {}
 
-class SimpleModelTest extends BaseTest {
+class SimpleExampleTest extends BaseTest {
   async beforeAll () {
     // Create new table should work
-    await SimpleModel.createResources()
+    await SimpleExample.createResources()
   }
 
   testInvalidSetup () {
     function check (badSrc) {
       expect(() => {
-        return new SimpleModel(badSrc, true, { id: uuidv4() })
+        return new SimpleExample(badSrc, true, { id: uuidv4() })
       }).toThrow(/invalid item source type/)
     }
     check('nope')
@@ -200,14 +200,14 @@ class SimpleModelTest extends BaseTest {
 
   async testFieldNotExtendable () {
     await expect(db.Transaction.run(tx => {
-      const row = tx.create(SimpleModel, { id: uuidv4() })
+      const row = tx.create(SimpleExample, { id: uuidv4() })
       row.id.weCannotAddPropertiesToFieldsOnModels = undefined
     })).rejects.toThrow(TypeError)
   }
 
   async testRecreatingTable () {
     // Re-creating the same table shouldn't error out
-    await SimpleModel.createResources()
+    await SimpleExample.createResources()
   }
 
   async testCreateIndex () {
@@ -279,7 +279,7 @@ class SimpleModelTest extends BaseTest {
   }
 
   async testIndexKeyResourceGeneration () {
-    const IndexDBModel = class extends db.Model {
+    const IndexDBExample = class extends db.Model {
       static KEY = { name: S.str }
       static SORT_KEY = { rank: S.int, score: S.int }
       static FIELDS = { guild: S.str, bool: S.bool, arrField: S.arr(S.obj({ a: S.int })) }
@@ -292,7 +292,7 @@ class SimpleModelTest extends BaseTest {
       }
     }
 
-    const definitions = IndexDBModel.resourceDefinitions
+    const definitions = IndexDBExample.resourceDefinitions
     const tableParams = Object.values(definitions)
       .filter(val => val.Type === 'AWS::DynamoDB::Table')[0]
       .Properties
@@ -315,10 +315,10 @@ class SimpleModelTest extends BaseTest {
       autoscalingClient: undefined
     }
     const onDemandDB = setupDB(dbParams)
-    let CapacityModel = class extends onDemandDB.Model {}
-    await CapacityModel.createResources()
+    let CapacityExample = class extends onDemandDB.Model {}
+    await CapacityExample.createResources()
     let tableDescription = await onDemandDB.Model.dbClient
-      .describeTable({ TableName: CapacityModel.fullTableName })
+      .describeTable({ TableName: CapacityExample.fullTableName })
       .promise()
     expect(tableDescription.Table.BillingModeSummary.BillingMode)
       .toBe('PAY_PER_REQUEST')
@@ -338,10 +338,10 @@ class SimpleModelTest extends BaseTest {
       putScalingPolicy: () => fakeAPI
     }
     const provisionedDB = setupDB(dbParams)
-    CapacityModel = class extends provisionedDB.Model {}
-    await CapacityModel.createResources()
+    CapacityExample = class extends provisionedDB.Model {}
+    await CapacityExample.createResources()
     tableDescription = await provisionedDB.Model.dbClient
-      .describeTable({ TableName: CapacityModel.fullTableName })
+      .describeTable({ TableName: CapacityExample.fullTableName })
       .promise()
     expect(tableDescription.Table.BillingModeSummary.BillingMode)
       .toBe('PROVISIONED')
@@ -361,26 +361,26 @@ class SimpleModelTest extends BaseTest {
 
   async testWriteModel () {
     const name = uuidv4()
-    await txCreate(SimpleModel, { id: name })
-    expect((await txGet(SimpleModel, name)).id).toBe(name)
+    await txCreate(SimpleExample, { id: name })
+    expect((await txGet(SimpleExample, name)).id).toBe(name)
   }
 
   async testNoExtension () {
-    const model = await txGet(SimpleModel, uuidv4())
+    const model = await txGet(SimpleExample, uuidv4())
     expect(() => {
       model.someProp = 1
     }).toThrow()
   }
 
   async testIdImmutable () {
-    const model = await txGet(SimpleModel, uuidv4())
+    const model = await txGet(SimpleExample, uuidv4())
     expect(() => {
       model.id = 'someThingElse'
     }).toThrow()
   }
 
   async testEventualConsistentGetParams () {
-    const getParams = SimpleModel.__getParams(
+    const getParams = SimpleExample.__getParams(
       { id: '123' },
       { inconsistentRead: false })
     expect(getParams.ConsistentRead).toBe(true)
@@ -399,14 +399,14 @@ class SimpleModelTest extends BaseTest {
     db.Model.__getParams = mock
     const getParams = { inconsistentRead: false, createIfMissing: true }
     const fut = db.Transaction.run(async tx => {
-      await tx.get(SimpleModel, uuidv4(), getParams)
+      await tx.get(SimpleExample, uuidv4(), getParams)
     })
     await expect(fut).rejects.toThrow(Error)
     db.Model.__getParams = originalFunc
   }
 
   async testDescribeTable () {
-    const data = await SimpleModel.describeTable()
+    const data = await SimpleExample.describeTable()
     expect(data.itemCount).toBeDefined()
     expect(data.sizeInBytes).toBeDefined()
   }
@@ -416,10 +416,10 @@ class NewModelTest extends BaseTest {
   async testCreateModelIsNew () {
     const result = await db.Transaction.run(tx => {
       const id = uuidv4()
-      const model = tx.create(SimpleModel, { id })
+      const model = tx.create(SimpleExample, { id })
       expect(model.id).toBe(id)
-      expect(model.id).toBe(SimpleModel.__encodeCompoundValue(
-        SimpleModel.__keyOrder.partition, { id }))
+      expect(model.id).toBe(SimpleExample.__encodeCompoundValue(
+        SimpleExample.__keyOrder.partition, { id }))
       expect(model.isNew).toBe(true)
       tx.__reset() // Don't write anything, cause it will fail.
       return 321
@@ -429,40 +429,40 @@ class NewModelTest extends BaseTest {
 
   async testGetNewModel () {
     let ret = await db.Transaction.run(async tx => {
-      return tx.get(SimpleModel, uuidv4())
+      return tx.get(SimpleExample, uuidv4())
     })
     expect(ret).toBe(undefined)
 
     ret = await db.Transaction.run(async tx => {
-      return tx.get(SimpleModel, uuidv4(), { createIfMissing: true })
+      return tx.get(SimpleExample, uuidv4(), { createIfMissing: true })
     })
     expect(ret).not.toBe(undefined)
   }
 
   async testNewModelWriteCondition () {
     const id = uuidv4()
-    await txCreate(SimpleModel, { id })
-    await expect(txCreate(SimpleModel, { id }))
+    await txCreate(SimpleExample, { id })
+    await expect(txCreate(SimpleExample, { id }))
       .rejects.toThrow(
-        `Tried to recreate an existing model: SimpleModel _id=${id}`)
+        `Tried to recreate an existing model: SimpleExample _id=${id}`)
   }
 
   async testNewModelParamsDeprecated () {
     const id = uuidv4()
-    const model = await txCreate(SimpleModel, { id })
+    const model = await txCreate(SimpleExample, { id })
     expect(model.id).toBe(id)
     expect(model.params).toStrictEqual(undefined)
   }
 }
 
-class IDWithSchemaModel extends db.Model {
+class IDWithSchemaExample extends db.Model {
   static KEY = {
     id: S.str.pattern(/^xyz.*$/).desc(
       'any string that starts with the prefix "xyz"')
   }
 }
 
-class CompoundIDModel extends db.Model {
+class CompoundIDExample extends db.Model {
   static KEY = {
     year: S.int.min(1900),
     make: S.str.min(3),
@@ -470,7 +470,7 @@ class CompoundIDModel extends db.Model {
   }
 }
 
-class ObjKeyModel extends db.Model {
+class ObjKeyExample extends db.Model {
   static KEY = {
     obj: S.obj({
       innerInt: S.int,
@@ -479,7 +479,7 @@ class ObjKeyModel extends db.Model {
   }
 }
 
-class IntKeyModel extends db.Model {
+class IntKeyExample extends db.Model {
   static KEY = {
     id: S.int
   }
@@ -487,14 +487,14 @@ class IntKeyModel extends db.Model {
 
 class IDSchemaTest extends BaseTest {
   async beforeAll () {
-    await IDWithSchemaModel.createResources()
-    await CompoundIDModel.createResources()
-    await ObjKeyModel.createResources()
-    await IntKeyModel.createResources()
+    await IDWithSchemaExample.createResources()
+    await CompoundIDExample.createResources()
+    await ObjKeyExample.createResources()
+    await IntKeyExample.createResources()
   }
 
   async testSimpleIDWithSchema () {
-    const cls = IDWithSchemaModel
+    const cls = IDWithSchemaExample
     const id = 'xyz' + uuidv4()
     const m1 = await txCreate(cls, { id })
     expect(m1.id).toBe(id)
@@ -513,8 +513,8 @@ class IDSchemaTest extends BaseTest {
 
   async testCompoundID () {
     const compoundID = { year: 1900, make: 'Honda', upc: uuidv4() }
-    const keyOrder = CompoundIDModel.__keyOrder.partition
-    const id = CompoundIDModel.__encodeCompoundValue(
+    const keyOrder = CompoundIDExample.__keyOrder.partition
+    const id = CompoundIDExample.__encodeCompoundValue(
       keyOrder, compoundID)
     function check (entity) {
       expect(entity._id).toBe(id)
@@ -523,41 +523,41 @@ class IDSchemaTest extends BaseTest {
       expect(entity.upc).toBe(compoundID.upc)
     }
 
-    check(await txCreate(CompoundIDModel, compoundID))
-    check(await txGetByKey(CompoundIDModel.data(compoundID)))
-    check(await txGet(CompoundIDModel, compoundID))
+    check(await txCreate(CompoundIDExample, compoundID))
+    check(await txGetByKey(CompoundIDExample.data(compoundID)))
+    check(await txGet(CompoundIDExample, compoundID))
 
-    expect(() => CompoundIDModel.key({})).toThrow(db.InvalidFieldError)
-    expect(() => CompoundIDModel.key({
+    expect(() => CompoundIDExample.key({})).toThrow(db.InvalidFieldError)
+    expect(() => CompoundIDExample.key({
       year: undefined, // not allowed!
       make: 'Toyota',
       upc: 'nope'
     })).toThrow(db.InvalidFieldError)
-    expect(() => CompoundIDModel.key({
+    expect(() => CompoundIDExample.key({
       year: 2020,
       make: 'Toy\0ta', // no null bytes!
       upc: 'nope'
     })).toThrow(db.InvalidFieldError)
-    expect(() => CompoundIDModel.key({
+    expect(() => CompoundIDExample.key({
       year: 2040,
       make: 'need upc too'
     })).toThrow(db.InvalidFieldError)
 
     const msg = /incorrect number of components/
-    expect(() => CompoundIDModel.__decodeCompoundValue(
+    expect(() => CompoundIDExample.__decodeCompoundValue(
       keyOrder, '', 'fake')).toThrow(msg)
-    expect(() => CompoundIDModel.__decodeCompoundValue(
+    expect(() => CompoundIDExample.__decodeCompoundValue(
       keyOrder, id + '\0', 'fake')).toThrow(msg)
-    expect(() => CompoundIDModel.__decodeCompoundValue(
+    expect(() => CompoundIDExample.__decodeCompoundValue(
       keyOrder, '\0' + id, 'fake')).toThrow(msg)
 
-    expect(() => CompoundIDModel.key('unexpected value')).toThrow(
+    expect(() => CompoundIDExample.key('unexpected value')).toThrow(
       db.InvalidParameterError)
   }
 
   async testObjKeyStableEncoding () {
-    const keyOrder = ObjKeyModel.__keyOrder.partition
-    const key1 = ObjKeyModel.__encodeCompoundValue(keyOrder,
+    const keyOrder = ObjKeyExample.__keyOrder.partition
+    const key1 = ObjKeyExample.__encodeCompoundValue(keyOrder,
       {
         obj: {
           innerInt: 10,
@@ -565,7 +565,7 @@ class IDSchemaTest extends BaseTest {
         }
       }
     )
-    const key2 = ObjKeyModel.__encodeCompoundValue(keyOrder,
+    const key2 = ObjKeyExample.__encodeCompoundValue(keyOrder,
       {
         obj: {
           innerStr: 'xyz',
@@ -577,17 +577,17 @@ class IDSchemaTest extends BaseTest {
   }
 
   async testIntKey () {
-    const key = IntKeyModel.__encodeCompoundValue(
-      IntKeyModel.__keyOrder.partition, { id: 2342 }, true)
+    const key = IntKeyExample.__encodeCompoundValue(
+      IntKeyExample.__keyOrder.partition, { id: 2342 }, true)
     expect(key).toBe(2342)
 
-    const decoded = IntKeyModel.__decodeCompoundValue(
-      IntKeyModel.__keyOrder.partition, 2, '_sk', true)
+    const decoded = IntKeyExample.__decodeCompoundValue(
+      IntKeyExample.__keyOrder.partition, 2, '_sk', true)
     expect(decoded).toEqual({ id: 2 })
   }
 }
 
-class BasicModel extends db.Model {
+class BasicExample extends db.Model {
   static FIELDS = {
     noRequiredNoDefault: S.double.optional()
   }
@@ -595,15 +595,15 @@ class BasicModel extends db.Model {
 
 class WriteTest extends BaseTest {
   async beforeAll () {
-    await BasicModel.createResources()
+    await BasicExample.createResources()
     this.modelName = uuidv4()
-    await txGet(BasicModel, this.modelName, model => {
+    await txGet(BasicExample, this.modelName, model => {
       model.noRequiredNoDefault = 0
     })
   }
 
   async testNoIDInUpdateCondition () {
-    const m1 = await txGet(BasicModel, this.modelName)
+    const m1 = await txGet(BasicExample, this.modelName)
     const params = m1.__updateParams()
     if (params[CONDITION_EXPRESSION_STR]) {
       expect(params[CONDITION_EXPRESSION_STR]).not.toContain('id=')
@@ -611,7 +611,7 @@ class WriteTest extends BaseTest {
   }
 
   async testNoIdInPutCondition () {
-    await txGet(BasicModel, this.modelName, model => {
+    await txGet(BasicExample, this.modelName, model => {
       const params = model.__putParams()
       if (params.ConditionExpression) {
         expect(params.ConditionExpression).not.toContain('id=')
@@ -620,7 +620,7 @@ class WriteTest extends BaseTest {
   }
 
   async testAttributeEncoding () {
-    await txGet(BasicModel, this.modelName, model => {
+    await txGet(BasicExample, this.modelName, model => {
       model.noRequiredNoDefault += 1
       const params = model.__updateParams()
       const awsName = model.getField('noRequiredNoDefault').__awsName
@@ -633,7 +633,7 @@ class WriteTest extends BaseTest {
 
   async testNoAccessProperty () {
     // Building block for strong Transaction isolation levels
-    const m1 = await txGet(BasicModel, this.modelName)
+    const m1 = await txGet(BasicExample, this.modelName)
     let params = m1.__updateParams()
     expect(params.ConditionExpression).toBe('attribute_exists(#_id)')
     expect(params).not.toHaveProperty(UPDATE_EXPRESSION_STR)
@@ -649,7 +649,7 @@ class WriteTest extends BaseTest {
   async testWriteSetToUndefinedProp () {
     // If a field is set to undefined when it's already undefined,
     // the prop should not be transmitted.
-    const model = await txGet(BasicModel, uuidv4())
+    const model = await txGet(BasicExample, uuidv4())
     expect(model.isNew).toBe(true)
     expect(model.noRequiredNoDefault).toBe(undefined)
     model.noRequiredNoDefault = undefined
@@ -663,14 +663,14 @@ class WriteTest extends BaseTest {
   async testResettingProp () {
     // If a field is set to some value then set to undefined again,
     // the change should be handled correctly
-    let model = await txGet(BasicModel, uuidv4(), model => {
+    let model = await txGet(BasicExample, uuidv4(), model => {
       expect(model.isNew).toBe(true)
       expect(model.noRequiredNoDefault).toBe(undefined)
       model.noRequiredNoDefault = 1
     })
 
     // Reset the prop to undefined should delete it
-    model = await txGet(BasicModel, model.id, model => {
+    model = await txGet(BasicExample, model.id, model => {
       expect(model.noRequiredNoDefault).toBe(1)
       model.noRequiredNoDefault = undefined
 
@@ -682,26 +682,26 @@ class WriteTest extends BaseTest {
     })
 
     // Read and check again
-    model = await txGet(BasicModel, model.id)
+    model = await txGet(BasicExample, model.id)
     expect(model.noRequiredNoDefault).toBe(undefined)
   }
 
   async testNoLockOption () {
-    const model = await txGet(BasicModel, this.modelName)
+    const model = await txGet(BasicExample, this.modelName)
     model.getField('noRequiredNoDefault').incrementBy(1)
     expect(model.__updateParams().ExpressionAttributeNames)
       .not.toContain('noRequiredNoDefault')
   }
 
   async testPutNoLock () {
-    const model = await txGet(BasicModel, this.modelName)
+    const model = await txGet(BasicExample, this.modelName)
     model.getField('noRequiredNoDefault').incrementBy(1)
     expect(model.__putParams().ExpressionAttributeNames)
       .not.toContain('noRequiredNoDefault')
   }
 
   async testRetry () {
-    const model = await txGet(BasicModel, this.modelName)
+    const model = await txGet(BasicExample, this.modelName)
     const msg = uuidv4()
     const originalFunc = model.documentClient.update
     const mock = jest.fn().mockImplementation((ignore, params) => {
@@ -719,26 +719,26 @@ class WriteTest extends BaseTest {
 
 class ConditionCheckTest extends BaseTest {
   async beforeAll () {
-    await BasicModel.createResources()
+    await BasicExample.createResources()
     this.modelName = uuidv4()
-    await txGet(BasicModel, this.modelName)
+    await txGet(BasicExample, this.modelName)
   }
 
   async testNewModel () {
-    const m1 = await txGet(BasicModel, uuidv4())
+    const m1 = await txGet(BasicExample, uuidv4())
     expect(m1.isNew).toBe(true)
     expect(m1.__isMutated()).toBe(true)
   }
 
   async testMutatedModel () {
-    const m1 = await txGet(BasicModel, this.modelName)
+    const m1 = await txGet(BasicExample, this.modelName)
     expect(m1.__isMutated()).toBe(false)
     m1.noRequiredNoDefault += 1
     expect(m1.__isMutated()).toBe(true)
   }
 
   async testConditionCheckMutatedModel () {
-    const m1 = await txGet(BasicModel, this.modelName)
+    const m1 = await txGet(BasicExample, this.modelName)
     m1.noRequiredNoDefault += 1
     expect(() => {
       m1.__conditionCheckParams()
@@ -746,13 +746,13 @@ class ConditionCheckTest extends BaseTest {
   }
 
   async testConditionCheckUnchangedModel () {
-    const m1 = await txGet(BasicModel, this.modelName)
+    const m1 = await txGet(BasicExample, this.modelName)
     expect(m1.__conditionCheckParams().ConditionExpression)
       .toBe('attribute_exists(#_id)')
   }
 
   async testReadonlyModel () {
-    const m1 = await txGet(BasicModel, this.modelName)
+    const m1 = await txGet(BasicExample, this.modelName)
     m1.noRequiredNoDefault // eslint-disable-line no-unused-expressions
     const awsName = m1.getField('noRequiredNoDefault').__awsName
     expect(m1.__conditionCheckParams()).toHaveProperty('ConditionExpression',
@@ -760,7 +760,7 @@ class ConditionCheckTest extends BaseTest {
   }
 }
 
-class RangeKeyModel extends db.Model {
+class RangeKeyExample extends db.Model {
   static SORT_KEY = {
     rangeKey: S.int.min(1)
   }
@@ -773,8 +773,8 @@ class RangeKeyModel extends db.Model {
 class KeyTest extends BaseTest {
   async beforeAll () {
     await Promise.all([
-      SimpleModel.createResources(),
-      RangeKeyModel.createResources()
+      SimpleExample.createResources(),
+      RangeKeyExample.createResources()
     ])
   }
 
@@ -782,14 +782,14 @@ class KeyTest extends BaseTest {
     const fut = db.Transaction.run(async tx => {
       // can't specify field like "n" when reading unless we're doing a
       // createIfMissing=true
-      await tx.get(RangeKeyModel, { id: uuidv4(), rangeKey: 3, n: 3 })
+      await tx.get(RangeKeyExample, { id: uuidv4(), rangeKey: 3, n: 3 })
     })
     await expect(fut).rejects.toThrow(/received non-key fields/)
   }
 
   testDataKey () {
     const id = uuidv4()
-    const data = RangeKeyModel.data({ id, rangeKey: 1, n: 5 })
+    const data = RangeKeyExample.data({ id, rangeKey: 1, n: 5 })
     const key = data.key
     expect(key.keyComponents.id).toBe(id)
     expect(key.keyComponents.rangeKey).toBe(1)
@@ -798,13 +798,13 @@ class KeyTest extends BaseTest {
 
   async testGetWithWrongType () {
     await expect(db.Transaction.run(async tx => {
-      await tx.get(RangeKeyModel.key({ id: uuidv4(), rangeKey: 2 }), {
+      await tx.get(RangeKeyExample.key({ id: uuidv4(), rangeKey: 2 }), {
         createIfMissing: true
       })
     })).rejects.toThrow(/must pass a Data/)
 
     await expect(db.Transaction.run(async tx => {
-      await tx.get(RangeKeyModel.data({ id: uuidv4(), rangeKey: 2, n: 3 }))
+      await tx.get(RangeKeyExample.data({ id: uuidv4(), rangeKey: 2, n: 3 }))
     })).rejects.toThrow(/must pass a Key/)
   }
 
@@ -812,9 +812,9 @@ class KeyTest extends BaseTest {
     async function check (id, rangeKey, n, create = true) {
       const encodedKeys = { id, rangeKey }
       if (create) {
-        await txCreate(RangeKeyModel, { ...encodedKeys, n })
+        await txCreate(RangeKeyExample, { ...encodedKeys, n })
       }
-      const model = await txGet(RangeKeyModel, encodedKeys)
+      const model = await txGet(RangeKeyExample, encodedKeys)
       expect(model.id).toBe(id)
       expect(model.rangeKey).toBe(rangeKey)
       expect(model._sk).toBe(rangeKey)
@@ -838,40 +838,40 @@ class KeyTest extends BaseTest {
 
     // should be able to update fields in a model with a sort key
     await db.Transaction.run(async tx => {
-      await tx.update(RangeKeyModel, { id: id1, rangeKey: 1, n: 0 }, { n: 99 })
+      await tx.update(RangeKeyExample, { id: id1, rangeKey: 1, n: 0 }, { n: 99 })
     })
     await check(id1, 1, 99, false)
     // but not the sort key itself
     // this throws because no such row exists:
     await expect(db.Transaction.run(async tx => {
-      await tx.update(RangeKeyModel, { id: id1, rangeKey: 9, n: 0 }, { n: 99 })
+      await tx.update(RangeKeyExample, { id: id1, rangeKey: 9, n: 0 }, { n: 99 })
     })).rejects.toThrow()
     // these last two both throw because we can't modify key values
     await expect(db.Transaction.run(async tx => {
-      const x = await tx.get(RangeKeyModel, { id: id1, rangeKey: 1 })
+      const x = await tx.get(RangeKeyExample, { id: id1, rangeKey: 1 })
       x.rangeKey = 2
     })).rejects.toThrow(/rangeKey is immutable/)
     await expect(db.Transaction.run(async tx => {
-      await tx.update(RangeKeyModel, { id: id1, rangeKey: 1 }, { rangeKey: 2 })
+      await tx.update(RangeKeyExample, { id: id1, rangeKey: 1 }, { rangeKey: 2 })
     })).rejects.toThrow(/must not contain key fields/)
     await expect(db.Transaction.run(async tx => {
-      const x = await tx.get(RangeKeyModel, { id: id1, rangeKey: 1 })
+      const x = await tx.get(RangeKeyExample, { id: id1, rangeKey: 1 })
       x.id = uuidv4()
     })).rejects.toThrow(/id is immutable/)
     await expect(db.Transaction.run(async tx => {
-      await tx.update(RangeKeyModel, { id: id1, rangeKey: 1 }, { id: id2 })
+      await tx.update(RangeKeyExample, { id: id1, rangeKey: 1 }, { id: id2 })
     })).rejects.toThrow(/must not contain key fields/)
   }
 
   async testValidKey () {
-    SimpleModel.key(uuidv4())
-    SimpleModel.key({ id: uuidv4() })
-    RangeKeyModel.key({ id: uuidv4(), rangeKey: 1 })
+    SimpleExample.key(uuidv4())
+    SimpleExample.key({ id: uuidv4() })
+    RangeKeyExample.key({ id: uuidv4(), rangeKey: 1 })
   }
 
   async testInvalidKey () {
     const id = uuidv4()
-    const invalidIDsForSimpleModel = [
+    const invalidIDsForSimpleExample = [
       // these aren't even valid IDs
       1,
       '',
@@ -881,9 +881,9 @@ class KeyTest extends BaseTest {
       [],
       { id, abc: 123 }
     ]
-    for (const keyValues of invalidIDsForSimpleModel) {
+    for (const keyValues of invalidIDsForSimpleExample) {
       expect(() => {
-        SimpleModel.key(keyValues)
+        SimpleExample.key(keyValues)
       }).toThrow()
     }
 
@@ -908,14 +908,14 @@ class KeyTest extends BaseTest {
     ]
     for (const keyValues of invalidIDsForRangeModel) {
       expect(() => {
-        RangeKeyModel.key(keyValues)
+        RangeKeyExample.key(keyValues)
       }).toThrow()
     }
   }
 
   testDeprecatingLegacySyntax () {
     expect(() => {
-      SimpleModel.key('id', 123)
+      SimpleExample.key('id', 123)
     }).toThrow()
   }
 }
@@ -958,7 +958,7 @@ class IndexTest extends BaseTest {
   }
 }
 
-class JSONModel extends db.Model {
+class JSONExample extends db.Model {
   static FIELDS = {
     objNoDefaultNoRequired: S.obj().optional(),
     objDefaultNoRequired: S.obj({
@@ -979,9 +979,9 @@ class JSONModel extends db.Model {
   }
 }
 
-class JSONModelTest extends BaseTest {
+class JSONExampleTest extends BaseTest {
   async beforeAll () {
-    await JSONModel.createResources()
+    await JSONExample.createResources()
   }
 
   async testRequiredFields () {
@@ -989,7 +989,7 @@ class JSONModelTest extends BaseTest {
     const arr = [{ cd: 2 }, { cd: 1 }]
     async function check (input) {
       input.id = uuidv4()
-      await expect(txGet(JSONModel, input)).rejects.toThrow(
+      await expect(txGet(JSONExample, input)).rejects.toThrow(
         /missing required value/)
     }
     await check({})
@@ -998,7 +998,7 @@ class JSONModelTest extends BaseTest {
 
     const id = uuidv4()
     async function checkOk (input) {
-      const model = await txGet(JSONModel, input)
+      const model = await txGet(JSONExample, input)
       expect(model.id).toBe(id)
       expect(model.objNoDefaultRequired).toEqual(obj)
       expect(model.arrNoDefaultRequired).toEqual(arr)
@@ -1018,18 +1018,18 @@ class JSONModelTest extends BaseTest {
     const arr = [{}]
     const id = uuidv4()
     const data = { id, objNoDefaultRequired: obj, arrNoDefaultRequired: arr }
-    await txGet(JSONModel, data, model => {
+    await txGet(JSONExample, data, model => {
       expect(model.isNew).toBe(true)
     })
 
-    await txGet(JSONModel, id, model => {
+    await txGet(JSONExample, id, model => {
       obj.cd.push(1)
       model.objNoDefaultRequired.cd.push(1)
       arr[0].bc = 32
       model.arrNoDefaultRequired[0].bc = 32
     })
 
-    await txGet(JSONModel, id, model => {
+    await txGet(JSONExample, id, model => {
       expect(model.objNoDefaultRequired).toStrictEqual(obj)
       expect(model.arrNoDefaultRequired).toStrictEqual(arr)
     })
@@ -1048,7 +1048,7 @@ class JSONModelTest extends BaseTest {
       arrDefaultRequired: []
     }
     const model = await db.Transaction.run(async tx => {
-      return tx.get(JSONModel, data, { createIfMissing: true })
+      return tx.get(JSONExample, data, { createIfMissing: true })
     })
     expect(model.toJSON()).toEqual(data)
   }
@@ -1057,11 +1057,11 @@ class JSONModelTest extends BaseTest {
 class GetArgsParserTest extends BaseTest {
   async beforeAll () {
     await super.beforeAll()
-    await SimpleModel.createResources()
+    await SimpleExample.createResources()
   }
 
   async testJustAModel () {
-    await expect(db.__private.getWithArgs([SimpleModel], () => {})).rejects
+    await expect(db.__private.getWithArgs([SimpleExample], () => {})).rejects
       .toThrow(db.InvalidParameterError)
   }
 
@@ -1074,7 +1074,7 @@ class GetArgsParserTest extends BaseTest {
   }
 
   async testId () {
-    const params = [SimpleModel]
+    const params = [SimpleExample]
     await expect(db.__private.getWithArgs(params, () => {})).rejects
       .toThrow(db.InvalidParameterError)
 
@@ -1102,7 +1102,7 @@ class GetArgsParserTest extends BaseTest {
   }
 
   async testKey () {
-    const params = [SimpleModel.key(uuidv4())]
+    const params = [SimpleExample.key(uuidv4())]
     expect(async () => {
       const result = await db.__private.getWithArgs(params, () => 123)
       expect(result).toBe(123)
@@ -1127,7 +1127,7 @@ class GetArgsParserTest extends BaseTest {
 
     const id1 = uuidv4()
     const id2 = uuidv4()
-    keys.push(SimpleModel.key(id1), SimpleModel.key(id2))
+    keys.push(SimpleExample.key(id1), SimpleExample.key(id2))
     const result = await db.__private.getWithArgs(params,
       (keys) => keys.map(key => key.encodedKeys))
     expect(result).toStrictEqual([{ _id: id1 }, { _id: id2 }])
@@ -1150,10 +1150,10 @@ class GetArgsParserTest extends BaseTest {
 
 class WriteBatcherTest extends BaseTest {
   async beforeAll () {
-    await BasicModel.createResources()
+    await BasicExample.createResources()
     this.modelNames = [uuidv4(), uuidv4()]
     const promises = this.modelNames.map(name => {
-      return txGet(BasicModel, name, (m) => {
+      return txGet(BasicExample, name, (m) => {
         m.noRequiredNoDefault = 0
       })
     })
@@ -1166,13 +1166,13 @@ class WriteBatcherTest extends BaseTest {
 
   async testUntrackedWrite () {
     const batcher = new db.__private.__WriteBatcher()
-    const model = await txGet(BasicModel, uuidv4())
+    const model = await txGet(BasicExample, uuidv4())
     expect(() => batcher.__write(model)).toThrow()
   }
 
   async testDupWrite () {
     const batcher = new db.__private.__WriteBatcher()
-    const model = await txGet(BasicModel, uuidv4())
+    const model = await txGet(BasicExample, uuidv4())
     batcher.track(model)
     model.noRequiredNoDefault += 1
     batcher.__write(model)
@@ -1181,8 +1181,8 @@ class WriteBatcherTest extends BaseTest {
 
   async testReadonly () {
     const batcher = new db.__private.__WriteBatcher()
-    const model1 = await txGet(BasicModel, this.modelNames[0])
-    const model2 = await txGet(BasicModel, this.modelNames[1])
+    const model1 = await txGet(BasicExample, this.modelNames[0])
+    const model2 = await txGet(BasicExample, this.modelNames[1])
     batcher.track(model1)
     batcher.track(model2)
     model1.noRequiredNoDefault = model2.noRequiredNoDefault + 1
@@ -1239,7 +1239,7 @@ class WriteBatcherTest extends BaseTest {
 
     let itemSourceCreate
     await db.Transaction.run(tx => {
-      const row = tx.create(IDWithSchemaModel, { id: 'xyz' + uuidv4() })
+      const row = tx.create(IDWithSchemaExample, { id: 'xyz' + uuidv4() })
       itemSourceCreate = row.__src
     })
 
@@ -1313,14 +1313,14 @@ class WriteBatcherTest extends BaseTest {
   async testModelAlreadyExistsError () {
     // Single row transactions
     const id = uuidv4()
-    await txCreate(BasicModel, { id })
-    let fut = txCreate(BasicModel, { id })
+    await txCreate(BasicExample, { id })
+    let fut = txCreate(BasicExample, { id })
     await expect(fut).rejects.toThrow(db.ModelAlreadyExistsError)
 
     // Multi-row transactions
     fut = db.Transaction.run(async (tx) => {
-      tx.create(BasicModel, { id })
-      tx.create(BasicModel, { id: uuidv4() })
+      tx.create(BasicExample, { id })
+      tx.create(BasicExample, { id: uuidv4() })
     })
     await expect(fut).rejects.toThrow(db.ModelAlreadyExistsError)
   }
@@ -1328,13 +1328,13 @@ class WriteBatcherTest extends BaseTest {
   async testInvalidModelUpdateError () {
     const id = uuidv4()
     let fut = db.Transaction.run(async (tx) => {
-      tx.update(BasicModel, { id }, { noRequiredNoDefault: 1 })
+      tx.update(BasicExample, { id }, { noRequiredNoDefault: 1 })
     })
     await expect(fut).rejects.toThrow(db.InvalidModelUpdateError)
 
     fut = db.Transaction.run(async (tx) => {
-      tx.create(BasicModel, { id: uuidv4() })
-      tx.update(BasicModel, { id }, { noRequiredNoDefault: 1 })
+      tx.create(BasicExample, { id: uuidv4() })
+      tx.update(BasicExample, { id }, { noRequiredNoDefault: 1 })
     })
     await expect(fut).rejects.toThrow(db.InvalidModelUpdateError)
   }
@@ -1344,12 +1344,12 @@ class WriteBatcherTest extends BaseTest {
    */
   async testInvalidKey () {
     let createPromise = db.Transaction.run(async tx => {
-      tx.create(BasicModel, { id: { test: 'not valid schema' } })
+      tx.create(BasicExample, { id: { test: 'not valid schema' } })
     })
     await expect(createPromise).rejects.toThrow(S.ValidationError)
 
     createPromise = db.Transaction.run(async tx => {
-      return tx.get(BasicModel, { id: { test: 'not valid schema' } }, { createIfMissing: true })
+      return tx.get(BasicExample, { id: { test: 'not valid schema' } }, { createIfMissing: true })
     })
 
     await expect(createPromise).rejects.toThrow(S.ValidationError)
@@ -1359,20 +1359,20 @@ class WriteBatcherTest extends BaseTest {
    * Verify modifying keyparts is not allowed
    */
   async testMutatingKeyparts () {
-    await CompoundIDModel.createResources()
+    await CompoundIDExample.createResources()
     const compoundID = { year: 1900, make: 'Honda', upc: uuidv4() }
     let createPromise = db.Transaction.run(async tx => {
-      const model = tx.create(CompoundIDModel, compoundID)
+      const model = tx.create(CompoundIDExample, compoundID)
       model.year = 1901
     })
     await expect(createPromise).rejects.toThrow(db.InvalidFieldError)
 
     await db.Transaction.run(async tx => {
-      return tx.create(CompoundIDModel, compoundID)
+      return tx.create(CompoundIDExample, compoundID)
     })
 
     createPromise = db.Transaction.run(async tx => {
-      const model = await tx.get(CompoundIDModel, compoundID)
+      const model = await tx.get(CompoundIDExample, compoundID)
       model.year = 1901
     })
 
@@ -1386,7 +1386,7 @@ class DefaultsTest extends BaseTest {
    * to saved models
    */
   async testNestedDefaultsOnSave () {
-    class NestedDefaultsModel extends db.Model {
+    class NestedDefaultsExample extends db.Model {
       static FIELDS = {
         arr: S.arr(S.obj({
           int: S.int,
@@ -1398,18 +1398,18 @@ class DefaultsTest extends BaseTest {
         }).default({})
       }
     }
-    await NestedDefaultsModel.createResources()
+    await NestedDefaultsExample.createResources()
     const id = uuidv4()
 
     await db.Transaction.run(async tx => {
-      tx.create(NestedDefaultsModel, {
+      tx.create(NestedDefaultsExample, {
         id: id,
         arr: [{ int: 2 }, { int: 3 }]
       })
     })
 
     await db.Transaction.run(async tx => {
-      const result = await tx.get(NestedDefaultsModel, id)
+      const result = await tx.get(NestedDefaultsExample, id)
       expect(result.arr).toEqual([
         {
           int: 2,
@@ -1441,15 +1441,15 @@ class DefaultsTest extends BaseTest {
       }))
     }
 
-    class NestedDefaultsModel extends db.Model {
+    class NestedDefaultsExample extends db.Model {
       static FIELDS = fields
     }
 
-    await NestedDefaultsModel.createResources()
+    await NestedDefaultsExample.createResources()
     const id = uuidv4()
 
     await db.Transaction.run(async tx => {
-      tx.create(NestedDefaultsModel, {
+      tx.create(NestedDefaultsExample, {
         id: id,
         arr: [{ int: 2 }, { int: 3 }]
       })
@@ -1457,11 +1457,11 @@ class DefaultsTest extends BaseTest {
 
     fields.arr.itemsSchema.__isLocked = false
     fields.arr.itemsSchema.prop('newField', S.str.default('newDefault'))
-    delete NestedDefaultsModel.__setupDone
-    NestedDefaultsModel.__doOneTimeModelPrep()
+    delete NestedDefaultsExample.__setupDone
+    NestedDefaultsExample.__doOneTimeModelPrep()
 
     await db.Transaction.run(async tx => {
-      const result = await tx.get(NestedDefaultsModel, id)
+      const result = await tx.get(NestedDefaultsExample, id)
       expect(result.arr).toEqual([
         {
           int: 2,
@@ -1478,9 +1478,9 @@ class DefaultsTest extends BaseTest {
   }
 }
 
-class OptDefaultModelTest extends BaseTest {
+class OptDefaultExampleTest extends BaseTest {
   async testFieldWhichIsBothOptionalAndDefault () {
-    class OptDefaultModel extends db.Model {
+    class OptDefaultExample extends db.Model {
       static get FIELDS () {
         return {
           def: S.int.default(7),
@@ -1489,7 +1489,7 @@ class OptDefaultModelTest extends BaseTest {
         }
       }
     }
-    await OptDefaultModel.createResources()
+    await OptDefaultExample.createResources()
 
     function check (obj, def, opt, defOpt, def2, opt2, defOpt2) {
       expect(obj.def).toBe(def)
@@ -1507,11 +1507,11 @@ class OptDefaultModelTest extends BaseTest {
     const idUndef = uuidv4()
     await db.Transaction.run(tx => {
       // can just use the defaults (specify no field values)
-      check(tx.create(OptDefaultModel, { id: idSpecifyNothing }),
+      check(tx.create(OptDefaultExample, { id: idSpecifyNothing }),
         7, undefined, 7)
 
       // can use our own values (specify all field values)
-      check(tx.create(OptDefaultModel, {
+      check(tx.create(OptDefaultExample, {
         id: idSpecifyAll,
         def: 1,
         opt: 2,
@@ -1520,7 +1520,7 @@ class OptDefaultModelTest extends BaseTest {
 
       // optional fields with a default can still be omitted from the db (i.e.,
       // assigned a value of undefined)
-      check(tx.create(OptDefaultModel, {
+      check(tx.create(OptDefaultExample, {
         id: idUndef,
         defOpt: undefined
       }), 7, undefined, undefined)
@@ -1528,43 +1528,43 @@ class OptDefaultModelTest extends BaseTest {
 
     // verify that these are all properly stored to the database
     await db.Transaction.run(async tx => {
-      check(await tx.get(OptDefaultModel, idSpecifyNothing), 7, undefined, 7)
-      check(await tx.get(OptDefaultModel, idSpecifyAll), 1, 2, 3)
-      check(await tx.get(OptDefaultModel, idUndef), 7, undefined, undefined)
+      check(await tx.get(OptDefaultExample, idSpecifyNothing), 7, undefined, 7)
+      check(await tx.get(OptDefaultExample, idSpecifyAll), 1, 2, 3)
+      check(await tx.get(OptDefaultExample, idUndef), 7, undefined, undefined)
     })
 
     // add a new set of fields (normally we'd do this on the same model, but
     // for the test we do it in a new model (but SAME TABLE) because one-time
     // setup is already done for the other model)
-    class OptDefaultModel2 extends db.Model {
-      static tableName = OptDefaultModel.name
+    class OptDefaultExample2 extends db.Model {
+      static tableName = OptDefaultExample.name
       static FIELDS = {
-        ...OptDefaultModel.FIELDS,
+        ...OptDefaultExample.FIELDS,
         def2: S.int.default(8),
         opt2: S.int.optional(),
         defOpt2: S.int.default(8).optional()
       }
     }
-    await OptDefaultModel2.createResources()
+    await OptDefaultExample2.createResources()
 
     // the default value for new fields isn't stored in the db yet (old rows
     // have not been changed yet)
     let fut = db.Transaction.run(async tx => {
-      await tx.update(OptDefaultModel2,
+      await tx.update(OptDefaultExample2,
         { id: idSpecifyNothing, def2: 8 }, { def: 1 })
     })
     await expect(fut).rejects.toThrow(/outdated \/ invalid conditions/)
 
     // we can (ONLY) use update() on defaults that have been written to the db
     await db.Transaction.run(async tx => {
-      await tx.update(OptDefaultModel2,
+      await tx.update(OptDefaultExample2,
         { id: idSpecifyNothing, def: 7 }, { opt2: 11 })
     })
 
     // blind updates are only partial, so they won't populate a new default
     // field unless explicitly given a value for it
     fut = db.Transaction.run(async tx => {
-      await tx.update(OptDefaultModel2,
+      await tx.update(OptDefaultExample2,
         { id: idSpecifyNothing, def2: 8 }, { def: 2 })
     })
     await expect(fut).rejects.toThrow(/outdated \/ invalid conditions/)
@@ -1573,35 +1573,35 @@ class OptDefaultModelTest extends BaseTest {
     // also, accessing the row populates the default value for the new field
     // which triggers a database write!
     await db.Transaction.run(async tx => {
-      check(await tx.get(OptDefaultModel2, idSpecifyNothing),
+      check(await tx.get(OptDefaultExample2, idSpecifyNothing),
         7, undefined, 7,
         8, 11, undefined)
     })
     await db.Transaction.run(async tx => {
       // verify the db was updated by doing a blind update dependent on it
-      await tx.update(OptDefaultModel2,
+      await tx.update(OptDefaultExample2,
         { id: idSpecifyNothing, def2: 8 }, { def: 100 })
     })
     await db.Transaction.run(async tx => {
-      check(await tx.get(OptDefaultModel2, idSpecifyNothing),
+      check(await tx.get(OptDefaultExample2, idSpecifyNothing),
         100, undefined, 7, 8, 11, undefined)
     })
 
     // accessing and modifying an old row will also write the new defaults to
     // the db
     await db.Transaction.run(async tx => {
-      const row = await tx.get(OptDefaultModel2, idUndef)
+      const row = await tx.get(OptDefaultExample2, idUndef)
       check(row, 7, undefined, undefined,
         8, undefined, undefined)
       row.def = 3
     })
     await db.Transaction.run(async tx => {
       // verify the db was updated by doing a blind update dependent on it
-      await tx.update(OptDefaultModel2,
+      await tx.update(OptDefaultExample2,
         { id: idUndef, def: 3, def2: 8 }, { opt2: 101 })
     })
     await db.Transaction.run(async tx => {
-      check(await tx.get(OptDefaultModel2, idUndef),
+      check(await tx.get(OptDefaultExample2, idUndef),
         3, undefined, undefined, 8, 101, undefined)
     })
   }
@@ -1609,21 +1609,21 @@ class OptDefaultModelTest extends BaseTest {
 
 class OptionalFieldConditionTest extends BaseTest {
   async testOptFieldCondition () {
-    class OptNumModel extends db.Model {
+    class OptNumExample extends db.Model {
       static get FIELDS () {
         return {
           n: S.int.optional()
         }
       }
     }
-    await OptNumModel.createResources()
+    await OptNumExample.createResources()
 
     const id = uuidv4()
     await db.Transaction.run(tx => {
-      tx.create(OptNumModel, { id })
+      tx.create(OptNumExample, { id })
     })
     await db.Transaction.run(async tx => {
-      const row = await tx.get(OptNumModel, id)
+      const row = await tx.get(OptNumExample, id)
       if (row.n === undefined) {
         row.n = 5
       }
@@ -1635,7 +1635,7 @@ class OptionalFieldConditionTest extends BaseTest {
   }
 }
 
-class TTLModel extends db.Model {
+class TTLExample extends db.Model {
   static FIELDS = {
     expirationTime: S.int,
     doubleTime: S.double,
@@ -1646,22 +1646,22 @@ class TTLModel extends db.Model {
   static EXPIRE_EPOCH_FIELD = 'expirationTime'
 }
 
-class NoTTLModel extends TTLModel {
+class NoTTLExample extends TTLExample {
   static EXPIRE_EPOCH_FIELD = undefined
 }
 
 class TTLTest extends BaseTest {
   async beforeAll () {
     await super.beforeAll()
-    await TTLModel.createResources()
-    await NoTTLModel.createResources()
+    await TTLExample.createResources()
+    await NoTTLExample.createResources()
   }
 
   async testTTL () {
     const id = uuidv4()
     const currentTime = Math.floor(new Date().getTime() / 1000)
     await db.Transaction.run(tx => {
-      tx.create(TTLModel, {
+      tx.create(TTLExample, {
         id,
         expirationTime: currentTime + 1,
         doubleTime: 1
@@ -1673,37 +1673,37 @@ class TTLTest extends BaseTest {
     })
 
     const model = await db.Transaction.run(tx => {
-      return tx.get(TTLModel, id)
+      return tx.get(TTLExample, id)
     })
     expect(model).toBeUndefined()
   }
 
   async testCFResource () {
-    expect(Object.values(TTLModel.resourceDefinitions)[0].Properties)
+    expect(Object.values(TTLExample.resourceDefinitions)[0].Properties)
       .toHaveProperty('TimeToLiveSpecification')
   }
 
   async testConfigValidation () {
-    const Cls1 = class extends TTLModel {
+    const Cls1 = class extends TTLExample {
       static EXPIRE_EPOCH_FIELD = 'notTime'
     }
     expect(() => {
       Cls1.resourceDefinitions // eslint-disable-line
     }).toThrow('must refer to an integer or double field')
 
-    const Cls2 = class extends TTLModel {
+    const Cls2 = class extends TTLExample {
       static EXPIRE_EPOCH_FIELD = 'optionalTime'
     }
     Cls2.resourceDefinitions // eslint-disable-line
 
-    const Cls3 = class extends TTLModel {
+    const Cls3 = class extends TTLExample {
       static EXPIRE_EPOCH_FIELD = 'doubleTime'
     }
     expect(() => {
       Cls3.resourceDefinitions // eslint-disable-line
     }).not.toThrow()
 
-    const Cls4 = class extends TTLModel {
+    const Cls4 = class extends TTLExample {
       static EXPIRE_EPOCH_FIELD = 'invalid'
     }
     expect(() => {
@@ -1714,7 +1714,7 @@ class TTLTest extends BaseTest {
   async testExpiration () {
     const currentTime = Math.ceil(new Date().getTime() / 1000)
     const result = await db.Transaction.run(async tx => {
-      const model = tx.create(TTLModel,
+      const model = tx.create(TTLExample,
         { id: uuidv4(), expirationTime: 0, doubleTime: 0 })
       // No value, no expiration
       expect(model.__hasExpired).toBe(false)
@@ -1735,7 +1735,7 @@ class TTLTest extends BaseTest {
       expect(model.__hasExpired).toBe(false)
 
       // TTL not enabled, no expiration
-      const model1 = tx.create(NoTTLModel,
+      const model1 = tx.create(NoTTLExample,
         { id: uuidv4(), expirationTime: 0, doubleTime: 0 })
       model1.expirationTime = currentTime - 1000
       expect(model1.__hasExpired).toBe(false)
@@ -1750,7 +1750,7 @@ class TTLTest extends BaseTest {
 
     const id = uuidv4()
     await db.Transaction.run(tx => {
-      tx.create(NoTTLModel, {
+      tx.create(NoTTLExample, {
         id,
         expirationTime: currentTime - 10000,
         doubleTime: 11223
@@ -1758,29 +1758,29 @@ class TTLTest extends BaseTest {
     })
 
     // Turn on ttl locally now
-    NoTTLModel.EXPIRE_EPOCH_FIELD = 'expirationTime'
+    NoTTLExample.EXPIRE_EPOCH_FIELD = 'expirationTime'
 
     // if not createIfMissing, nothing should be returned
     let model = await db.Transaction.run(tx => {
-      return tx.get(NoTTLModel, id)
+      return tx.get(NoTTLExample, id)
     })
     expect(model).toBeUndefined()
 
     // if createIfMissing, a new model should be returned
     model = await db.Transaction.run(tx => {
-      return tx.get(NoTTLModel,
+      return tx.get(NoTTLExample,
         { id, expirationTime: currentTime + 10000, doubleTime: 111 },
         { createIfMissing: true })
     })
     expect(model.isNew).toBe(true)
 
     model = await db.Transaction.run(tx => {
-      return tx.get(NoTTLModel, id)
+      return tx.get(NoTTLExample, id)
     })
     expect(model.doubleTime).toBe(111)
     expect(model.isNew).toBe(false)
 
-    NoTTLModel.EXPIRE_EPOCH_FIELD = undefined
+    NoTTLExample.EXPIRE_EPOCH_FIELD = undefined
   }
 
   async testOverrideExpiredModel () {
@@ -1790,26 +1790,26 @@ class TTLTest extends BaseTest {
 
     const id = uuidv4()
     await db.Transaction.run(tx => {
-      tx.create(NoTTLModel, {
+      tx.create(NoTTLExample, {
         id,
         expirationTime: currentTime - 10000,
         doubleTime: 11223
       })
     })
     // Turn on ttl locally now
-    NoTTLModel.EXPIRE_EPOCH_FIELD = 'expirationTime'
+    NoTTLExample.EXPIRE_EPOCH_FIELD = 'expirationTime'
 
     await db.Transaction.run(tx => {
-      tx.create(NoTTLModel,
+      tx.create(NoTTLExample,
         { id, expirationTime: currentTime + 1000, doubleTime: 111 })
     })
 
     const model = await db.Transaction.run(tx => {
-      return tx.get(NoTTLModel, id)
+      return tx.get(NoTTLExample, id)
     })
     expect(model.doubleTime).toBe(111)
 
-    NoTTLModel.EXPIRE_EPOCH_FIELD = undefined
+    NoTTLExample.EXPIRE_EPOCH_FIELD = undefined
   }
 
   async testBatchGetExpired () {
@@ -1818,42 +1818,42 @@ class TTLTest extends BaseTest {
     const id = uuidv4()
     const id2 = uuidv4()
     await db.Transaction.run(tx => {
-      tx.create(NoTTLModel, {
+      tx.create(NoTTLExample, {
         id,
         expirationTime: currentTime - 10000,
         doubleTime: 11223
       })
-      tx.create(NoTTLModel, {
+      tx.create(NoTTLExample, {
         id: id2,
         expirationTime: currentTime - 10000,
         doubleTime: 11223
       })
     })
     // Turn on ttl locally now
-    NoTTLModel.EXPIRE_EPOCH_FIELD = 'expirationTime'
+    NoTTLExample.EXPIRE_EPOCH_FIELD = 'expirationTime'
 
     const result = await db.Transaction.run(tx => {
       return tx.get([
-        NoTTLModel.key(id), NoTTLModel.key(uuidv4())
+        NoTTLExample.key(id), NoTTLExample.key(uuidv4())
       ], { inconsistentRead: false })
     })
     expect(result).toStrictEqual([undefined, undefined])
 
     const result1 = await db.Transaction.run(tx => {
       return tx.get([
-        NoTTLModel.key(id), NoTTLModel.key(uuidv4())
+        NoTTLExample.key(id), NoTTLExample.key(uuidv4())
       ], { inconsistentRead: true })
     })
     expect(result1).toStrictEqual([undefined, undefined])
 
     const result2 = await db.Transaction.run(tx => {
       return tx.get([
-        NoTTLModel.data({
+        NoTTLExample.data({
           id,
           expirationTime: currentTime - 10000,
           doubleTime: 1
         }),
-        NoTTLModel.data({
+        NoTTLExample.data({
           id: id2,
           expirationTime: currentTime - 10000,
           doubleTime: 1
@@ -1864,17 +1864,17 @@ class TTLTest extends BaseTest {
     expect(result2[0].id).toBe(id)
     expect(result2[1].id).toBe(id2)
 
-    NoTTLModel.EXPIRE_EPOCH_FIELD = undefined
+    NoTTLExample.EXPIRE_EPOCH_FIELD = undefined
   }
 }
 
 class SnapshotTest extends BaseTest {
   async beforeAll () {
     await super.beforeAll()
-    await JSONModel.createResources()
+    await JSONExample.createResources()
     this.modelID = uuidv4()
     await db.Transaction.run(async tx => {
-      await tx.get(JSONModel, {
+      await tx.get(JSONExample, {
         id: this.modelID,
         objNoDefaultRequired: { ab: 11 },
         arrNoDefaultRequired: []
@@ -1885,7 +1885,7 @@ class SnapshotTest extends BaseTest {
   async testGetNewModel () {
     const id = uuidv4()
     const result = await db.Transaction.run(async tx => {
-      const m = await tx.get(JSONModel,
+      const m = await tx.get(JSONExample,
         {
           id,
           objNoDefaultRequired: { ab: 123 },
@@ -1930,7 +1930,7 @@ class SnapshotTest extends BaseTest {
 
   async testGetExistingModel () {
     const result = await db.Transaction.run(async tx => {
-      const m = await tx.get(JSONModel, this.modelID)
+      const m = await tx.get(JSONExample, this.modelID)
       return {
         before: m.getSnapshot({ initial: true, dbKeys: true }),
         after: m.getSnapshot({ dbKeys: true })
@@ -1954,7 +1954,7 @@ class SnapshotTest extends BaseTest {
   async testRangeKey () {
     await db.Transaction.run(async tx => {
       const id = uuidv4()
-      const m = await tx.get(RangeKeyModel, { id, rangeKey: 1, n: 1 }, { createIfMissing: true })
+      const m = await tx.get(RangeKeyExample, { id, rangeKey: 1, n: 1 }, { createIfMissing: true })
       expect(m.getSnapshot({ initial: true, dbKeys: true })).toStrictEqual({
         _id: undefined,
         _sk: undefined,
@@ -1982,19 +1982,19 @@ class SnapshotTest extends BaseTest {
 class UniqueKeyListTest extends BaseTest {
   testDedup () {
     const id = uuidv4()
-    const keys = new db.UniqueKeyList(NoTTLModel.key(id))
-    keys.push(NoTTLModel.key(id), NoTTLModel.key(uuidv4()))
+    const keys = new db.UniqueKeyList(NoTTLExample.key(id))
+    keys.push(NoTTLExample.key(id), NoTTLExample.key(uuidv4()))
     expect(keys.length).toBe(2)
-    keys.push(NoTTLModel.key(id))
+    keys.push(NoTTLExample.key(id))
     expect(keys.length).toBe(2)
   }
 
   async testGet () {
     const id = uuidv4()
     await db.Transaction.run(tx => {
-      tx.create(SimpleModel, { id })
+      tx.create(SimpleExample, { id })
     })
-    const keys = new db.UniqueKeyList(SimpleModel.key(id))
+    const keys = new db.UniqueKeyList(SimpleExample.key(id))
     const result = await db.Transaction.run(tx => {
       return tx.get(keys)
     })
@@ -2010,12 +2010,12 @@ runTests(
   GetArgsParserTest,
   IDSchemaTest,
   IndexTest,
-  JSONModelTest,
+  JSONExampleTest,
   KeyTest,
   NewModelTest,
-  OptDefaultModelTest,
+  OptDefaultExampleTest,
   OptionalFieldConditionTest,
-  SimpleModelTest,
+  SimpleExampleTest,
   SnapshotTest,
   TTLTest,
   WriteBatcherTest,

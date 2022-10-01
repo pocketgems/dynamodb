@@ -76,7 +76,7 @@ Each row is uniquely identified by a [_Key_](#keys) (more on this later).
 ## Minimal Example
 Define a new table like this, which uses the [Todea Schema library](./schema.md) to enfore Table schema:
 ```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:scope:Order -->
-class Order extends db.Model {
+class OrderWithNoPrice extends db.Model {
   static FIELDS = {
     product: S.str,
     quantity: S.int
@@ -94,7 +94,7 @@ Later, we can retrieve it from the database and modify it:
 ```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:scope:DBReadmeTest:testMinimalExample:Example -->
     // Example
     await db.Transaction.run(async tx => {
-      const order = await tx.get(Order, id)
+      const order = await tx.get(OrderWithNoPrice, id)
       expect(order.id).toBe(id)
       expect(order.product).toBe('coffee')
       expect(order.quantity).toBe(1)
@@ -189,8 +189,8 @@ Fields can be configured to be optional, immutable and/or have default values:
          field is required.
     * The default value is _not_ assigned to an optional field that is missing
       when it is fetched from the database.
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:scope:ModelWithComplexFields -->
-class ModelWithComplexFields extends db.Model {
+```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:scope:ComplexFieldsExample -->
+class ComplexFieldsExample extends db.Model {
   static FIELDS = {
     aNonNegInt: S.int.min(0),
     anOptBool: S.bool.optional(), // default value is undefined
@@ -202,7 +202,7 @@ class ModelWithComplexFields extends db.Model {
 ```
 ```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:section:example1122start:example1122end -->
       // can omit the optional field
-      const row = tx.create(ModelWithComplexFields, {
+      const row = tx.create(ComplexFieldsExample, {
         id: uuidv4(),
         aNonNegInt: 0,
         immutableInt: 3
@@ -213,7 +213,7 @@ class ModelWithComplexFields extends db.Model {
       expect(row.immutableInt).toBe(3)
 
       // can override the default value
-      const row2 = tx.create(ModelWithComplexFields, {
+      const row2 = tx.create(ComplexFieldsExample, {
         id: uuidv4(),
         aNonNegInt: 1,
         anOptBool: true
@@ -694,15 +694,15 @@ Query enables accessing rows in a DB table with the same partition key.
 Transaction context `tx` provides `query` method that return a handle for
 adding filters and execute the query.
 ```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:section:example queryHandle start:example queryHandle end -->
-      const query = tx.query(QueryModel)
+      const query = tx.query(QueryExample)
 ```
 
 #### Filter
 Queries require equality filters on every partition key, otherwise when a
 query is executed an exception will result. Consider a model with 2 partition
 keys `id1` and `id2`:
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:scope:TestIteratorModel -->
-class TestIteratorModel extends db.Model {
+```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:scope:IteratorExample -->
+class IteratorExample extends db.Model {
   static KEY = {
     id1: S.str,
     id2: S.int
@@ -800,7 +800,7 @@ Query results are sorted by sort keys in ascending order by default. Returning
 rows in descending order requires enabling `descending` option when creating
 the query handle.
 ```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:section:example descending start:example descending end -->
-      const query = tx.query(QueryModel, { descending: true })
+      const query = tx.query(QueryExample, { descending: true })
 ```
 
 #### Read Consistency
@@ -808,7 +808,7 @@ By default, query returns strongly consistent data that makes sure *only*
 transactions committed before query started are reflected in the rows returned
 from query. Disabling strong consistency can improve performance.
 ```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:section:example inconsistentQuery start:example inconsistentQuery end -->
-      const query = tx.query(QueryModel, { inconsistentRead: true })
+      const query = tx.query(QueryExample, { inconsistentRead: true })
       query.id1('123').id2(123)
 ```
 
@@ -824,7 +824,7 @@ queries while avoiding setting up many dedicated Indexes. To allow lazy
 filters, the query handle must be created with `allowLazyFilter` option turned
 on.
 ```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:section:example lazyFilter start:example lazyFilter end -->
-      const query = tx.query(QueryModel, { allowLazyFilter: true })
+      const query = tx.query(QueryExample, { allowLazyFilter: true })
 ```
 
 Lazy filters support all filter conditions except "prefix", and add support
@@ -869,14 +869,14 @@ A scan accesses all rows in a table one by one. Transaction context
 `tx` provides `scan` method that returns a handle for conducting a scan
 operation.
 ```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:section:scanHandle start:scanHandle end -->
-        const scan = tx.scan(ScanModel, opt)
+        const scan = tx.scan(ScanExample, opt)
 ```
 
 #### Execution
 A scan is executed using paginator and generator APIs similar to [query's execution APIs](#execution)
 - Paginator API
 ```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:section:example scan start:example scan end -->
-        const scan = tx.scan(ScanModel, opt)
+        const scan = tx.scan(ScanExample, opt)
         const [page1, nextToken1] = await scan.fetch(2)
         const [page2, nextToken2] = await scan.fetch(10, nextToken1)
 ```
@@ -901,7 +901,7 @@ and use 0 as the `shardIndex` on one machine and use 1 as the `shardIndex` on
 the other.
 ```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:scope:testSharding:Transaction -->
     await db.Transaction.run(async tx => {
-      const scan = tx.scan(ScanModel, { shardCount: 2, shardIndex: 0 })
+      const scan = tx.scan(ScanExample, { shardCount: 2, shardIndex: 0 })
       return scan.fetch(10)
     })
 ```
@@ -911,7 +911,7 @@ By default, a scan returns strongly consistent data. Disabling strong
 consistency can improve performance and reduce cost by 50%.
 ```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:scope:testInconsistentRead:scanRet  -->
     const scanRet = await db.Transaction.run(async tx => {
-      const scan = tx.scan(ScanModel, { inconsistentRead: true })
+      const scan = tx.scan(ScanExample, { inconsistentRead: true })
       return scan.__setupParams().ConsistentRead
     })
 ```
@@ -1106,8 +1106,8 @@ NOTE: When the timestamp is more than 5 years in the past, the row will not be
 removed.So to keep a row indefinitely in a TTL enabled table, you may safely
 set the TTL field to 0.
 
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-model.js:scope:TTLModel -->
-class TTLModel extends db.Model {
+```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-model.js:scope:TTLExample -->
+class TTLExample extends db.Model {
   static FIELDS = {
     expirationTime: S.int,
     doubleTime: S.double,
@@ -1251,8 +1251,8 @@ Indexes have a [Partition Limitation](https://docs.aws.amazon.com/amazondynamodb
 
 Index by default contains all the columns, but you can not lazy filter on the underlying model's KEY/SORT_KEY. To do that, you need to set the `INDEX_INCLUDE_KEYS` field.
 
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:scope:class:LazyFilterKeyModel -->
-class LazyFilterKeyModel extends db.Model {
+```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:scope:class:LazyFilterKeyExample -->
+class LazyFilterKeyExample extends db.Model {
   static INDEX_INCLUDE_KEYS = true
 
   static KEY = {

@@ -4,7 +4,7 @@ const db = require('../../src/dynamodb/src/default-db')
 const S = require('../../src/schema/src/schema')
 const { BaseTest, runTests } = require('../base-unit-test')
 
-class Order extends db.Model {
+class OrderWithNoPrice extends db.Model {
   static FIELDS = {
     product: S.str,
     quantity: S.int
@@ -38,7 +38,7 @@ class ModelWithFieldsExample extends db.Model {
   }
 }
 
-class ModelWithComplexFields extends db.Model {
+class ComplexFieldsExample extends db.Model {
   static FIELDS = {
     aNonNegInt: S.int.min(0),
     anOptBool: S.bool.optional(), // default value is undefined
@@ -53,30 +53,30 @@ class ModelWithComplexFields extends db.Model {
 // correctly (and continues to do so after any library changes)
 class DBReadmeTest extends BaseTest {
   async beforeAll () {
-    await Order.createResources()
+    await OrderWithNoPrice.createResources()
     await RaceResult.createResources()
     await ModelWithFieldsExample.createResources()
-    await ModelWithComplexFields.createResources()
+    await ComplexFieldsExample.createResources()
   }
 
   async testMinimalExample () {
-    await Order.createResources()
+    await OrderWithNoPrice.createResources()
     const id = uuidv4()
     await db.Transaction.run(tx => {
-      const order = tx.create(Order, { id, product: 'coffee', quantity: 1 })
+      const order = tx.create(OrderWithNoPrice, { id, product: 'coffee', quantity: 1 })
       expect(order.product).toBe('coffee')
       expect(order.quantity).toBe(1)
     })
     // Example
     await db.Transaction.run(async tx => {
-      const order = await tx.get(Order, id)
+      const order = await tx.get(OrderWithNoPrice, id)
       expect(order.id).toBe(id)
       expect(order.product).toBe('coffee')
       expect(order.quantity).toBe(1)
       order.quantity = 2
     })
     await db.Transaction.run(async tx => {
-      const order = await tx.get(Order, id)
+      const order = await tx.get(OrderWithNoPrice, id)
       expect(order.product).toBe('coffee')
       expect(order.quantity).toBe(2)
     })
@@ -95,7 +95,7 @@ class DBReadmeTest extends BaseTest {
   }
 
   async testFields () {
-    await ModelWithComplexFields.createResources()
+    await ComplexFieldsExample.createResources()
     async function _check (how, expErr, values) {
       const id = uuidv4()
       const expBool = values.anOptBool
@@ -114,10 +114,10 @@ class DBReadmeTest extends BaseTest {
         const data = { id, ...values }
         let row
         if (how === 'create') {
-          row = tx.create(ModelWithComplexFields, data)
+          row = tx.create(ComplexFieldsExample, data)
         } else {
           row = await tx.get(
-            ModelWithComplexFields, data, { createIfMissing: true })
+            ComplexFieldsExample, data, { createIfMissing: true })
           expect(row.isNew).toBe(true)
         }
         checkRow(row)
@@ -127,7 +127,7 @@ class DBReadmeTest extends BaseTest {
       } else {
         await ret
         await db.Transaction.run(async tx => {
-          const row = await tx.get(ModelWithComplexFields, id)
+          const row = await tx.get(ComplexFieldsExample, id)
           checkRow(row)
           expect(() => { row.immutableInt = 5 }).toThrow(/is immutable/)
         })
@@ -151,18 +151,18 @@ class DBReadmeTest extends BaseTest {
     await check({ aNonNegInt: 4 })
     // schemas still have to be met
     await check({ aNonNegInt: -5 },
-      'Validation Error: ModelWithComplexFields.aNonNegInt')
+      'Validation Error: ComplexFieldsExample.aNonNegInt')
     await check({ aNonNegInt: 6, anOptBool: 'true' },
-      'Validation Error: ModelWithComplexFields.anOptBool')
+      'Validation Error: ComplexFieldsExample.anOptBool')
     await check({ aNonNegInt: 7, immutableInt: '5' },
-      'Validation Error: ModelWithComplexFields.immutableInt')
+      'Validation Error: ComplexFieldsExample.immutableInt')
 
     // this is the portion from the readme; the earlier part of this test is
     // thoroughly checking correctness
     await db.Transaction.run(async tx => {
       // example1122start
       // can omit the optional field
-      const row = tx.create(ModelWithComplexFields, {
+      const row = tx.create(ComplexFieldsExample, {
         id: uuidv4(),
         aNonNegInt: 0,
         immutableInt: 3
@@ -173,7 +173,7 @@ class DBReadmeTest extends BaseTest {
       expect(row.immutableInt).toBe(3)
 
       // can override the default value
-      const row2 = tx.create(ModelWithComplexFields, {
+      const row2 = tx.create(ComplexFieldsExample, {
         id: uuidv4(),
         aNonNegInt: 1,
         anOptBool: true
@@ -189,7 +189,7 @@ class DBReadmeTest extends BaseTest {
   }
 
   async testSchemaEnforcement () {
-    await ModelWithFields.createResources()
+    await ModelWithFieldsExample.createResources()
     const id = uuidv4()
     await db.Transaction.run(tx => {
       // fields are checked immediately when creating a new row; this throws
@@ -201,10 +201,10 @@ class DBReadmeTest extends BaseTest {
         someObj: { arr: [] }
       }
       expect(() => {
-        tx.create(ModelWithFields, data)
+        tx.create(ModelWithFieldsExample, data)
       }).toThrow(S.ValidationError)
       data.someInt = 1
-      const x = tx.create(ModelWithFields, data)
+      const x = tx.create(ModelWithFieldsExample, data)
 
       // fields are checked when set
       expect(() => {
@@ -221,7 +221,7 @@ class DBReadmeTest extends BaseTest {
     })
 
     const badTx = db.Transaction.run(async tx => {
-      const row = await tx.get(ModelWithFields, id)
+      const row = await tx.get(ModelWithFieldsExample, id)
       expect(row.someInt).toBe(1)
       expect(row.someBool).toBe(true)
       expect(row.someObj).toEqual({ arr: ['ok'] })
@@ -366,11 +366,11 @@ class DBReadmeTest extends BaseTest {
 
   async testAddressingRows () {
     const id = uuidv4()
-    expect(Order.key({ id }).keyComponents.id).toBe(id)
-    expect(Order.key(id).keyComponents.id).toBe(id)
+    expect(OrderWithNoPrice.key({ id }).keyComponents.id).toBe(id)
+    expect(OrderWithNoPrice.key(id).keyComponents.id).toBe(id)
 
     await db.Transaction.run(async tx => {
-      tx.create(Order, { id, product: 'coffee', quantity: 1 })
+      tx.create(OrderWithNoPrice, { id, product: 'coffee', quantity: 1 })
     })
     async function check (...args) {
       await db.Transaction.run(async tx => {
@@ -380,10 +380,10 @@ class DBReadmeTest extends BaseTest {
         expect(row.quantity).toBe(1)
       })
     }
-    await check(Order.key(id))
-    await check(Order, id)
-    await check(Order.key({ id }))
-    await check(Order, { id })
+    await check(OrderWithNoPrice.key(id))
+    await check(OrderWithNoPrice, id)
+    await check(OrderWithNoPrice.key({ id }))
+    await check(OrderWithNoPrice, { id })
   }
 
   async testAddressingCompoundRows () {
@@ -402,10 +402,10 @@ class DBReadmeTest extends BaseTest {
 
   async testCreateIfMissing () {
     const id = uuidv4()
-    const dataIfOrderIsNew = { id, product: 'coffee', quantity: 1 }
+    const dataIfOrderWithNoPriceIsNew = { id, product: 'coffee', quantity: 1 }
     async function getAndCreateIfMissing () {
       return db.Transaction.run(async tx => {
-        const order = await tx.get(Order, dataIfOrderIsNew,
+        const order = await tx.get(OrderWithNoPrice, dataIfOrderWithNoPriceIsNew,
           { createIfMissing: true })
         return order.isNew
       })
@@ -416,9 +416,9 @@ class DBReadmeTest extends BaseTest {
 
   async testReadConsistency () {
     const data = { id: uuidv4(), product: 'coffee', quantity: 1 }
-    await db.Transaction.run(tx => tx.create(Order, data))
+    await db.Transaction.run(tx => tx.create(OrderWithNoPrice, data))
     const row = await db.Transaction.run(async tx => tx.get(
-      Order, data.id, { inconsistentRead: true }))
+      OrderWithNoPrice, data.id, { inconsistentRead: true }))
     expect(row.id).toEqual(data.id)
     expect(row.product).toEqual(data.product)
     expect(row.quantity).toEqual(data.quantity)
@@ -442,8 +442,8 @@ class DBReadmeTest extends BaseTest {
 
     await db.Transaction.run(async tx => {
       const [order1, order2, raceResult] = await tx.get([
-        Order.data({ id, product: 'coffee', quantity: 1 }),
-        Order.data({ id: id2, product: 'spoon', quantity: 10 }),
+        OrderWithNoPrice.data({ id, product: 'coffee', quantity: 1 }),
+        OrderWithNoPrice.data({ id: id2, product: 'spoon', quantity: 10 }),
         RaceResult.data({ raceID, runnerName })
       ], { createIfMissing: true })
       check(order1, order2, raceResult)
@@ -451,8 +451,8 @@ class DBReadmeTest extends BaseTest {
 
     await db.Transaction.run(async tx => {
       const [order1, order2, raceResult] = await tx.get([
-        Order.key(id),
-        Order.key(id2),
+        OrderWithNoPrice.key(id),
+        OrderWithNoPrice.key(id2),
         RaceResult.key({ raceID, runnerName })
       ])
       check(order1, order2, raceResult)
@@ -462,14 +462,14 @@ class DBReadmeTest extends BaseTest {
   async testBlindWritesUpdate () {
     const id = uuidv4()
     const data = { id, product: 'coffee', quantity: 1 }
-    await db.Transaction.run(tx => tx.create(Order, data))
+    await db.Transaction.run(tx => tx.create(OrderWithNoPrice, data))
     await db.Transaction.run(async tx => {
       const ret = tx.update(
-        Order, { id, quantity: 1, product: 'coffee' }, { quantity: 2 })
+        OrderWithNoPrice, { id, quantity: 1, product: 'coffee' }, { quantity: 2 })
       expect(ret).toBe(undefined) // should not return anything
     })
     await db.Transaction.run(async tx => {
-      const order = await tx.get(Order, id)
+      const order = await tx.get(OrderWithNoPrice, id)
       expect(order.id).toBe(id)
       expect(order.product).toBe('coffee')
       expect(order.quantity).toBe(2)
@@ -515,14 +515,14 @@ class DBReadmeTest extends BaseTest {
     const id = uuidv4()
     await db.Transaction.run(async tx => {
       const x = await tx.get(
-        Order.data({ id, product: 'coffee', quantity: 9 }),
+        OrderWithNoPrice.data({ id, product: 'coffee', quantity: 9 }),
         { createIfMissing: true })
       x.getField('quantity').incrementBy(1)
       // access value through field so we don't mess with the __Field's state
       expect(x.getField('quantity').__value).toBe(10)
     })
     await db.Transaction.run(async tx => {
-      const order = await tx.get(Order, id)
+      const order = await tx.get(OrderWithNoPrice, id)
       expect(order.quantity).toBe(10)
     })
   }
@@ -552,13 +552,13 @@ class DBReadmeTest extends BaseTest {
   async testCreateAndIncrement () {
     const id = uuidv4()
     await db.Transaction.run(async tx => {
-      const x = tx.create(Order, { id, product: 'coffee', quantity: 9 })
+      const x = tx.create(OrderWithNoPrice, { id, product: 'coffee', quantity: 9 })
       x.getField('quantity').incrementBy(1)
       // access value through field so we don't mess with the __Field's state
       expect(x.getField('quantity').__value).toBe(10)
     })
     await db.Transaction.run(async tx => {
-      const order = await tx.get(Order, id)
+      const order = await tx.get(OrderWithNoPrice, id)
       expect(order.quantity).toBe(10)
     })
   }
@@ -566,11 +566,11 @@ class DBReadmeTest extends BaseTest {
   async testUpdatingRowWithoutAOL () {
     const id = uuidv4()
     await db.Transaction.run(async tx => {
-      tx.create(Order, { id, product: 'coffee', quantity: 8 })
+      tx.create(OrderWithNoPrice, { id, product: 'coffee', quantity: 8 })
     })
     async function incrUpToButNotBeyondTen (origValue) {
       await db.Transaction.run(async tx => {
-        const x = await tx.get(Order, id)
+        const x = await tx.get(OrderWithNoPrice, id)
         if (x.quantity < 10) {
           x.getField('quantity').incrementBy(1)
           // trying to modify the quantity directly would generate a condition
@@ -584,7 +584,7 @@ class DBReadmeTest extends BaseTest {
         expect(cond).toBe(quantityField.__awsName + '=:_1')
       })
       await db.Transaction.run(async tx => {
-        const order = await tx.get(Order, id)
+        const order = await tx.get(OrderWithNoPrice, id)
         expect(order.quantity).toBe(Math.min(origValue + 1, 10))
       })
     }
@@ -606,13 +606,13 @@ class DBReadmeTest extends BaseTest {
     expect(key.Cls).toBe(RaceResult)
     expect(key.encodedKeys._id).toBe('123\0Mel')
 
-    class StringKeyWithNullBytes extends db.Model {
+    class StringKeyWithNullBytesExample extends db.Model {
       static KEY = { id: S.obj().prop('raw', S.str) }
     }
-    await StringKeyWithNullBytes.createResources()
+    await StringKeyWithNullBytesExample.createResources()
     const strWithNullByte = 'I can contain \0, no pr\0blem!'
     await expect(db.Transaction.run(tx => {
-      const row = tx.create(StringKeyWithNullBytes, {
+      const row = tx.create(StringKeyWithNullBytesExample, {
         id: {
           raw: strWithNullByte
         }
