@@ -1243,8 +1243,8 @@ class WriteBatcherTest extends BaseTest {
 
     const batcher = new db.__private.__WriteBatcher()
     batcher.track({
-      __fullTableName: 'sharedlibTestModel',
-      tableName: 'TestModel',
+      __fullTableName: 'sharedlibTestData',
+      tableName: 'TestData',
       _id: '123',
       __src: itemSourceCreate
     })
@@ -1271,7 +1271,7 @@ class WriteBatcherTest extends BaseTest {
         TransactItems: [{
           Put: {
             Item: row,
-            TableName: 'sharedlibTestModel'
+            TableName: 'sharedlibTestData'
           }
         }]
       }
@@ -1279,14 +1279,14 @@ class WriteBatcherTest extends BaseTest {
     response.error = undefined
     batcher.__extractError(request, response)
     expect(response.error.message)
-      .toBe('Tried to recreate an existing model: sharedlibTestModel _id=123')
+      .toBe('Tried to recreate an existing model: sharedlibTestData _id=123')
 
     batcher.__allModels[0]._sk = '456'
     request.params.TransactItems = [
       {
         Update: {
           Key: { _id: { S: '123' }, _sk: { S: '456' } },
-          TableName: 'sharedlibTestModel'
+          TableName: 'sharedlibTestData'
         }
       }
     ]
@@ -1295,7 +1295,7 @@ class WriteBatcherTest extends BaseTest {
     expect(response.error.message)
       .toBe([
         'Tried to recreate an existing model: ',
-        'sharedlibTestModel _id=123 _sk=456'].join(''))
+        'sharedlibTestData _id=123 _sk=456'].join(''))
 
     response.error = undefined
     batcher.__allModels[0].__src = 'something else'
@@ -1308,7 +1308,7 @@ class WriteBatcherTest extends BaseTest {
     expect(response.error).toBe(undefined)
   }
 
-  async testModelAlreadyExistsError () {
+  async TestDataAlreadyExistsError () {
     // Single row transactions
     const id = uuidv4()
     await txCreate(BasicExample, { id })

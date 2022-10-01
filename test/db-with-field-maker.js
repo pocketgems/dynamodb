@@ -63,7 +63,7 @@ function fieldFromFieldOptions (Cls, options) {
       `unexpected option(s): ${optionKeysLeft}`)
   const name = 'fakeTestField'
   options = db.__private.__Field.__validateFieldOptions(
-    'fakeTestModel', keyType, name, schema)
+    'fakeTestData', keyType, name, schema)
   return new Cls({
     idx: 0,
     name,

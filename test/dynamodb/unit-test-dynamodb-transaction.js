@@ -1167,7 +1167,7 @@ class TransactionConditionCheckTest extends QuickTransactionTest {
     })
   }
 
-  async testModelExistence () {
+  async TestDataExistence () {
     // Even if a model was only read, but no properties are accessed, a
     // condition should be generated when the tx commits
     const __WriteBatcher = db.__private.__WriteBatcher
