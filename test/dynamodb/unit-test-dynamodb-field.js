@@ -1,4 +1,4 @@
-const { InvalidFieldError, NotImplementedError, InvalidParameterError } = require('../../src/dynamodb/src/errors')
+const { InvalidFieldError, NotImplementedError } = require('../../src/dynamodb/src/errors')
 const { __CompoundField, __FieldInterface } = require('../../src/dynamodb/src/fields')
 const S = require('../../src/schema/src/schema')
 const { BaseTest, runTests } = require('../base-unit-test')
