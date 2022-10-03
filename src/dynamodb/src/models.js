@@ -322,8 +322,8 @@ class Model {
       assert.ok(!tableName.endsWith('Model'), 'not include "Model"')
       assert.ok(!tableName.endsWith('Table'), 'not include "Table"')
       assert.ok(tableName.indexOf('_') < 0, 'not include underscores')
-      assert.ok(tableName[0].match(/[A-Z]/), 'be capitalized')
-      assert.ok(tableName.match(/[a-zA-Z0-9]*/), 'only use permitted chars')
+      assert.ok(tableName[0].match(/[A-Z]/), 'start with a capitalized letter')
+      assert.ok(tableName.match(/[a-zA-Z0-9]*/), 'only use letters or numbers')
       // we will eventually need to allow this in some cases since some
       // singular words also end in the letter "s"
       if (tableName.endsWith('s')) {
