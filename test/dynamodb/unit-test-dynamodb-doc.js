@@ -1,7 +1,7 @@
+const S = require('@pocketgems/schema')
 const uuidv4 = require('uuid').v4
 
 const db = require('../../src/dynamodb/src/default-db')
-const S = require('../../src/schema/src/schema')
 const { BaseTest, runTests } = require('../base-unit-test')
 
 class OrderWithNoPrice extends db.Model {

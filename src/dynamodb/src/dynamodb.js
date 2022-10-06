@@ -1,6 +1,6 @@
 const assert = require('assert')
 
-const S = require('../../schema/src/schema')
+const S = require('@pocketgems/schema')
 
 const AWSError = require('./aws-error')
 const {

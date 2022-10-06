@@ -1,9 +1,8 @@
 const assert = require('assert')
 
+const S = require('@pocketgems/schema')
 const stableStringify = require('fast-json-stable-stringify')
 const deepcopy = require('rfdc')()
-
-const S = require('../../schema/src/schema')
 
 const AWSError = require('./aws-error')
 const { Data } = require('./data')

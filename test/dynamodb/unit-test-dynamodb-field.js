@@ -1,6 +1,7 @@
+const S = require('@pocketgems/schema')
+
 const { InvalidFieldError, NotImplementedError } = require('../../src/dynamodb/src/errors')
 const { __CompoundField, __FieldInterface } = require('../../src/dynamodb/src/fields')
-const S = require('../../src/schema/src/schema')
 const { BaseTest, runTests } = require('../base-unit-test')
 const db = require('../db-with-field-maker')
 
