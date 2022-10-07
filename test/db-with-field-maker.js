@@ -2,7 +2,7 @@ const assert = require('assert')
 
 const S = require('@pocketgems/schema')
 
-const db = require('../src/dynamodb')
+const db = require('../src/default-db')
 
 // create helper functions to construct fields for testing purposes
 db.__private.fields.forEach(Cls => {

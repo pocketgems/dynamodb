@@ -1,0 +1,18 @@
+version: "3.7"
+services:
+  dynamodb:
+    container_name: pocketgems-dynamodb
+    image: amazon/dynamodb-local:latest
+    ports:
+      - 8100:8100
+    command: ["-jar", "DynamoDBLocal.jar", "-inMemory", "-port", "8100"]
+  dynamodb-admin:
+    container_name: pocketgems-dynamodb-admin
+    image: aaronshaf/dynamodb-admin:latest
+    ports:
+      - 8101:8101
+    environment:
+      - DYNAMO_ENDPOINT=http://pocketgems-dynamodb:8100
+      - AWS_ACCESS_KEY_ID=ignored
+      - AWS_SECRET_ACCESS_KEY=ignored
+      - AWS_REGION=localhost

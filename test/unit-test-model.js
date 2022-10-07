@@ -1,9 +1,9 @@
 const S = require('@pocketgems/schema')
 const uuidv4 = require('uuid').v4
 
-const AWSError = require('../../src/dynamodb/src/aws-error')
-const { BaseTest, runTests } = require('../base-unit-test')
-const db = require('../db-with-field-maker')
+const AWSError = require('../src/aws-error')
+const { BaseTest, runTests } = require('@pocketgems/unit-test')
+const db = require('./db-with-field-maker')
 
 const CONDITION_EXPRESSION_STR = 'ConditionExpression'
 const UPDATE_EXPRESSION_STR = 'UpdateExpression'
@@ -221,7 +221,7 @@ class SimpleExampleTest extends BaseTest {
       }
     }
     // GuildMetadataEnd
-    const setupDB = require('../../src/dynamodb/src/dynamodb')
+    const setupDB = require('../src/dynamodb')
     const dbParams = {
       dynamoDBClient: db.Model.dbClient,
       dynamoDBDocumentClient: db.Model.documentClient,
@@ -306,7 +306,7 @@ class SimpleExampleTest extends BaseTest {
   }
 
   async testUpdateBillingMode () {
-    const setupDB = require('../../src/dynamodb/src/dynamodb')
+    const setupDB = require('../src/dynamodb')
     const dbParams = {
       dynamoDBClient: db.Model.dbClient,
       dynamoDBDocumentClient: db.Model.documentClient,
@@ -350,7 +350,7 @@ class SimpleExampleTest extends BaseTest {
     jest.resetModules()
     const oldVal = process.env.INDEBUGGER
     process.env.INDEBUGGER = 0
-    const tempDB = require('../../src/dynamodb/src/default-db')
+    const tempDB = require('../src/default-db')
     expect(tempDB.Model.createResources).toBeDefined()
     expect(tempDB.Model.__private).toBe(undefined)
     process.env.INDEBUGGER = oldVal
@@ -1243,7 +1243,7 @@ class WriteBatcherTest extends BaseTest {
 
     const batcher = new db.__private.__WriteBatcher()
     batcher.track({
-      __fullTableName: 'sharedlibTestData',
+      __fullTableName: 'unittestTestData',
       tableName: 'TestData',
       _id: '123',
       __src: itemSourceCreate
@@ -1271,7 +1271,7 @@ class WriteBatcherTest extends BaseTest {
         TransactItems: [{
           Put: {
             Item: row,
-            TableName: 'sharedlibTestData'
+            TableName: 'unittestTestData'
           }
         }]
       }
@@ -1279,14 +1279,14 @@ class WriteBatcherTest extends BaseTest {
     response.error = undefined
     batcher.__extractError(request, response)
     expect(response.error.message)
-      .toBe('Tried to recreate an existing model: sharedlibTestData _id=123')
+      .toBe('Tried to recreate an existing model: unittestTestData _id=123')
 
     batcher.__allModels[0]._sk = '456'
     request.params.TransactItems = [
       {
         Update: {
           Key: { _id: { S: '123' }, _sk: { S: '456' } },
-          TableName: 'sharedlibTestData'
+          TableName: 'unittestTestData'
         }
       }
     ]
@@ -1295,7 +1295,7 @@ class WriteBatcherTest extends BaseTest {
     expect(response.error.message)
       .toBe([
         'Tried to recreate an existing model: ',
-        'sharedlibTestData _id=123 _sk=456'].join(''))
+        'unittestTestData _id=123 _sk=456'].join(''))
 
     response.error = undefined
     batcher.__allModels[0].__src = 'something else'

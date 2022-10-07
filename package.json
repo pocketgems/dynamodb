@@ -1,14 +1,32 @@
 {
-  "name": "dynamodb",
-  "version": "1.0.0",
+  "name": "@pocketgems/dynamodb",
+  "version": "0.0.1",
   "description": "Todea DynamoDB Library",
+  "license": "Apache-2.0",
   "main": "src/default-db.js",
   "scripts": {
     "webpack": "yarn; webpack --config webpack.config.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "setup": "yarn"
   },
-  "author": "",
-  "license": "unlicensed",
+  "contributors": [
+    {
+      "name": "Yu Guan"
+    },
+    {
+      "name": "David Underhill"
+    },
+    {
+      "name": "Solaman Huq"
+    },
+    {
+      "name": "Shimul Bhowmik"
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pocketgems/dynamodb"
+  },
   "dependencies": {
     "amazon-dax-client": "^1.2.5",
     "aws-sdk": "^2.829.0",
@@ -21,8 +39,12 @@
   "devDependencies": {
     "@babel/core": "^7.12.10",
     "@babel/plugin-proposal-class-properties": "^7.12.1",
+    "@pocketgems/unit-test": "^0.0.1",
+    "@pocketgems/schema": "^0.0.1",
     "babel-loader": "^8.2.2",
+    "jest": "^26.4.2",
     "license-webpack-plugin": "^2.3.17",
+    "nodemon": "^2.0.20",
     "webpack": "^5.13.0",
     "webpack-cli": "^4.3.1"
   }

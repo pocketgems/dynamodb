@@ -1,8 +1,8 @@
 const S = require('@pocketgems/schema')
 const uuidv4 = require('uuid').v4
 
-const { BaseTest, runTests } = require('../base-unit-test')
-const db = require('../db-with-field-maker')
+const { BaseTest, runTests } = require('@pocketgems/unit-test')
+const db = require('./db-with-field-maker')
 
 const {
   Query,

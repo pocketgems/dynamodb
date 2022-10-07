@@ -1,8 +1,8 @@
 const S = require('@pocketgems/schema')
+const { BaseTest, runTests } = require('@pocketgems/unit-test')
 const uuidv4 = require('uuid').v4
 
-const db = require('../../src/dynamodb/src/default-db')
-const { BaseTest, runTests } = require('../base-unit-test')
+const db = require('../src/default-db')
 
 class OrderWithNoPrice extends db.Model {
   static FIELDS = {

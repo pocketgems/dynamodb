@@ -1,10 +1,10 @@
 const assert = require('assert')
 
 const S = require('@pocketgems/schema')
+const { BaseTest, runTests } = require('@pocketgems/unit-test')
 const uuidv4 = require('uuid').v4
 
-const db = require('../../src/dynamodb/src/default-db')
-const { BaseTest, runTests } = require('../base-unit-test')
+const db = require('../src/default-db')
 
 async function txGetGeneric (cls, values, func) {
   return db.Transaction.run(async tx => {
@@ -191,7 +191,7 @@ class TransactionEdgeCaseTest extends BaseTest {
     const checkExpr = txItems[1 - putIdx]
     expect(putExpr).toEqual({
       Put: {
-        TableName: 'sharedlibKeyOnlyExample',
+        TableName: 'unittestKeyOnlyExample',
         Item: {
           _id: idToWrite.id,
           _sk: 'y'
@@ -202,7 +202,7 @@ class TransactionEdgeCaseTest extends BaseTest {
     })
     expect(checkExpr).toEqual({
       ConditionCheck: {
-        TableName: 'sharedlibKeyOnlyExample',
+        TableName: 'unittestKeyOnlyExample',
         Key: {
           _id: idToRead.id,
           _sk: 'x'
@@ -228,7 +228,7 @@ class TransactionGetTest extends QuickTransactionTest {
       const fut = tx.get(TransactionExample, 'a',
         { createIfMissing: true })
       await expect(fut).rejects
-        .toThrow('Model tracked for Get already tracked from Get: sharedlibTransactionExample _id=a')
+        .toThrow('Model tracked for Get already tracked from Get: unittestTransactionExample _id=a')
     })
   }
 
@@ -497,7 +497,7 @@ class TransactionWriteTest extends QuickTransactionTest {
     } catch (err) {
       expect(err.message).toMatch(/^Multiple Non-retryable Errors:/)
       const errPrefix =
-        'Tried to recreate an existing model: sharedlibTransactionExample _id='
+        'Tried to recreate an existing model: unittestTransactionExample _id='
       expect(err.message).toContain(errPrefix + id1)
       expect(err.message).toContain(errPrefix + id2)
       expect(err.message.split('\n').length).toBe(3)
@@ -995,7 +995,7 @@ class TransactionWriteTest extends QuickTransactionTest {
     await expect(future)
       .rejects
       .toThrow(
-        'Model tracked for Get already tracked from CreateOrPut: sharedlibTransactionExample _id=abc'
+        'Model tracked for Get already tracked from CreateOrPut: unittestTransactionExample _id=abc'
       )
 
     // verify delete then get fails
@@ -1006,7 +1006,7 @@ class TransactionWriteTest extends QuickTransactionTest {
     await expect(future)
       .rejects
       .toThrow(
-        'Model tracked for Get already tracked from Delete: sharedlibTransactionExample _id=abc'
+        'Model tracked for Get already tracked from Delete: unittestTransactionExample _id=abc'
       )
   }
 }

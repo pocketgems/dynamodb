@@ -29,7 +29,7 @@ module.exports = {
     ]
   },
   externals: {
-    '../../schema/src/schema': './schema.cjs',
+    '@pocketgems/schema': './schema.cjs',
     assert: './assert.cjs',
     'amazon-dax-client': 'invalid',
     'aws-sdk': 'invalid'

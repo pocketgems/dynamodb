@@ -1,9 +1,9 @@
 const S = require('@pocketgems/schema')
+const { BaseTest, runTests } = require('@pocketgems/unit-test')
 
-const { InvalidFieldError, NotImplementedError } = require('../../src/dynamodb/src/errors')
-const { __CompoundField, __FieldInterface } = require('../../src/dynamodb/src/fields')
-const { BaseTest, runTests } = require('../base-unit-test')
-const db = require('../db-with-field-maker')
+const { InvalidFieldError, NotImplementedError } = require('../src/errors')
+const { __CompoundField, __FieldInterface } = require('../src/fields')
+const db = require('./db-with-field-maker')
 
 class CommonFieldTest extends BaseTest {
   makeSureMutableFieldWorks (field) {
