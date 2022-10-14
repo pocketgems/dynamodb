@@ -18,6 +18,7 @@
     "testMatch": [
       "<rootDir>/test/*(*/)unit-test*.js"
     ],
+    "setupFiles": ["<rootDir>/environment.js"],
     "reporters": [
       "@pocketgems/unit-test/src/custom-reporter.js",
       "@pocketgems/unit-test/src/summary-reporter.js"

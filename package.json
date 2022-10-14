@@ -6,8 +6,10 @@
   "main": "src/default-db.js",
   "scripts": {
     "webpack": "yarn; webpack --config webpack.config.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "setup": "yarn"
+    "debug": "yarn start-local-db; ./node_modules/nodemon/bin/nodemon.js --no-lazy --legacy-watch --watch ./src --watch ./example --watch ./test --inspect=9229 ./node_modules/jest/bin/jest.js --coverage --config=./jest.config.json --runInBand",
+    "test": "yarn start-local-db; ./node_modules/jest/bin/jest.js --coverage --config=./jest.config.json",
+    "setup": "yarn",
+    "start-local-db": "docker-compose up --d"
   },
   "contributors": [
     {

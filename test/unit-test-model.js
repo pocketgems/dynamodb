@@ -1221,6 +1221,19 @@ class WriteBatcherTest extends BaseTest {
     })
   }
 
+  testRegister () {
+    // Model subclasses support registration process using a visitor pattern
+    let called = false
+    const fakeRegistrator = {
+      registerModel: () => {
+        called = true
+      }
+    }
+
+    IDWithSchemaExample.register(fakeRegistrator)
+    expect(called).toBe(true)
+  }
+
   async testExceptionParser () {
     const reasons = []
     const response = {
