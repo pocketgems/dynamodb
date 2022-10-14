@@ -15,6 +15,7 @@ high-level abstractions to structure data and prevent race conditions.
     - [Automatic Optimistic Locking (AOL)](#automatic-optimistic-locking-aol)
     - [Retries](#retries)
     - [Read-Only](#read-only)
+    - [Pre-Commit Hook](#pre-commit-hook)
     - [Warning: Race Conditions](#warning-race-conditions)
     - [Warning: Side Effects](#warning-side-effects)
     - [Per-request transaction](#per-request-transaction)
@@ -74,7 +75,7 @@ Each row is uniquely identified by a [_Key_](#keys) (more on this later).
 
 ## Minimal Example
 Define a new table like this, which uses the [Todea Schema library](https://github.com/pocketgems/schema) to enfore Table schema:
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:scope:Order -->
+```javascript <!-- embed:./test/unit-test-doc.js:scope:Order -->
 class OrderWithNoPrice extends db.Model {
   static FIELDS = {
     product: S.str,
@@ -90,7 +91,7 @@ tx.create(Order, { id, product: 'coffee', quantity: 1 })
 ```
 
 Later, we can retrieve it from the database and modify it:
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:scope:DBReadmeTest:testMinimalExample:Example -->
+```javascript <!-- embed:./test/unit-test-doc.js:scope:DBReadmeTest:testMinimalExample:Example -->
     // Example
     await db.Transaction.run(async tx => {
       const order = await tx.get(OrderWithNoPrice, id)
@@ -114,7 +115,7 @@ changed.
 You can override the default and define your key to be composed of one _or
 more_ fields with arbitrary
 [Todea schema](https://github.com/pocketgems/schema)s (`S`):
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:scope:RaceResult -->
+```javascript <!-- embed:./test/unit-test-doc.js:scope:RaceResult -->
 class RaceResult extends db.Model {
   static KEY = {
     raceID: S.int,
@@ -124,7 +125,7 @@ class RaceResult extends db.Model {
 ```
 
 Access each component of a key just like any other field:
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:scope:DBReadmeTest:testKeys -->
+```javascript <!-- embed:./test/unit-test-doc.js:scope:DBReadmeTest:testKeys -->
   async testKeys () {
     await RaceResult.createResources()
     await db.Transaction.run(async tx => {
@@ -159,7 +160,7 @@ the same key.
 Fields are pieces of data attached to an item. They are defined similar to
 `KEY` -- fields can be composed of one _or more_ fields with arbitrary
 [Todea schema](https://github.com/pocketgems/schema)s (`S`) :
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:scope:ModelWithFields -->
+```javascript <!-- embed:./test/unit-test-doc.js:scope:ModelWithFields -->
 class ModelWithFieldsExample extends db.Model {
   static FIELDS = {
     someInt: S.int.min(0),
@@ -188,7 +189,7 @@ Fields can be configured to be optional, immutable and/or have default values:
          field is required.
     * The default value is _not_ assigned to an optional field that is missing
       when it is fetched from the database.
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:scope:ComplexFieldsExample -->
+```javascript <!-- embed:./test/unit-test-doc.js:scope:ComplexFieldsExample -->
 class ComplexFieldsExample extends db.Model {
   static FIELDS = {
     aNonNegInt: S.int.min(0),
@@ -199,7 +200,7 @@ class ComplexFieldsExample extends db.Model {
   }
 }
 ```
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:section:example1122start:example1122end -->
+```javascript <!-- embed:./test/unit-test-doc.js:section:example1122start:example1122end -->
       // can omit the optional field
       const row = tx.create(ComplexFieldsExample, {
         id: uuidv4(),
@@ -230,7 +231,7 @@ Indexes can optimize some DynamoDB data access patterns like filtering and sorti
 You can read more about DynamoDB GlobalSecondaryIndex [here](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/GSI.html).
 
 You can define a new index like this inside your model class:
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-model.js:scope:class PXPayout -->
+```javascript <!-- embed:./test/unit-test-model.js:scope:class PXPayout -->
 class PXPayout extends db.Model {
   static KEY = { player: S.str, admin: S.str }
   static FIELDS = {
@@ -250,7 +251,7 @@ An index can be useful in scenarios like:
 - Sort/Filter multiple ways efficiently. Let's take a look at the  `GuildMetadata` model below.
   - We can use `guildByLeague` to find all the teams in a specific guild and sort them by rank.
   - We can use `guildByRank` to find all the teams that's ranked 1 sorted by league name.
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-model.js:section:GuildMetadataStart:GuildMetadataEnd -->
+```javascript <!-- embed:./test/unit-test-model.js:section:GuildMetadataStart:GuildMetadataEnd -->
     const GuildMetadata = class extends db.Model {
       static KEY = { name: S.str }
       static FIELDS = { league: S.str, rank: S.int }
@@ -336,7 +337,7 @@ The schema is checked as follows:
 As you've noticed, key components and fields are simply accessed by their names
 (e.g., `raceResult.runnerName` or `order.product`). You can also define
 instance methods on your models to provide additional functionality:
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:scope:OrderWithPrice -->
+```javascript <!-- embed:./test/unit-test-doc.js:scope:OrderWithPrice -->
 class OrderWithPrice extends db.Model {
   static FIELDS = {
     quantity: S.int,
@@ -463,6 +464,23 @@ await db.Transaction.run(async tx => {
   tx.makeReadOnly()
   // ...
 })
+```
+
+### Pre-Commit Hook
+A model might need to automate logic before it is committed to store. For example, a `Ledger` model may want to update a `ver` field any time it is updated. Such logic can be achieved through the `Model.finalize` hook.
+
+```javascript <!-- embed:./test/unit-test-transaction.js:scope:HookExample -->
+class HookExample extends db.Model {
+  static KEY = { id: S.str.min(1) }
+  static FIELDS = {
+    field1: S.int.default(0),
+    latestUpdateEpoch: S.int.default(0)
+      .desc('latest update epoch in milliseconds')
+  }
+  finalize () {
+    this.latestUpdateEpoch = Date.now()
+  }
+}
 ```
 
 
@@ -692,7 +710,7 @@ Otherwise, deletion on missing rows will be treated as noop.
 Query enables accessing rows in a DB table with the same partition key.
 Transaction context `tx` provides `query` method that return a handle for
 adding filters and execute the query.
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:section:example queryHandle start:example queryHandle end -->
+```javascript <!-- embed:./test/unit-test-iterators.js:section:example queryHandle start:example queryHandle end -->
       const query = tx.query(QueryExample)
 ```
 
@@ -700,7 +718,7 @@ adding filters and execute the query.
 Queries require equality filters on every partition key, otherwise when a
 query is executed an exception will result. Consider a model with 2 partition
 keys `id1` and `id2`:
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:scope:IteratorExample -->
+```javascript <!-- embed:./test/unit-test-iterators.js:scope:IteratorExample -->
 class IteratorExample extends db.Model {
   static KEY = {
     id1: S.str,
@@ -728,7 +746,7 @@ class IteratorExample extends db.Model {
 ```
 
 The required equality filters are added with the following code
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:section:example equality filter start:example equality filter end -->
+```javascript <!-- embed:./test/unit-test-iterators.js:section:example equality filter start:example equality filter end -->
     query.id1('xyz')
     query.id2(321)
 ```
@@ -745,7 +763,7 @@ query.sk1('between', '123', '234') // sk1 is between '123' and '234
 ```
 
 Filter expressions support method chaining
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:section:example filter chaining start:example filter chaining end -->
+```javascript <!-- embed:./test/unit-test-iterators.js:section:example filter chaining start:example filter chaining end -->
     query1.id1('xyz').id2(123).sk1('>', '1')
 ```
 
@@ -773,7 +791,7 @@ Queries can be executed using the paginator API and generator API:
   when `nextToken` is undefined, else the pagination will restart from the
   beginning of the table again, resulting in an infinite loop.
 
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:section:example queryFetch start:example queryFetch end -->
+```javascript <!-- embed:./test/unit-test-iterators.js:section:example queryFetch start:example queryFetch end -->
       const [results1, nextToken1] = await query.fetch(1)
       const [results2, nextToken2] = await query.fetch(999, nextToken1)
       expect(nextToken2).toBeUndefined()
@@ -782,7 +800,7 @@ Queries can be executed using the paginator API and generator API:
 - The generator API is supported by `run(n)`. It also takes the number of irowstems
   to return as a parameter, and only stops when **n** rows are returned, or
   all rows in the table are read.
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:scope:async testLazyFilter:for await -->
+```javascript <!-- embed:./test/unit-test-iterators.js:scope:async testLazyFilter:for await -->
       for await (const data of query.run(10)) {
         ret.push(data)
       }
@@ -798,7 +816,7 @@ Queries can be executed using the paginator API and generator API:
 Query results are sorted by sort keys in ascending order by default. Returning
 rows in descending order requires enabling `descending` option when creating
 the query handle.
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:section:example descending start:example descending end -->
+```javascript <!-- embed:./test/unit-test-iterators.js:section:example descending start:example descending end -->
       const query = tx.query(QueryExample, { descending: true })
 ```
 
@@ -806,7 +824,7 @@ the query handle.
 By default, query returns strongly consistent data that makes sure *only*
 transactions committed before query started are reflected in the rows returned
 from query. Disabling strong consistency can improve performance.
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:section:example inconsistentQuery start:example inconsistentQuery end -->
+```javascript <!-- embed:./test/unit-test-iterators.js:section:example inconsistentQuery start:example inconsistentQuery end -->
       const query = tx.query(QueryExample, { inconsistentRead: true })
       query.id1('123').id2(123)
 ```
@@ -822,7 +840,7 @@ However, lazy filters are still supported to allow flexibility in constructing
 queries while avoiding setting up many dedicated Indexes. To allow lazy
 filters, the query handle must be created with `allowLazyFilter` option turned
 on.
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:section:example lazyFilter start:example lazyFilter end -->
+```javascript <!-- embed:./test/unit-test-iterators.js:section:example lazyFilter start:example lazyFilter end -->
       const query = tx.query(QueryExample, { allowLazyFilter: true })
 ```
 
@@ -832,7 +850,7 @@ for inequality condition "!=".
 #### Indexes
 Querying an index uses the same syntax as querying a table.  Once you define the index in your query, you need to define an equality filter on each of the `KEY` columns defined in your index.
 
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-model.js:scope:class PXPayout -->
+```javascript <!-- embed:./test/unit-test-model.js:scope:class PXPayout -->
 class PXPayout extends db.Model {
   static KEY = { player: S.str, admin: S.str }
   static FIELDS = {
@@ -867,21 +885,21 @@ You can add additional filters on the rest of the columns with [Lazy Filter](#la
 A scan accesses all rows in a table one by one. Transaction context
 `tx` provides `scan` method that returns a handle for conducting a scan
 operation.
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:section:scanHandle start:scanHandle end -->
+```javascript <!-- embed:./test/unit-test-iterators.js:section:scanHandle start:scanHandle end -->
         const scan = tx.scan(ScanExample, opt)
 ```
 
 #### Execution
 A scan is executed using paginator and generator APIs similar to [query's execution APIs](#execution)
 - Paginator API
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:section:example scan start:example scan end -->
+```javascript <!-- embed:./test/unit-test-iterators.js:section:example scan start:example scan end -->
         const scan = tx.scan(ScanExample, opt)
         const [page1, nextToken1] = await scan.fetch(2)
         const [page2, nextToken2] = await scan.fetch(10, nextToken1)
 ```
 
 - Generator API
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:scope:testScanRunFew:for await -->
+```javascript <!-- embed:./test/unit-test-iterators.js:scope:testScanRunFew:for await -->
         for await (const model of scan.run(3)) {
           models.push(model)
         }
@@ -898,7 +916,7 @@ and `shardCount`.
 For example, a sharded scan using 2 machines will need to set `shardCount` to 2
 and use 0 as the `shardIndex` on one machine and use 1 as the `shardIndex` on
 the other.
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:scope:testSharding:Transaction -->
+```javascript <!-- embed:./test/unit-test-iterators.js:scope:testSharding:Transaction -->
     await db.Transaction.run(async tx => {
       const scan = tx.scan(ScanExample, { shardCount: 2, shardIndex: 0 })
       return scan.fetch(10)
@@ -908,7 +926,7 @@ the other.
 #### Read Consistency
 By default, a scan returns strongly consistent data. Disabling strong
 consistency can improve performance and reduce cost by 50%.
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:scope:testInconsistentRead:scanRet  -->
+```javascript <!-- embed:./test/unit-test-iterators.js:scope:testInconsistentRead:scanRet  -->
     const scanRet = await db.Transaction.run(async tx => {
       const scan = tx.scan(ScanExample, { inconsistentRead: true })
       return scan.__setupParams().ConsistentRead
@@ -946,7 +964,7 @@ Similarly, rows can be blindly created or overwritten with `createOrPut`
 method. This is useful when we don't care about the previous value (if any).
 For example, maybe we're tracking whether a customer has used a particular
 feature or not. When they use it, we may just want to blindly record it:
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-doc.js:scope:testBlindWritesCreateOrUpdate -->
+```javascript <!-- embed:./test/unit-test-doc.js:scope:testBlindWritesCreateOrUpdate -->
   async testBlindWritesCreateOrUpdate () {
     class LastUsedFeature extends db.Model {
       static KEY = {
@@ -1105,7 +1123,7 @@ NOTE: When the timestamp is more than 5 years in the past, the row will not be
 removed.So to keep a row indefinitely in a TTL enabled table, you may safely
 set the TTL field to 0.
 
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-model.js:scope:TTLExample -->
+```javascript <!-- embed:./test/unit-test-model.js:scope:TTLExample -->
 class TTLExample extends db.Model {
   static FIELDS = {
     expirationTime: S.int,
@@ -1188,7 +1206,7 @@ Indexes can optimize some DynamoDB data access patterns like filtering and sorti
 
 Indexes are eventually consistent. This means that when a database row is updated, its index(es) are updated sometime later. Usually this happens quickly (within seconds) but it could be longer (potentially much longer). Therefore you need to be careful when querying an index and account for this.
 
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-model.js:section:GuildMetadataStart:GuildMetadataEnd -->
+```javascript <!-- embed:./test/unit-test-model.js:section:GuildMetadataStart:GuildMetadataEnd -->
     const GuildMetadata = class extends db.Model {
       static KEY = { name: S.str }
       static FIELDS = { league: S.str, rank: S.int }
@@ -1215,7 +1233,7 @@ By default, we project ALL columns in every index. This is helpful in most cases
 e.g. in the `PXPayout` model, we might want to find all the payouts done on a certain date and not care about the actual payout or the notes left by the admin.
 
 
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-model.js:scope:class PXPayout -->
+```javascript <!-- embed:./test/unit-test-model.js:scope:class PXPayout -->
 class PXPayout extends db.Model {
   static KEY = { player: S.str, admin: S.str }
   static FIELDS = {
@@ -1250,7 +1268,7 @@ Indexes have a [Partition Limitation](https://docs.aws.amazon.com/amazondynamodb
 
 Index by default contains all the columns, but you can not lazy filter on the underlying model's KEY/SORT_KEY. To do that, you need to set the `INDEX_INCLUDE_KEYS` field.
 
-```javascript <!-- embed:../test/dynamodb/unit-test-dynamodb-iterators.js:scope:class:LazyFilterKeyExample -->
+```javascript <!-- embed:./test/unit-test-iterators.js:scope:class:LazyFilterKeyExample -->
 class LazyFilterKeyExample extends db.Model {
   static INDEX_INCLUDE_KEYS = true
 

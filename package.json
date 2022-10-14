@@ -1,6 +1,6 @@
 {
   "name": "@pocketgems/dynamodb",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Todea DynamoDB Library",
   "license": "Apache-2.0",
   "main": "src/default-db.js",

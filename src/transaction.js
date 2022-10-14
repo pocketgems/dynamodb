@@ -110,7 +110,7 @@ class __WriteBatcher {
           model.toString())
       }
     }
-    model.__finalize()
+    model.finalize()
     this.__toCheck[model] = false
 
     let action

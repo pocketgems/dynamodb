@@ -96,7 +96,7 @@ class Model {
   /**
    * Hook for finalizing a model before writing to database
    */
-  __finalize () {
+  finalize () {
   }
 
   __addField (idx, name, opts, vals) {

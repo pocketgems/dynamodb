@@ -48,6 +48,18 @@ class TransactionExample extends db.Model {
   }
 }
 
+class HookExample extends db.Model {
+  static KEY = { id: S.str.min(1) }
+  static FIELDS = {
+    field1: S.int.default(0),
+    latestUpdateEpoch: S.int.default(0)
+      .desc('latest update epoch in milliseconds')
+  }
+  finalize () {
+    this.latestUpdateEpoch = Date.now()
+  }
+}
+
 class TransactionExampleWithRequiredField extends TransactionExample {
   static FIELDS = { ...super.FIELDS, required: S.double }
 }
@@ -435,6 +447,7 @@ class TransactionGetTest extends QuickTransactionTest {
 class TransactionWriteTest extends QuickTransactionTest {
   async beforeAll () {
     await super.beforeAll()
+    await HookExample.createResources()
     this.modelName = '1234'
     await txGet(this.modelName, model => {
       model.field1 = 0
@@ -469,6 +482,29 @@ class TransactionWriteTest extends QuickTransactionTest {
     expect(model.field1).toBe(val)
     expect(model._c_field1_field2).toBe(undefined)
     expect(model._c_field1_id).toBe([val, modelName].join('\0'))
+  }
+
+  async testWriteFinalizeHook () {
+    const modelName = uuidv4()
+    let fakeTime = 1000
+    jest.spyOn(Date, 'now').mockImplementation(
+      () => fakeTime
+    )
+    const data = HookExample.data(modelName)
+    await db.Transaction.run(async tx => {
+      const txModel = await tx.get(data, { createIfMissing: true })
+      txModel.field1 = 22
+    })
+    fakeTime = 2000
+    let model = await txGet(data)
+    expect(model.latestUpdateEpoch).toEqual(1000)
+
+    await db.Transaction.run(async tx => {
+      const txModel = await tx.get(data, { createIfMissing: true })
+      txModel.field1 = 23
+    })
+    model = await txGet(data)
+    expect(model.latestUpdateEpoch).toEqual(2000)
   }
 
   async testWriteIndexData () {
