@@ -45,6 +45,9 @@
     "rfdc": "^1.1.4",
     "uuid": "^8.3.2"
   },
+  "peerDependencies": {
+    "@pocketgems/schema": "^0.1.0"
+  },
   "devDependencies": {
     "@babel/core": "^7.17.12",
     "@babel/eslint-parser": "^7.17.0",
@@ -58,7 +61,7 @@
     "eslint-plugin-node": "^11.1.0",
     "eslint-plugin-promise": "^6.0.0",
     "eslint-plugin-standard": "^4.0.1",
-    "@pocketgems/schema": "^0.0.1",
+    "@pocketgems/schema": "^0.1.0",
     "jest": "^26.4.2",
     "license-webpack-plugin": "^2.3.17",
     "nodemon": "^2.0.20",
