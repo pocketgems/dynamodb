@@ -300,27 +300,28 @@ class SimpleExampleTest extends BaseTest {
     const actualAttr = tableParams.AttributeDefinitions.map(attr => attr.AttributeName).sort()
     expect(actualAttr).toEqual(expectedAttr.sort())
     expect(tableParams.GlobalSecondaryIndexes.length).toBe(5)
+    tableParams.GlobalSecondaryIndexes.forEach(eachIndex => {
+      expect(eachIndex.ProvisionedThroughput).toBeDefined()
+      const indexName = eachIndex.IndexName
+      const indexResourceName = IndexDBExample.tableResourceName + `${indexName[0].toUpperCase()}${indexName.slice(1)}` + 'Index'
+      const autoscalingConfig = Object.keys(definitions)
+      .filter(key => key.startsWith(indexResourceName))
+      expect(autoscalingConfig.length).toBe(4)
+      autoscalingConfig.forEach(eachResourceName => {
+        const resourceDefinition = definitions[eachResourceName]
+        if (resourceDefinition.Type === 'AWS::ApplicationAutoScaling::ScalableTarget') {
+          expect(resourceDefinition.Properties.ResourceId).toBe(`table/${IndexDBExample.fullTableName}/index/${indexName}`)
+          expect(resourceDefinition.Properties.ScalableDimension).toContain('dynamodb:index:')
+        }
+      })
+    })
 
     expect(tableParams.GlobalSecondaryIndexes[3].Projection.ProjectionType).toBe('INCLUDE')
     expect(tableParams.GlobalSecondaryIndexes[3].Projection.NonKeyAttributes).toEqual(['guild'])
   }
 
-  async testUpdateBillingMode () {
+  __setupDB(provisioned = false) {
     const setupDB = require('../src/dynamodb')
-    const dbParams = {
-      dynamoDBClient: db.Model.dbClient,
-      dynamoDBDocumentClient: db.Model.documentClient,
-      autoscalingClient: undefined
-    }
-    const onDemandDB = setupDB(dbParams)
-    let CapacityExample = class extends onDemandDB.Model {}
-    await CapacityExample.createResources()
-    let tableDescription = await onDemandDB.Model.dbClient
-      .describeTable({ TableName: CapacityExample.fullTableName })
-      .promise()
-    expect(tableDescription.Table.BillingModeSummary.BillingMode)
-      .toBe('PAY_PER_REQUEST')
-
     const fakeAPI = {
       promise: async () => {
         return {
@@ -329,13 +330,34 @@ class SimpleExampleTest extends BaseTest {
         }
       }
     }
-    dbParams.autoscalingClient = {
-      describeScalableTargets: () => fakeAPI,
-      registerScalableTarget: () => fakeAPI,
-      describeScalingPolicies: () => fakeAPI,
-      putScalingPolicy: () => fakeAPI
+    const dbParams = {
+      dynamoDBClient: db.Model.dbClient,
+      dynamoDBDocumentClient: db.Model.documentClient,
+      autoscalingClient: undefined
     }
-    const provisionedDB = setupDB(dbParams)
+    if (provisioned) {
+      dbParams.autoscalingClient = {
+        describeScalableTargets: () => fakeAPI,
+        registerScalableTarget: () => fakeAPI,
+        describeScalingPolicies: () => fakeAPI,
+        putScalingPolicy: () => fakeAPI
+      }
+    }
+    const mockedDB = setupDB(dbParams)
+    return mockedDB
+  }
+
+  async testUpdateBillingMode () {
+    const onDemandDB = this.__setupDB()
+    let CapacityExample = class extends onDemandDB.Model {}
+    await CapacityExample.createResources()
+    let tableDescription = await onDemandDB.Model.dbClient
+      .describeTable({ TableName: CapacityExample.fullTableName })
+      .promise()
+    expect(tableDescription.Table.BillingModeSummary.BillingMode)
+      .toBe('PAY_PER_REQUEST')
+
+    const provisionedDB = this.__setupDB(true)
     CapacityExample = class extends provisionedDB.Model {}
     await CapacityExample.createResources()
     tableDescription = await provisionedDB.Model.dbClient
@@ -343,6 +365,26 @@ class SimpleExampleTest extends BaseTest {
       .promise()
     expect(tableDescription.Table.BillingModeSummary.BillingMode)
       .toBe('PROVISIONED')
+  }
+
+  async testGSIProvision () {
+    const provisionedDB = this.__setupDB(true)
+    const CounterWithIndex = class extends provisionedDB.Model {
+      static KEY = { name: S.str }
+      static FIELDS = {
+        amount: S.int
+      }
+      static INDEXES = {
+        amountIndex: { KEY: ['amount']}
+      }
+    }
+    await CounterWithIndex.createResources()
+    const tableDescription = await provisionedDB.Model.dbClient
+      .describeTable({ TableName: CounterWithIndex.fullTableName })
+      .promise()
+    const indexes = tableDescription.Table.GlobalSecondaryIndexes
+    expect(indexes.length).toBe(1)
+    expect(indexes[0].ProvisionedThroughput).toBeDefined()
   }
 
   async testDebugFunctionExport () {

@@ -52,15 +52,19 @@ function makeCreateResourceFunc (dynamoDB, autoscaling) {
     const tableParams = Object.values(definitions)
       .filter(val => val.Type === 'AWS::DynamoDB::Table')[0]
       .Properties
+    const indexesProperties = tableParams.GlobalSecondaryIndexes ?? []
     if (!autoscaling) {
       tableParams.BillingMode = 'PAY_PER_REQUEST'
       delete tableParams.ProvisionedThroughput
+      indexesProperties.map(each => delete each.ProvisionedThroughput)
     } else {
       tableParams.BillingMode = 'PROVISIONED'
-      tableParams.ProvisionedThroughput = {
+      const config = {
         ReadCapacityUnits: 1,
         WriteCapacityUnits: 1
       }
+      tableParams.ProvisionedThroughput = config
+      indexesProperties.map(each => each.ProvisionedThroughput = config)
     }
     const ttlSpec = tableParams.TimeToLiveSpecification
     delete tableParams.TimeToLiveSpecification

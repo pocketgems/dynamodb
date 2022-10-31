@@ -439,7 +439,8 @@ class Model {
         const indexProps = {
           IndexName: index,
           KeySchema: [{ AttributeName: keyNames._id, KeyType: 'HASH' }],
-          Projection: { ProjectionType: 'ALL' }
+          Projection: { ProjectionType: 'ALL' },
+          ...this.getProvisionedThroughputConfig()
         }
         if (props.INCLUDE_ONLY) {
           if (props.INCLUDE_ONLY.length === 0) {
@@ -484,18 +485,7 @@ class Model {
           'PAY_PER_REQUEST'
         ]
       },
-      ProvisionedThroughput: {
-        'Fn::If': [
-          'IsProdServerCondition',
-          {
-            ReadCapacityUnits: 1,
-            WriteCapacityUnits: 1
-          },
-          {
-            Ref: 'AWS::NoValue'
-          }
-        ]
-      }
+      ...this.getProvisionedThroughputConfig()
     }
 
     if (indexes.length > 0) {
@@ -509,17 +499,57 @@ class Model {
       }
     }
 
-    const tableResourceName = 'DynamoDBTable' + this.fullTableName
-    const readPolicyName = tableResourceName + 'ReadScalingPolicy'
-    const readTargetName = tableResourceName + 'ReadScalableTarget'
-    const writePolicyName = tableResourceName + 'WriteScalingPolicy'
-    const writeTargetName = tableResourceName + 'WriteScalableTarget'
     return {
-      [tableResourceName]: {
+      [this.tableResourceName]: {
         Type: 'AWS::DynamoDB::Table',
         DeletionPolicy: 'Retain',
         Properties: properties
       },
+      ...this.getTableAutoScalingConfig(),
+      ...this.getIndexesAutoScalingConfig(indexes)
+    }
+  }
+
+  static getProvisionedThroughputConfig () {
+    return {
+      ProvisionedThroughput: {
+        'Fn::If': [
+          'IsProdServerCondition',
+          {
+            ReadCapacityUnits: 1,
+            WriteCapacityUnits: 1
+          },
+          {
+            Ref: 'AWS::NoValue'
+          }
+        ]
+      }
+    }
+  }
+
+  static getTableAutoScalingConfig () {
+    const resourceId = `table/${this.fullTableName}`
+    return this.getAutoScalingConfig(this.tableResourceName, resourceId, 'table')
+  }
+
+  static getIndexesAutoScalingConfig (indexes) {
+    const indexesAutoScalingConfig = {}
+    for (const index of indexes) {
+      const indexName = index.IndexName
+      const resourceId = `table/${this.fullTableName}/index/${indexName}`
+      const indexResourceName = this.tableResourceName + `${indexName[0].toUpperCase()}${indexName.slice(1)}` + 'Index'
+      const config = this.getAutoScalingConfig(indexResourceName, resourceId, 'index')
+      Object.assign(indexesAutoScalingConfig, config)
+    }
+    return indexesAutoScalingConfig
+  }
+
+  static getAutoScalingConfig (resourceName, resourceId, dimension) {
+    const readPolicyName = resourceName + 'ReadScalingPolicy'
+    const readTargetName = resourceName + 'ReadScalableTarget'
+    const writePolicyName = resourceName + 'WriteScalingPolicy'
+    const writeTargetName = resourceName + 'WriteScalableTarget'
+    return {
       [readPolicyName]: {
         Type: 'AWS::ApplicationAutoScaling::ScalingPolicy',
         Condition: 'IsProdServerCondition',
@@ -542,15 +572,15 @@ class Model {
       [readTargetName]: {
         Type: 'AWS::ApplicationAutoScaling::ScalableTarget',
         Condition: 'IsProdServerCondition',
-        DependsOn: tableResourceName,
+        DependsOn: this.tableResourceName,
         Properties: {
           MaxCapacity: 1000,
           MinCapacity: 1,
-          ResourceId: `table/${this.fullTableName}`,
+          ResourceId: resourceId,
           RoleARN: {
             'Fn::Sub': 'arn:aws:iam::${AWS::AccountId}:role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable' // eslint-disable-line no-template-curly-in-string
           },
-          ScalableDimension: 'dynamodb:table:ReadCapacityUnits',
+          ScalableDimension: `dynamodb:${dimension}:ReadCapacityUnits`,
           ServiceNamespace: 'dynamodb'
         }
       },
@@ -576,19 +606,20 @@ class Model {
       [writeTargetName]: {
         Type: 'AWS::ApplicationAutoScaling::ScalableTarget',
         Condition: 'IsProdServerCondition',
-        DependsOn: tableResourceName,
+        DependsOn: this.tableResourceName,
         Properties: {
           MaxCapacity: 1000,
           MinCapacity: 1,
-          ResourceId: `table/${this.fullTableName}`,
+          ResourceId: resourceId,
           RoleARN: {
             'Fn::Sub': 'arn:aws:iam::${AWS::AccountId}:role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable' // eslint-disable-line no-template-curly-in-string
           },
-          ScalableDimension: 'dynamodb:table:WriteCapacityUnits',
+          ScalableDimension: `dynamodb:${dimension}:WriteCapacityUnits`,
           ServiceNamespace: 'dynamodb'
         }
       }
     }
+
   }
 
   /**
@@ -794,6 +825,10 @@ class Model {
    */
   static get fullTableName () {
     return process.env.SERVICE + this.tableName
+  }
+
+  static get tableResourceName () {
+    return 'DynamoDBTable' + this.fullTableName
   }
 
   /**
