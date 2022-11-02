@@ -150,7 +150,7 @@ class __DBIterator {
         // istanbul ignore next
         e => { throw new AWSError(method, e) })
 
-    const models = result.Items.map(item => {
+    const models = result.Items?.map(item => {
       const m = new this.__ModelCls(ITEM_SOURCE[method.toUpperCase()], false,
         item, !!this.index)
       if (m.__hasExpired) {
@@ -158,7 +158,7 @@ class __DBIterator {
       }
       this.__writeBatcher.track(m)
       return m
-    }).filter(m => !!m)
+    }).filter(m => !!m) || []
 
     return [
       models,

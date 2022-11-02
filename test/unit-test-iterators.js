@@ -1,7 +1,7 @@
 const S = require('@pocketgems/schema')
+const { BaseTest, runTests } = require('@pocketgems/unit-test')
 const uuidv4 = require('uuid').v4
 
-const { BaseTest, runTests } = require('@pocketgems/unit-test')
 const db = require('./db-with-field-maker')
 
 const {
@@ -873,6 +873,30 @@ class QueryTest extends BaseTest {
       return (await query.fetch(10))[0]
     })
     expect(results2.length).toBe(0)
+  }
+
+  async testQueryReturningUndefined () {
+    const queryMock = jest.fn().mockImplementation(() => {
+      return {
+        promise: async () => {
+          return {
+            Items: undefined
+          }
+        }
+      }
+    })
+    const originalFunc = db.Transaction.prototype.documentClient.query
+    queryMock.bind(db.Transaction.prototype.documentClient)
+    db.Transaction.prototype.documentClient.query = queryMock
+
+    const results = await db.Transaction.run(async tx => {
+      const query = tx.query(QueryExample, { index: 'index1' })
+      query.id1('invalid')
+      query.id2(1)
+      return (await query.fetch(10))[0]
+    })
+    expect(results.length).toBe(0)
+    db.Transaction.prototype.documentClient.query = originalFunc
   }
 
   async testQuerySortKey () {
