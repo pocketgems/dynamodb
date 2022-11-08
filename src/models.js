@@ -326,7 +326,7 @@ class Model {
       // we will eventually need to allow this in some cases since some
       // singular words also end in the letter "s"
       if (tableName.endsWith('s')) {
-        const whiteList = ['Stats']
+        const whiteList = ['Stats', 'Status']
         const isWhiteListed = whiteList.some(p => tableName.endsWith(p))
         assert.ok(isWhiteListed, 'not be plural')
       }
