@@ -1,6 +1,6 @@
 {
   "name": "@pocketgems/dynamodb",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Todea DynamoDB Library",
   "license": "Apache-2.0",
   "main": "src/default-db.js",
@@ -35,7 +35,9 @@
   },
   "files": [
     "src/**",
-    "environment.js"
+    "environment.js",
+    "requirements.txt",
+    "docker-compose.yml"
   ],
   "dependencies": {
     "amazon-dax-client": "^1.2.5",
