@@ -16,3 +16,6 @@ services:
       - AWS_ACCESS_KEY_ID=ignored
       - AWS_SECRET_ACCESS_KEY=ignored
       - AWS_REGION=localhost
+networks:
+  default:
+    name: todea-net
