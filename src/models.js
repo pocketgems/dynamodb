@@ -619,7 +619,6 @@ class Model {
         }
       }
     }
-
   }
 
   /**
@@ -1483,6 +1482,9 @@ class Model {
     }
     for (const [name, getter] of Object.entries(this.__attr_getters)) {
       const field = getter()
+      if (!field || field instanceof __CompoundField) {
+        continue
+      }
       if (field.keyType) {
         if (dbKeys) {
           continue

@@ -1,8 +1,9 @@
 const S = require('@pocketgems/schema')
+const { BaseTest, runTests } = require('@pocketgems/unit-test')
 const uuidv4 = require('uuid').v4
 
 const AWSError = require('../src/aws-error')
-const { BaseTest, runTests } = require('@pocketgems/unit-test')
+
 const db = require('./db-with-field-maker')
 
 const CONDITION_EXPRESSION_STR = 'ConditionExpression'
@@ -305,7 +306,7 @@ class SimpleExampleTest extends BaseTest {
       const indexName = eachIndex.IndexName
       const indexResourceName = IndexDBExample.tableResourceName + `${indexName[0].toUpperCase()}${indexName.slice(1)}` + 'Index'
       const autoscalingConfig = Object.keys(definitions)
-      .filter(key => key.startsWith(indexResourceName))
+        .filter(key => key.startsWith(indexResourceName))
       expect(autoscalingConfig.length).toBe(4)
       autoscalingConfig.forEach(eachResourceName => {
         const resourceDefinition = definitions[eachResourceName]
@@ -320,7 +321,7 @@ class SimpleExampleTest extends BaseTest {
     expect(tableParams.GlobalSecondaryIndexes[3].Projection.NonKeyAttributes).toEqual(['guild'])
   }
 
-  __setupDB(provisioned = false) {
+  __setupDB (provisioned = false) {
     const setupDB = require('../src/dynamodb')
     const fakeAPI = {
       promise: async () => {
@@ -374,8 +375,9 @@ class SimpleExampleTest extends BaseTest {
       static FIELDS = {
         amount: S.int
       }
+
       static INDEXES = {
-        amountIndex: { KEY: ['amount']}
+        amountIndex: { KEY: ['amount'] }
       }
     }
     await CounterWithIndex.createResources()
@@ -1019,9 +1021,25 @@ class JSONExample extends db.Model {
   }
 }
 
+class IndexJsonExample extends db.Model {
+  static KEY = {
+    key1: S.str,
+    key2: S.str
+  }
+
+  static FIELDS = {
+    data: S.str
+  }
+
+  static INDEXES = {
+    byData: { KEY: ['data'], SORT_KEY: ['key1'] }
+  }
+}
+
 class JSONExampleTest extends BaseTest {
   async beforeAll () {
     await JSONExample.createResources()
+    await IndexJsonExample.createResources()
   }
 
   async testRequiredFields () {
@@ -1087,10 +1105,15 @@ class JSONExampleTest extends BaseTest {
       arrNoDefaultRequired: [{ cd: 2 }],
       arrDefaultRequired: []
     }
-    const model = await db.Transaction.run(async tx => {
-      return tx.get(JSONExample, data, { createIfMissing: true })
+    const [model1, model2] = await db.Transaction.run(async tx => {
+      return [
+        await tx.get(JSONExample, data, { createIfMissing: true }),
+        await tx.get(IndexJsonExample, { key1: '1', key2: '2', data: '3' },
+          { createIfMissing: true })
+      ]
     })
-    expect(model.toJSON()).toEqual(data)
+    expect(model1.toJSON()).toEqual(data)
+    expect(model2.toJSON()).toEqual({ key1: '1', key2: '2', data: '3' })
   }
 }
 

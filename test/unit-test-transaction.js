@@ -55,6 +55,7 @@ class HookExample extends db.Model {
     latestUpdateEpoch: S.int.default(0)
       .desc('latest update epoch in milliseconds')
   }
+
   finalize () {
     this.latestUpdateEpoch = Date.now()
   }
@@ -1540,10 +1541,7 @@ class ModelDiffsTest extends BaseTest {
           field1: undefined,
           field2: undefined,
           arrField: undefined,
-          objField: undefined,
-          _c_field1_field2: undefined,
-          _c_field1_id: undefined,
-          _c_arrField: undefined
+          objField: undefined
         }
       }
     }
@@ -1582,7 +1580,6 @@ class ModelDiffsTest extends BaseTest {
 
     expectation.TransactionExample.data._id = id
     expectation.TransactionExample.data.field1 = 321
-    expectation.TransactionExample.data._c_field1_id = [321, id].join('\0')
     expect(result.after[0]).toStrictEqual(expectation)
   }
 
@@ -1663,7 +1660,6 @@ class ModelDiffsTest extends BaseTest {
     })
     expectation.TransactionExample.data._id = id
     expectation.TransactionExample.data.field1 = 1
-    expectation.TransactionExample.data._c_field1_id = [1, id].join('\0')
     expect(result2).toStrictEqual({
       before: [expectation],
       after: [{

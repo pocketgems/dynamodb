@@ -3,6 +3,7 @@ const { BaseTest, runTests } = require('@pocketgems/unit-test')
 
 const { InvalidFieldError, NotImplementedError } = require('../src/errors')
 const { __CompoundField, __FieldInterface } = require('../src/fields')
+
 const db = require('./db-with-field-maker')
 
 class CommonFieldTest extends BaseTest {
