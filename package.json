@@ -1,6 +1,6 @@
 {
   "name": "@pocketgems/dynamodb",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Todea DynamoDB Library",
   "license": "Apache-2.0",
   "main": "src/default-db.js",
@@ -8,36 +8,28 @@
     "build-doc": "./docs/build.sh",
     "debug": "yarn start-local-db; ./node_modules/nodemon/bin/nodemon.js --no-lazy --legacy-watch --watch ./src --watch ./example --watch ./test --inspect=9229 ./node_modules/jest/bin/jest.js --coverage --config=./jest.config.json --runInBand",
     "setup": "yarn && pip install -r requirements.txt",
-    "start-local-db": "docker-compose up -d",
+    "start-local-db": "./scripts/start-local-db.sh",
+    "restart-local-db": "./scripts/start-local-db.sh --force-recreate",
     "test": "yarn start-local-db; ./node_modules/jest/bin/jest.js --coverage --config=./jest.config.json",
     "webpack": "yarn; webpack --config webpack.config.js"
   },
   "contributors": [
-    {
-      "name": "Yu Guan"
-    },
-    {
-      "name": "David Underhill"
-    },
-    {
-      "name": "Solaman Huq"
-    },
-    {
-      "name": "Shimul Bhowmik"
-    },
-    {
-      "name": "Biru Lyu"
-    }
+    "Yu Guan",
+    "David Underhill",
+    "Solaman Huq",
+    "Shimul Bhowmik",
+    "Biru Lyu"
   ],
   "repository": {
     "type": "git",
     "url": "https://github.com/pocketgems/dynamodb"
   },
   "files": [
-    "src/**",
+    "docker-compose.yml",
     "environment.js",
     "requirements.txt",
-    "docker-compose.yml"
+    "scripts/**",
+    "src/**"
   ],
   "dependencies": {
     "amazon-dax-client": "^1.2.5",
