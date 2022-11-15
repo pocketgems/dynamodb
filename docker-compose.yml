@@ -15,7 +15,7 @@ services:
       - DYNAMO_ENDPOINT=http://pocketgems-dynamodb:8000
       - AWS_ACCESS_KEY_ID=ignored
       - AWS_SECRET_ACCESS_KEY=ignored
-      - AWS_REGION=localhost
+      - AWS_REGION=us-west-2
 networks:
   default:
     name: todea-net
