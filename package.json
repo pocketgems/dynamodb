@@ -6,11 +6,13 @@
   "main": "src/default-db.js",
   "scripts": {
     "build-doc": "./docs/build.sh",
+    "check-markdown-link": "./scripts/ci/markdown-link.sh",
     "debug": "yarn start-local-db; ./node_modules/nodemon/bin/nodemon.js --no-lazy --legacy-watch --watch ./src --watch ./example --watch ./test --inspect=9229 ./node_modules/jest/bin/jest.js --coverage --config=./jest.config.json --runInBand",
+    "lint": "./scripts/ci/lint-format-js.sh",
+    "restart-local-db": "./scripts/start-local-db.sh --force-recreate",
     "setup": "yarn && pip install -r requirements.txt",
     "start-local-db": "./scripts/start-local-db.sh",
-    "restart-local-db": "./scripts/start-local-db.sh --force-recreate",
-    "test": "yarn start-local-db; ./node_modules/jest/bin/jest.js --coverage --config=./jest.config.json",
+    "test": "yarn start-local-db; ./scripts/ci/coverage.sh",
     "webpack": "yarn; webpack --config webpack.config.js"
   },
   "contributors": [
@@ -61,6 +63,9 @@
     "jsdoc": "3.6.4",
     "license-webpack-plugin": "^2.3.17",
     "nodemon": "^2.0.20",
+    "remark-cli": "^9.0.0",
+    "remark-validate-links": "^10.0.2",
+    "snazzy": "^8.0.0",
     "standard": "^15.0.0",
     "tui-jsdoc-template": "^1.2.2",
     "webpack": "^5.13.0",

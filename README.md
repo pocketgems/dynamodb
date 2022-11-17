@@ -568,8 +568,9 @@ the transaction never completes successfully!
 
 
 ### Per-request transaction
-Each request handled by our [API Definition library](api.md) is wrapped in a
-transaction. Read more about it [here](api.md#database-transactions).
+Each request handled by our
+[API Definition library](https://pocketgems.github.io/app/libs/api/index.html)
+is wrapped in a transaction.
 
 
 ## Operations

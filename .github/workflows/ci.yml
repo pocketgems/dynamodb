@@ -19,5 +19,8 @@ jobs:
         shell: bash
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - run: yarn test
+      - run: |
+          yarn check-markdown-link
+          yarn lint
+          yarn test
         shell: bash

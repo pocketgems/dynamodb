@@ -12,7 +12,6 @@ module.exports = {
   },
   mode: 'production',
   target: 'web',
-  devtool: 'eval-source-map',
   module: {
     rules: [
       {

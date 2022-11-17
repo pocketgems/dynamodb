@@ -56,7 +56,7 @@ function makeCreateResourceFunc (dynamoDB, autoscaling) {
     if (!autoscaling) {
       tableParams.BillingMode = 'PAY_PER_REQUEST'
       delete tableParams.ProvisionedThroughput
-      indexesProperties.map(each => delete each.ProvisionedThroughput)
+      indexesProperties.forEach(each => delete each.ProvisionedThroughput)
     } else {
       tableParams.BillingMode = 'PROVISIONED'
       const config = {
@@ -64,7 +64,7 @@ function makeCreateResourceFunc (dynamoDB, autoscaling) {
         WriteCapacityUnits: 1
       }
       tableParams.ProvisionedThroughput = config
-      indexesProperties.map(each => each.ProvisionedThroughput = config)
+      indexesProperties.forEach(each => { each.ProvisionedThroughput = config })
     }
     const ttlSpec = tableParams.TimeToLiveSpecification
     delete tableParams.TimeToLiveSpecification
