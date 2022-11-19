@@ -775,13 +775,13 @@ class ConditionCheckTest extends BaseTest {
   async testMutatedModel () {
     const m1 = await txGet(BasicExample, this.modelName)
     expect(m1.__isMutated()).toBe(false)
-    m1.noRequiredNoDefault += 1
+    m1.noRequiredNoDefault = 1 + (m1.noRequiredNoDefault ?? 0)
     expect(m1.__isMutated()).toBe(true)
   }
 
   async testConditionCheckMutatedModel () {
     const m1 = await txGet(BasicExample, this.modelName)
-    m1.noRequiredNoDefault += 1
+    m1.noRequiredNoDefault = 1 + (m1.noRequiredNoDefault ?? 0)
     expect(() => {
       m1.__conditionCheckParams()
     }).toThrow()
@@ -1237,7 +1237,7 @@ class WriteBatcherTest extends BaseTest {
     const batcher = new db.__private.__WriteBatcher()
     const model = await txGet(BasicExample, uuidv4())
     batcher.track(model)
-    model.noRequiredNoDefault += 1
+    model.noRequiredNoDefault = 1 + (model.noRequiredNoDefault ?? 0)
     batcher.__write(model)
     expect(() => batcher.__write(model)).toThrow()
   }

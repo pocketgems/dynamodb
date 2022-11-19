@@ -85,26 +85,26 @@ class __Field extends __FieldInterface {
 
     const compiledSchema = schema.getValidatorAndJSONSchema(
       `${modelName}.${fieldName}`)
-    schema = compiledSchema.jsonSchema
+    const jsonSchema = compiledSchema.jsonSchema
     const isKey = !!keyType
     const options = {
       keyType,
-      schema,
-      optional: schema.optional === true,
-      immutable: isKey || schema.readOnly === true,
-      default: schema.default,
+      schema: jsonSchema,
+      optional: schema.required === false,
+      immutable: isKey || jsonSchema.readOnly === true,
+      default: jsonSchema.default,
       assertValid: compiledSchema.assertValid
     }
     const FieldCls = SCHEMA_TYPE_TO_FIELD_CLASS_MAP[options.schema.type]
     assert.ok(FieldCls, `unsupported field type ${options.schema.type}`)
 
-    const hasDefault = Object.prototype.hasOwnProperty.call(schema, 'default')
+    const hasDefault = Object.prototype.hasOwnProperty.call(jsonSchema, 'default')
     if (isKey) {
       if (hasDefault && keyType === 'PARTITION') {
         throw new InvalidOptionsError('default',
           'No defaults for partition keys.') // It just doesn\'t make sense.
       }
-      if (schema.readOnly === false) {
+      if (jsonSchema.readOnly === false) {
         throw new InvalidOptionsError('immutable',
           'Keys must be immutable.')
       }

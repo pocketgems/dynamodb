@@ -1,6 +1,6 @@
 {
   "name": "@pocketgems/dynamodb",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "Todea DynamoDB Library",
   "license": "Apache-2.0",
   "main": "src/default-db.js",
@@ -43,14 +43,14 @@
     "uuid": "^8.3.2"
   },
   "peerDependencies": {
-    "@pocketgems/schema": "^0.1.0"
+    "@pocketgems/schema": "^0.1.2"
   },
   "devDependencies": {
     "@babel/core": "^7.17.12",
     "@babel/eslint-parser": "^7.17.0",
     "@babel/plugin-proposal-class-properties": "^7.12.1",
     "@babel/preset-env": "^7.17.12",
-    "@pocketgems/schema": "^0.1.0",
+    "@pocketgems/schema": "^0.1.2",
     "@pocketgems/unit-test": "^0.0.1",
     "babel-loader": "^8.2.2",
     "eslint": "^8.22.0",
