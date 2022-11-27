@@ -5,12 +5,9 @@ const AWS = require('aws-sdk')
 
 const setup = require('./dynamodb')
 
-// istanbul ignore next
-const dynamodbEndpoint = process.env.DYNAMO_ENDPT || ''
-const region = 'us-west-2'
 const awsConfig = {
-  region,
-  endpoint: dynamodbEndpoint
+  region: 'us-west-2',
+  endpoint: process.env.DYNAMO_ENDPT
 }
 
 const inDebugger = !!Number(process.env.INDEBUGGER)
