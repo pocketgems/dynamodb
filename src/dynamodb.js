@@ -38,6 +38,8 @@ const {
   loadOptionDefaults
 } = require('./utils')
 
+const PROVISIONED_THROUGHPUT_UNCHANGED = 'The provisioned throughput for the table will not change.'
+
 function makeCreateResourceFunc (dynamoDB, autoscaling) {
   return async function () {
     assert(dynamoDB,
@@ -78,7 +80,11 @@ function makeCreateResourceFunc (dynamoDB, autoscaling) {
       // Update billing mode if needed for existing tables
       const tableDescription = await dynamoDB.describeTable({
         TableName: tableParams.TableName
-      }).promise()
+      }).promise().catch(
+        // istanbul ignore next
+        e => {
+          throw new AWSError(e)
+        })
       const currentMode = tableDescription.Table.BillingModeSummary
         ?.BillingMode
       if (currentMode !== tableParams.BillingMode) {
@@ -89,9 +95,8 @@ function makeCreateResourceFunc (dynamoDB, autoscaling) {
         await dynamoDB.updateTable(updateParams).promise().catch(
           // istanbul ignore next
           e => {
-            if (e.message !==
-            'The requested throughput value equals the current value') {
-              throw e
+            if (e.message?.indexOf(PROVISIONED_THROUGHPUT_UNCHANGED) !== 0) {
+              throw new AWSError('Update Table', e)
             }
           })
       }
