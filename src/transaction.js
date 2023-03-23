@@ -174,7 +174,7 @@ class __WriteBatcher {
     this.resolved = true
 
     for (const model of this.__allModels) {
-      if (this.__toCheck[model] && model.__isMutated()) {
+      if (this.__toCheck[model] && model.__isMutated(expectWrites)) {
         this.__write(model)
       }
     }

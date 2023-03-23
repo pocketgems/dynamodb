@@ -1146,10 +1146,11 @@ class Model {
   /**
    * Indicates if any field was mutated. New models are considered to be
    * mutated as well.
-   *
+   * @param {Boolean} expectWrites whether the model will be updated,
+   *  default is true.
    * @type {Boolean}
    */
-  __isMutated () {
+  __isMutated (expectWrites = true) {
     if (this.isNew) {
       return true
     }
@@ -1157,8 +1158,9 @@ class Model {
       return true
     }
     for (const field of Object.values(this.__cached_attrs)) {
-      if (field.mutated) {
-        // any field mutated makes the model mutated
+      if (field.hasChangesToCommit(expectWrites)) {
+        // If any field has changes that need to be committed,
+        // it will mark the model as mutated.
         return true
       }
     }

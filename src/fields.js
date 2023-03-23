@@ -55,6 +55,10 @@ class __FieldInterface {
   validate () {
     throw new NotImplementedError()
   }
+
+  hasChangesToCommit (expectWrites = true) {
+    throw new NotImplementedError()
+  }
 }
 
 /**
@@ -67,12 +71,35 @@ class __FieldInterface {
  */
 
 /**
+ * Base class representing a field / property of a Model.
+ *
+ * @private
+ * @memberof Internal
+ */
+class __BaseField extends __FieldInterface {
+  /*
+   * Indicates if any changes need to be committed in the field.
+   * @param {Boolean} expectWrites whether the model will be updated,
+   *  default is true.
+   * @type {Boolean}
+   */
+  hasChangesToCommit (expectWrites = true) {
+    // If a field is changed due to being initialized with the default
+    // value within a read-only transaction, the change shouldn't be commited.
+    // Otherwise, an error will occur when attempting to update in a
+    // read-only transaction.
+    const initDefault = !expectWrites && this.__useDefault && !this.__written
+    return this.mutated && !initDefault
+  }
+}
+
+/**
  * Internal object representing a field / property of a Model.
  *
  * @private
  * @memberof Internal
  */
-class __Field extends __FieldInterface {
+class __Field extends __BaseField {
   static __validateFieldOptions (modelName, keyType, fieldName, schema) {
     if (fieldName.startsWith('_')) {
       throw new InvalidFieldError(
@@ -202,6 +229,7 @@ class __Field extends __FieldInterface {
       }
     }
 
+    this.__useDefault = useDefault
     this.__value = useDefault ? deepcopy(this.__default) : val
 
     if (valIsFromDB) {
@@ -550,7 +578,7 @@ class ArrayField extends __Field {
  * @private
  * @memberof Internal
  */
-class __CompoundField extends __FieldInterface {
+class __CompoundField extends __BaseField {
   constructor ({ idx, name, isNew, fields }) {
     super()
     if (fields.every(field => field instanceof __Field) === false) {

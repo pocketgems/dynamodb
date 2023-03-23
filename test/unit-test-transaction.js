@@ -1068,6 +1068,53 @@ class TransactionReadOnlyTest extends QuickTransactionTest {
       tx.delete(TransactionExample.key({ id: uuidv4() }))
     })).rejects.toThrow('in a read-only transaction')
   }
+
+  async testDefaultValueBehavior () {
+    const ModelToUpdate = class extends db.Model {
+      static KEY = { id: S.str.min(1) }
+      static FIELDS = {
+        field1: S.int
+      }
+    }
+    await ModelToUpdate.createResources()
+    const id = uuidv4()
+    // create a entry using the old schema
+    await db.Transaction.run(async (tx) => {
+      await tx.create(ModelToUpdate, { id, field1: 1 })
+    })
+    await db.Transaction.run(async (tx) => {
+      tx.makeReadOnly()
+      const model = await tx.get(ModelToUpdate, { id })
+      expect(model.field1).toBe(1)
+    })
+
+    // Update the schema to add a required field with default value
+    ModelToUpdate.FIELDS = {
+      ...ModelToUpdate.FIELDS,
+      field2: S.int.default(0)
+    }
+    delete ModelToUpdate.__createdResource
+    delete ModelToUpdate.__setupDone
+    delete ModelToUpdate.__CACHED_SCHEMA
+    await ModelToUpdate.createResources()
+
+    // Retrieve the old data, the field2 is assigned the default value,
+    // but this change will NOT be committed
+    await db.Transaction.run(async (tx) => {
+      tx.makeReadOnly()
+      const model = await tx.get(ModelToUpdate, { id })
+      expect(model.field1).toBe(1)
+      expect(model.field2).toBe(0)
+    })
+
+    // Tx will still fail if the value is set explicitly
+    await expect(db.Transaction.run(async tx => {
+      tx.makeReadOnly()
+      const model = await tx.get(ModelToUpdate, { id })
+      expect(model.field2).toBe(0)
+      model.field2 = 0
+    })).rejects.toThrow('read-only')
+  }
 }
 
 class TransactionRetryTest extends QuickTransactionTest {

@@ -104,6 +104,11 @@ class CommonFieldTest extends BaseTest {
     // so this field will be tranmitted to server on update
     const field = db.__private.NumberField({ default: 1, optional: true })
     expect(field.mutated).toBe(true)
+    // The change should be committed in a read-write tx
+    expect(field.hasChangesToCommit(true)).toBe(true)
+    expect(field.hasChangesToCommit()).toBe(true)
+    // The change should NOT be committed in a read-only tx
+    expect(field.hasChangesToCommit(false)).toBe(false)
 
     // Setting field back to undefined makes it not mutated
     field.set(undefined)
@@ -801,6 +806,7 @@ class AbstractFieldTest extends BaseTest {
     expect(() => obj.__updateExpression('')).toThrow(NotImplementedError)
     expect(() => obj.__conditionExpression('')).toThrow(NotImplementedError)
     expect(() => obj.validate()).toThrow(NotImplementedError)
+    expect(() => obj.hasChangesToCommit()).toThrow(NotImplementedError)
   }
 }
 
