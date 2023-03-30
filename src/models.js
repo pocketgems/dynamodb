@@ -88,9 +88,9 @@ class Model {
     Object.seal(this)
   }
 
-  static register (registrator) {
+  static async register (registrator) {
     this.__doOneTimeModelPrep()
-    registrator.registerModel(this)
+    await registrator.registerModel(this)
   }
 
   /**
