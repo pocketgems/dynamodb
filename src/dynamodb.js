@@ -85,8 +85,17 @@ function makeCreateResourceFunc (dynamoDB, autoscaling) {
         e => {
           throw new AWSError(e)
         })
-      const currentMode = tableDescription.Table.BillingModeSummary
+
+      let currentMode = tableDescription.Table.BillingModeSummary
         ?.BillingMode
+
+      // per aws documentation, it is possible that BillingModeSummary
+      // is omitted if the table was never set to PAY_PER_REQUEST
+      // https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_BillingModeSummary.html
+      /* istanbul ignore next */
+      if (!currentMode && tableDescription.Table.ProvisionedThroughput) {
+        currentMode = 'PROVISIONED'
+      }
       if (currentMode !== tableParams.BillingMode) {
         const updateParams = { ...tableParams }
         delete updateParams.KeySchema
