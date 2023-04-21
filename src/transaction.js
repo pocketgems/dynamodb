@@ -637,7 +637,7 @@ class Transaction {
             keyOrData.encodedKeys._sk
           )
           if (cachedModel) {
-            if (!cachedModel.__src.isGet || cachedModel.__toBeDeleted) {
+            if (!cachedModel.__src.canBeCached || cachedModel.__toBeDeleted) {
               throw new InvalidCachedModelError(cachedModel)
             }
             cachedModels.push(cachedModel)

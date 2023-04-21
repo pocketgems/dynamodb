@@ -694,7 +694,7 @@ class ScanTest extends BaseTest {
       const scan = tx.scan(ScanExample, { index: 'index1' })
       const models2 = (await scan.fetch(10))[0]
       expect(models2.length).toBe(4)
-      expect(() => models2[0].rank++).toThrow('Can not modify a read-only model')
+      models2[0].rank++ // can modify models from a index scan
     })
   }
 
