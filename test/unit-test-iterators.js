@@ -812,14 +812,14 @@ class QueryTest extends BaseTest {
     await db.Transaction.run(async tx => {
       const query = tx.query(QueryExample, { index: 'index1' })
       query.id1('1').id2(1)
-      const result = (await query.fetch(10))[0]
+      const [result] = await query.fetch(10)
       expect(result.length).toBe(2)
       expect([result[0].field, result[1].field]).toEqual([0, 1])
     })
     await db.Transaction.run(async tx => {
       const query = tx.query(QueryExample, { index: 'index2' })
       query.id1('1').sk1('0')
-      const result = (await query.fetch(10))[0]
+      const [result] = await query.fetch(10)
       expect(result.length).toBe(1)
       expect(result[0].sk1).toBe('0')
     })
@@ -827,7 +827,7 @@ class QueryTest extends BaseTest {
     await db.Transaction.run(async tx => {
       const query = tx.query(QueryExample, { index: 'index3' })
       query.id1('1')
-      const result = (await query.fetch(10))[0]
+      const [result] = await query.fetch(10)
       expect(result.length).toBe(2)
       expect(result[0].id1).toBeDefined()
       expect(result[0].sk1).toBeDefined()
@@ -838,7 +838,7 @@ class QueryTest extends BaseTest {
     await db.Transaction.run(async tx => {
       const query = tx.query(QueryExample, { index: 'index4' })
       query.id1('1')
-      const result = (await query.fetch(10))[0]
+      const [result] = await query.fetch(10)
       expect(result.length).toBe(2)
       expect(result[0].id1).toBeDefined()
       expect(result[0].sk1).toBeDefined()
