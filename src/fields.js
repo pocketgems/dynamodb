@@ -597,7 +597,13 @@ class __CompoundField extends __BaseField {
   }
 
   get mutated () {
-    return this.__isNew || (this.__mayHaveMutated && this.__value !== this.__initialValue)
+    // in some cases, __initialValue and __value are equal, but we still want
+    // write to the db, because the value cached here are used to populate
+    // other fields. To detect changes correctly, we can't use __value, because
+    // if multiple fields are undefined, the overall value is still undefined,
+    // but in reality, a field might have been undefined in this transaction.
+    return this.__isNew ||
+      (this.__mayHaveMutated && this.__fields.some(field => field.mutated))
   }
 
   get __mayHaveMutated () {

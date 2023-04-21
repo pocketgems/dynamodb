@@ -150,9 +150,11 @@ class __DBIterator {
         // istanbul ignore next
         e => { throw new AWSError(method, e) })
 
+    const projectedFields = this.__ModelCls.INDEXES?.[this.index]
+      ?.INCLUDE_ONLY
     const models = result.Items?.map(item => {
       const m = new this.__ModelCls(ITEM_SOURCE[method.toUpperCase()], false,
-        item, !!this.index)
+        item, projectedFields)
       if (m.__hasExpired) {
         return undefined
       }
