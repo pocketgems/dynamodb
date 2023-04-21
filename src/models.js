@@ -34,7 +34,7 @@ class Model {
    * Create a representation of a database Item. Should only be used by the
    * library.
    */
-  constructor (src, isNew, vals, projectedFields) {
+  constructor (src, isNew, vals, index) {
     this.isNew = !!isNew
     if (!ITEM_SOURCES.has(src)) {
       throw new InvalidParameterError('src', 'invalid item source type')
@@ -71,13 +71,24 @@ class Model {
     setupKey('_sk', this.constructor.SORT_KEY,
       this.constructor.__keyOrder.sort, vals)
 
+    const indexConfig = this.constructor.INDEXES?.[index]
+    const useProjection = index && indexConfig?.INCLUDE_ONLY
+    const projectedFields = useProjection
+      ? [
+          ...indexConfig.KEY,
+          ...indexConfig.SORT_KEY ?? [],
+          ...indexConfig.INCLUDE_ONLY
+        ]
+      : undefined
+    const isOmittedFromProjection = (name) => {
+      return projectedFields && !projectedFields.includes(name)
+    }
+
     // add user-defined fields from FIELDS & key components from KEY & SORT_KEY
     let fieldIdx = 0
     for (const [name, opts] of Object.entries(this.constructor._attrs)) {
-      if (projectedFields && !projectedFields.some(x => x === name)) {
-        opts.optional = true
-      }
-      this.__addField(fieldIdx++, name, opts, vals)
+      const omittedFromProjection = isOmittedFromProjection(name)
+      this.__addField(fieldIdx++, name, opts, vals, omittedFromProjection)
     }
 
     for (let field of this.constructor.__compoundFields) {
@@ -101,7 +112,10 @@ class Model {
   async finalize () {
   }
 
-  __addField (idx, name, opts, vals) {
+  __addField (idx, name, opts, vals, omittedFromProjection) {
+    if (omittedFromProjection) {
+      opts.optional = true
+    }
     let valSpecified = Object.hasOwnProperty.call(vals, name)
     let val = vals[name]
     if (!valSpecified) {
@@ -140,11 +154,17 @@ class Model {
       getCachedField() // create the field now to trigger validation
     }
     Object.defineProperty(this, name, {
-      get: (...args) => {
+      get: () => {
+        if (omittedFromProjection) {
+          throw new InvalidFieldError(name, 'omitted from projection')
+        }
         const field = getCachedField()
         return field.get()
       },
       set: (val) => {
+        if (omittedFromProjection) {
+          throw new InvalidFieldError(name, 'omitted from projection')
+        }
         const field = getCachedField()
         field.set(val)
       }
