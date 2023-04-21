@@ -96,7 +96,7 @@ class __WriteBatcher {
    * @param {Model} model the model to write
    * @access private
    */
-  __write (model) {
+  async __write (model) {
     if (!model.__isMutated()) {
       throw new Error('Attempting to write an unchanged model ' +
         model.toString())
@@ -110,7 +110,7 @@ class __WriteBatcher {
           model.toString())
       }
     }
-    model.finalize()
+    await model.finalize()
     this.__toCheck[model] = false
 
     let action
@@ -173,11 +173,13 @@ class __WriteBatcher {
     assert(!this.resolved, 'Already wrote models.')
     this.resolved = true
 
+    const promises = []
     for (const model of this.__allModels) {
       if (this.__toCheck[model] && model.__isMutated(expectWrites)) {
-        this.__write(model)
+        promises.push(this.__write(model))
       }
     }
+    await Promise.all(promises)
 
     if (this.__toWrite.length === 0) {
       return false

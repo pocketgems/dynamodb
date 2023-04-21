@@ -56,7 +56,7 @@ class HookExample extends db.Model {
       .desc('latest update epoch in milliseconds')
   }
 
-  finalize () {
+  async finalize () {
     this.latestUpdateEpoch = Date.now()
   }
 }
@@ -616,7 +616,7 @@ class TransactionWriteTest extends QuickTransactionTest {
         { createIfMissing: true })
       expect(txModel.isNew).toBe(false)
 
-      expect(() => tx.__writeBatcher.__write(txModel)).toThrow()
+      await expect(tx.__writeBatcher.__write(txModel)).rejects.toThrow()
       expect(tx.__writeBatcher.__toWrite.length).toBe(0)
     })
   }
@@ -626,7 +626,7 @@ class TransactionWriteTest extends QuickTransactionTest {
       const txModel = await tx.get(TransactionExample, uuidv4(),
         { createIfMissing: true })
       expect(txModel.isNew).toBe(true)
-      tx.__writeBatcher.__write(txModel)
+      await tx.__writeBatcher.__write(txModel)
       expect(tx.__writeBatcher.__toWrite.length).toBe(1)
       expect(tx.__writeBatcher.__toWrite[0]).toHaveProperty('Put')
     })
@@ -1242,11 +1242,11 @@ class TransactionConditionCheckTest extends QuickTransactionTest {
         expect(result).toStrictEqual(modelNames)
       }
 
-      tx.__writeBatcher.__write(model1)
+      await tx.__writeBatcher.__write(model1)
       checkModel(model1)
 
       model2.field1 = 0
-      tx.__writeBatcher.__write(model2)
+      await tx.__writeBatcher.__write(model2)
       checkModel(model2)
     })
   }
