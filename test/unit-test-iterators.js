@@ -830,9 +830,10 @@ class QueryTest extends BaseTest {
       const [result] = await query.fetch(10)
       expect(result.length).toBe(2)
       expect(result[0].id1).toBeDefined()
-      expect(result[0].sk1).toBeDefined()
+      expect(() => result[0].sk1).toThrow('omitted from projection')
+      expect(() => { result[0].sk1 = '1' }).toThrow('omitted from projection')
       expect(result[0].field).toBeDefined()
-      expect(result[0].field2).toBeUndefined()
+      expect(() => result[0].field2).toThrow('omitted from projection')
     })
 
     await db.Transaction.run(async tx => {
@@ -841,17 +842,17 @@ class QueryTest extends BaseTest {
       const [result] = await query.fetch(10)
       expect(result.length).toBe(2)
       expect(result[0].id1).toBeDefined()
-      expect(result[0].sk1).toBeDefined()
-      expect(result[0].field).toBeUndefined()
-      expect(result[0].field2).toBeUndefined()
+      expect(() => result[0].sk1).toThrow('omitted from projection')
+      expect(() => result[0].field).toThrow('omitted from projection')
+      expect(() => result[0].field2).toThrow('omitted from projection')
     })
 
     await db.Transaction.run(async tx => {
       const query = tx.query(QueryExample, { index: 'index5' })
       query.id1('1').field(0)
-      const result = (await query.fetch(10))[0][0]
+      const [[result]] = await query.fetch(10)
       expect(result.id1).toBe('1')
-      expect(result.id2).toBe(1)
+      expect(() => result.id2).toThrow('omitted from projection')
       expect(result.field).toBe(0)
       expect(result.field2).toBe(10)
     })
