@@ -82,13 +82,13 @@ function loadOptionDefaults (options, defaults) {
 
 // sentinel values for different item creation methods
 const ITEM_SOURCE = {
-  CREATE_OR_PUT: { isCreateOrPut: true },
-  CREATE: { isCreate: true },
-  DELETE: { isDelete: true }, // Delete by key creates a local model
-  GET: { isGet: true },
-  QUERY: { isQuery: true },
-  SCAN: { isScan: true },
-  UPDATE: { isUpdate: true }
+  CREATE_OR_PUT: { isCreateOrPut: true, canBeCached: false },
+  CREATE: { isCreate: true, canBeCached: true },
+  DELETE: { isDelete: true, canBeCached: false }, // Delete by key creates a local model
+  GET: { isGet: true, canBeCached: true },
+  QUERY: { isQuery: true, canBeCached: true },
+  SCAN: { isScan: true, canBeCached: true },
+  UPDATE: { isUpdate: true, canBeCached: false }
 }
 
 const ITEM_SOURCES = new Set(Object.values(ITEM_SOURCE))

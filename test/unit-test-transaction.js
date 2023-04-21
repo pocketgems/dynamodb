@@ -1557,15 +1557,6 @@ class TransactionCacheModelsTest extends BaseTest {
     await expect(fut).rejects.toThrow('Model is not a valid cached model')
   }
 
-  async testCreateModels () {
-    const id = uuidv4()
-    const fut = db.Transaction.run({ cacheModels: true }, async tx => {
-      tx.create(TransactionExample, { id })
-      await tx.get(TransactionExample.key({ id }))
-    })
-    await expect(fut).rejects.toThrow('Model is not a valid cached model')
-  }
-
   async testPersistedChanges () {
     const id = uuidv4()
     const res = await db.Transaction.run({ cacheModels: true }, async tx => {
