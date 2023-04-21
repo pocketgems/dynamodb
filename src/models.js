@@ -34,9 +34,8 @@ class Model {
    * Create a representation of a database Item. Should only be used by the
    * library.
    */
-  constructor (src, isNew, vals, readOnly = false) {
+  constructor (src, isNew, vals, projectedFields) {
     this.isNew = !!isNew
-    this.__readOnly = readOnly
     if (!ITEM_SOURCES.has(src)) {
       throw new InvalidParameterError('src', 'invalid item source type')
     }
@@ -75,6 +74,9 @@ class Model {
     // add user-defined fields from FIELDS & key components from KEY & SORT_KEY
     let fieldIdx = 0
     for (const [name, opts] of Object.entries(this.constructor._attrs)) {
+      if (projectedFields && !projectedFields.some(x => x === name)) {
+        opts.optional = true
+      }
       this.__addField(fieldIdx++, name, opts, vals)
     }
 
@@ -102,12 +104,7 @@ class Model {
   __addField (idx, name, opts, vals) {
     let valSpecified = Object.hasOwnProperty.call(vals, name)
     let val = vals[name]
-    if (!valSpecified && this.__readOnly) {
-      /*
-        If the model is a read-only (aka derived using index) and column val
-        isn't specified, let's mark the field optional
-      */
-      opts.optional = true
+    if (!valSpecified) {
       for (const [encodedName, encodedVal] of Object.entries(vals)) {
         const fieldData = __CompoundField.__decodeValues(encodedName, encodedVal)
         if (Object.hasOwnProperty.call(fieldData, name)) {
@@ -148,9 +145,6 @@ class Model {
         return field.get()
       },
       set: (val) => {
-        if (this.__readOnly) {
-          throw new InvalidFieldError('', 'Can not modify a read-only model')
-        }
         const field = getCachedField()
         field.set(val)
       }

@@ -654,7 +654,11 @@ class ArrayFieldTest extends RepeatedFieldTest {
 
 class CompoundFieldTest extends BaseTest {
   async beforeEach () {
-    this.__numField = db.__private.NumberField({ val: 10, optional: true })
+    this.__numField = db.__private.NumberField({
+      val: 10,
+      optional: true,
+      valIsFromDB: true
+    })
     this.__numField.name = 'num'
     this.__strField = db.__private.StringField({ val: 'test', optional: true })
     this.__strField.name = 'str'
