@@ -480,7 +480,7 @@ class HookExample extends db.Model {
       .desc('latest update epoch in milliseconds')
   }
 
-  finalize () {
+  async finalize () {
     this.latestUpdateEpoch = Date.now()
   }
 }
