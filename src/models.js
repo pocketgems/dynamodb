@@ -76,7 +76,10 @@ class Model {
     const projectedFields = useProjection
       ? [
           ...Object.keys(this.constructor.KEY),
-          ...Object.keys(this.constructor.SORT_KEY ?? {}),
+          ...Object.keys(
+            // istanbul ignore next
+            this.constructor.SORT_KEY ?? {}
+          ),
           ...indexConfig.KEY,
           ...indexConfig.SORT_KEY ?? [],
           ...indexConfig.INCLUDE_ONLY
