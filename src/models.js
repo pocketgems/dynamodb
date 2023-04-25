@@ -92,8 +92,8 @@ class Model {
     // add user-defined fields from FIELDS & key components from KEY & SORT_KEY
     let fieldIdx = 0
     for (const [name, opts] of Object.entries(this.constructor._attrs)) {
-      const omittedFromProjection = isOmittedFromProjection(name)
-      this.__addField(fieldIdx++, name, opts, vals, omittedFromProjection)
+      const forceOmission = isOmittedFromProjection(name)
+      this.__addField(fieldIdx++, name, opts, vals, forceOmission)
     }
 
     for (let field of this.constructor.__compoundFields) {
@@ -117,8 +117,8 @@ class Model {
   async finalize () {
   }
 
-  __addField (idx, name, opts, vals, omittedFromProjection) {
-    if (omittedFromProjection) {
+  __addField (idx, name, opts, vals, forceOmission) {
+    if (forceOmission) {
       opts.optional = true
     }
     let valSpecified = Object.hasOwnProperty.call(vals, name)
@@ -160,14 +160,14 @@ class Model {
     }
     Object.defineProperty(this, name, {
       get: () => {
-        if (omittedFromProjection) {
+        if (forceOmission) {
           throw new InvalidFieldError(name, 'omitted from projection')
         }
         const field = getCachedField()
         return field.get()
       },
       set: (val) => {
-        if (omittedFromProjection) {
+        if (forceOmission) {
           throw new InvalidFieldError(name, 'omitted from projection')
         }
         const field = getCachedField()
