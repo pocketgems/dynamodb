@@ -223,7 +223,8 @@ function makeCreateResourceFunc (dynamoDB, autoscaling) {
 const DefaultConfig = {
   autoscalingClient: undefined,
   dynamoDBClient: undefined,
-  dynamoDBDocumentClient: undefined
+  dynamoDBDocumentClient: undefined,
+  documentClientWithoutDAX: undefined
 }
 
 /**
@@ -238,6 +239,8 @@ const DefaultConfig = {
  *   to manage table resources. Required when createResources is used.
  * @param {String} [config.dynamoDBDocumentClient] AWS DynamoDB document client
  *   used to interact with db items.
+ * @param {String} [config.documentClientWithoutDAX=undefined] Another instance of
+ *   AWS DynamoDB document client without DAX integration.
  * @param {Object} [config.autoscalingClient=undefined] AWS Application
  *   AutoScaling client used to provision auto scaling rules on DB tables.
  * @returns {Object} Symbols that clients of this library can use.
@@ -249,8 +252,9 @@ function setup (config) {
   Model.createResources = makeCreateResourceFunc(
     config.dynamoDBClient, config.autoscalingClient)
 
-  // Make DynamoDB document client available to these classes
+  // Make DynamoDB document clients available to these classes
   const documentClient = config.dynamoDBDocumentClient
+  const documentClientWithoutDAX = config.documentClientWithoutDAX
   const clsWithDBAccess = [
     __WriteBatcher,
     Model,
@@ -262,6 +266,8 @@ function setup (config) {
     Cls.dbClient = config.dynamoDBClient
     Cls.documentClient = documentClient
     Cls.prototype.documentClient = documentClient
+    Cls.documentClientWithoutDAX = documentClientWithoutDAX
+    Cls.prototype.documentClientWithoutDAX = documentClientWithoutDAX
   })
 
   const exportAsClass = {

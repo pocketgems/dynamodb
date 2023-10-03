@@ -35,22 +35,25 @@ high-level abstractions to structure data and prevent race conditions.
       - [Execution](#execution)
       - [Sorting](#sorting)
       - [Read Consistency](#read-consistency-1)
+      - [`bypassCache` option](#bypasscache-option)
       - [Lazy Filter](#lazy-filter)
       - [Indexes](#indexes-1)
     - [Scan](#scan)
       - [Execution](#execution-1)
       - [Sharding](#sharding)
       - [Read Consistency](#read-consistency-2)
+      - [`bypassCache` Option](#bypasscache-option-1)
       - [Indexes](#indexes-2)
   - [Performance](#performance)
     - [DAX](#dax)
+      - [DAX query cache](#dax-query-cache)
     - [Blind Writes](#blind-writes)
     - [incrementBy()](#incrementby)
 - [Niche Concepts](#niche-concepts)
   - [Key Encoding](#key-encoding)
   - [Nested Transactions are NOT Nested](#nested-transactions-are-not-nested)
   - [Time To Live](#time-to-live)
-  - [Table Creation & Persistence](#table-creation--persistence)
+  - [Table Creation \& Persistence](#table-creation--persistence)
   - [Sort Keys](#sort-keys)
   - [Indexes](#indexes-3)
     - [Eventual Consistency](#eventual-consistency)
@@ -833,6 +836,14 @@ from query. Disabling strong consistency can improve performance.
       query.id1('123').id2(123)
 ```
 
+#### `bypassCache` option
+As mentioned in [DAX query cache](#dax-query-cache) section, it's possible to retrieve more
+up-to-date results by enabling `bypassCache` when querying an index. Here is an example below:
+```javascript <!-- embed:./test/unit-test-iterators.js:section:query example bypass DAX query cache start:query example bypass DAX query cache end -->
+      const query = tx.query(QueryExample, { index: 'index1', bypassCache: true })
+      query.id1('1').id2(1)
+```
+
 #### Lazy Filter
 The term "lazy filter" comes from the fact that filters on non-key fields are
 applied after rows are read from the database and before they're returned to
@@ -937,6 +948,13 @@ consistency can improve performance and reduce cost by 50%.
     })
 ```
 
+#### `bypassCache` Option
+As mentioned in [DAX query cache](#dax-query-cache) section, it's possible to retrieve more
+up-to-date results by enabling `bypassCache` when scanning an index. Here is an example below:
+```javascript <!-- embed:./test/unit-test-iterators.js:section:scan example bypass DAX query cache start:scan example bypass DAX query cache end -->
+      const scan = tx.scan(ScanExample, { index: 'index2', bypassCache: true })
+```
+
 #### Indexes
 Scanning an index uses the same syntax as scanning a table. You only need to define the index to scan using the index.
 ```javascript
@@ -950,6 +968,15 @@ With [DAX](https://aws.amazon.com/dynamodb/dax/) enabled (the default),
 inconsistent reads can resolve within 10ms as opposed to the consistent
 counterpart which will likely take 40-50ms.
 
+#### DAX query cache
+DAX stores the results from `Query` and `Scan` requests in its query cache.
+These result sets are saved based on their parameter values and are subject to
+the Time to Live (TTL) setting (5 minutes by default) and the least recently
+used (LRU) algorithm for the cache. Updates to the underlying DynamoDB table
+do not invalidate the results stored in the query cache.
+Disabling the `inconsistentRead` option for reads from the Model,
+LocalSecondaryIndex, or enabling the `bypassCache` option for reads from the
+GlobalSecondaryIndex can bypass the query cache to retrieve more recent results.
 
 ### Blind Writes
 Blind updates write a row to the DB without reading it first. This is useful

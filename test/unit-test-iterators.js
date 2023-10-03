@@ -716,6 +716,17 @@ class ScanTest extends BaseTest {
       return scan2.fetch(10)
     })
   }
+
+  async testScanBypassDAX () {
+    const results = await db.Transaction.run(async tx => {
+      // scan example bypass DAX query cache start
+      const scan = tx.scan(ScanExample, { index: 'index2', bypassCache: true })
+      // scan example bypass DAX query cache end
+      expect(scan.bypassCache).toBe(true)
+      return (await scan.fetch(10))[0]
+    })
+    expect(results.length).toBe(5)
+  }
 }
 
 class QueryExample extends db.Model {
@@ -1060,6 +1071,20 @@ class QueryTest extends BaseTest {
         expectedTS++
       }
     })
+  }
+
+  async testQueryBypassDAX () {
+    const results = await db.Transaction.run(async tx => {
+      // query example bypass DAX query cache start
+      const query = tx.query(QueryExample, { index: 'index1', bypassCache: true })
+      query.id1('1').id2(1)
+      // query example bypass DAX query cache end
+      expect(query.bypassCache).toBe(true)
+      return (await query.fetch(10))[0]
+    })
+    expect(results.length).toBe(2)
+    expect(results[0].sk1).toBe('0')
+    expect(results[1].sk1).toBe('123')
   }
 }
 

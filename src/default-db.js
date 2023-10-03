@@ -13,6 +13,12 @@ const awsConfig = {
 const inDebugger = !!Number(process.env.INDEBUGGER)
 
 const dynamoDBClient = new AWS.DynamoDB(awsConfig)
+// A DynamoDB Document Client instance without DAX integration
+const documentClientWithoutDAX = new AWS.DynamoDB.DocumentClient({
+  service: dynamoDBClient
+})
+// This instance is conditionally configured to use the DAX client if the
+// DAX endpoint is present and it is not in debug mode
 let dynamoDBDocumentClient
 /* istanbul ignore if */
 if (!inDebugger &&
@@ -24,12 +30,11 @@ if (!inDebugger &&
     service: daxDB
   })
 } else {
-  dynamoDBDocumentClient = new AWS.DynamoDB.DocumentClient({
-    service: dynamoDBClient
-  })
+  dynamoDBDocumentClient = documentClientWithoutDAX
 }
 
 module.exports = setup({
   dynamoDBClient,
-  dynamoDBDocumentClient
+  dynamoDBDocumentClient,
+  documentClientWithoutDAX
 })
