@@ -653,6 +653,20 @@ class ScanTest extends BaseTest {
     await validate(4, { index: 'index1' })
   }
 
+  /**
+   * Verify segment params work as expected
+   */
+  async testFetchSegment () {
+    await db.Transaction.run(async tx => {
+      const scan = tx.scan(ScanExample, {
+        shardCount: 1,
+        shardIndex: 0
+      })
+      const [results] = await scan.fetch(2)
+      expect(results.length).toEqual(2)
+    })
+  }
+
   // It's easier to test is here then in the TTL suite
   async testTTL () {
     // Turn on TTL locally
