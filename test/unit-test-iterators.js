@@ -595,7 +595,7 @@ class ScanTest extends BaseTest {
         models.push(ScanExample.data({
           id: this.getName(index),
           rank: index % 2,
-          ts: ts
+          ts
         }))
       }
       models.push(ScanExample.data({ id: this.getName(5), ts: (ts - 10) }))
