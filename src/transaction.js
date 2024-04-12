@@ -326,7 +326,7 @@ class Transaction {
    *   after the first attempt fails and before first retry happens.
    * @property {Number} [maxBackoff=10000] In milliseconds, max delay
    *   between retries. Must be larger than 200.
-   * @property {Number} [cacheModels=false] Whether to cache models already
+   * @property {Boolean} [cacheModels=false] Whether to cache models already
    *   retrieved from the database. When off, getting a model with the same key
    *   the second time in the same transaction results in an error. When on,
    *   `get`ting the same key simply returns the cached model. Previous
