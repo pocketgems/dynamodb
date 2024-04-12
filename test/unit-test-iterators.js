@@ -515,6 +515,46 @@ class IteratorTest extends BaseTest {
     expect(params.Segment).toBe(0)
     expect(params.TotalSegments).toBe(2)
   }
+
+  async testModelCache () {
+    // setup
+    const id = uuidv4()
+    await db.Transaction.run(async tx => {
+      tx.create(IteratorExample, {
+        id1: id, id2: 0, sk1: '1', sk2: '2', field1: '1', field2: '2'
+      })
+    })
+
+    // fetch valid cached models
+    await db.Transaction.run({ cacheModels: true }, async tx => {
+      const d1 = await tx.get(IteratorExample,
+        { id1: id, id2: 0, sk1: '1', sk2: '2' })
+      const q = tx.query(IteratorExample, { index: 'index1' })
+      q.id1(id)
+      q.id2(0)
+      const [[d2]] = await q.fetch(1)
+      expect(d1).toBe(d2)
+    })
+
+    // cache miss
+    await db.Transaction.run({ cacheModels: true }, async tx => {
+      const q = tx.query(IteratorExample, { index: 'index1' })
+      q.id1(id)
+      q.id2(0)
+      const [[d2]] = await q.fetch(1)
+      expect(d2.id1).toBe(id)
+    })
+
+    // fetch invalid (deleted) cached models
+    await db.Transaction.run({ cacheModels: true }, async tx => {
+      tx.delete(IteratorExample.key({ id1: id, id2: 0, sk1: '1', sk2: '2' }))
+      const q = tx.query(IteratorExample, { index: 'index1' })
+      q.id1(id)
+      q.id2(0)
+      await expect(async () => await q.fetch(1)).rejects
+        .toThrow('Model is not a valid cached model')
+    })
+  }
 }
 
 class ScanExample extends db.Model {

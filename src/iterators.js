@@ -1,6 +1,6 @@
 const AWSError = require('./aws-error')
 const {
-  InvalidFilterError, InvalidOptionsError
+  InvalidCachedModelError, InvalidFilterError, InvalidOptionsError
 } = require('./errors')
 const Filter = require('./filter')
 const { ITEM_SOURCE, loadOptionDefaults } = require('./utils')
@@ -160,6 +160,19 @@ class __DBIterator {
       if (m.__hasExpired) {
         return undefined
       }
+      if (this.cacheModels) {
+        const model = this.__writeBatcher.getModel(
+          this.__ModelCls.fullTableName,
+          m.__encodedKey._id,
+          m.__encodedKey._sk
+        )
+        if (model) {
+          if (!model.__src.canBeCached || model.__toBeDeleted) {
+            throw new InvalidCachedModelError(model)
+          }
+          return model
+        }
+      }
       this.__writeBatcher.track(m)
       return m
     }).filter(m => !!m) || []
@@ -266,7 +279,8 @@ class Scan extends __DBIterator {
       inconsistentRead: options.index !== undefined,
       shardCount: undefined,
       shardIndex: undefined,
-      index: undefined
+      index: undefined,
+      cacheModels: false
     })
     super({ ModelCls, writeBatcher, options })
     Object.freeze(this)
@@ -321,7 +335,8 @@ class Query extends __DBIterator {
       allowLazyFilter: false,
       descending: false,
       inconsistentRead: options.index !== undefined,
-      index: undefined
+      index: undefined,
+      cacheModels: false
     })
     super({ ModelCls, writeBatcher, options })
     this.__data = {}

@@ -842,7 +842,7 @@ class Transaction {
     return new Scan({
       ModelCls,
       writeBatcher: this.__writeBatcher,
-      options
+      options: { cacheModels: this.options.cacheModels, ...options }
     })
   }
 
@@ -856,7 +856,7 @@ class Transaction {
     return new Query({
       ModelCls,
       writeBatcher: this.__writeBatcher,
-      options
+      options: { cacheModels: this.options.cacheModels, ...options }
     })
   }
 
