@@ -267,6 +267,12 @@ class Scan extends __DBIterator {
    *   and `Query` request results in its query cache, and the cache is not
    *   invalidated by DynamoDB updates. Set this to true to skip the DAX cache
    *   for more up-to-date results.
+   * @property {Number} [params.options.cacheModels=false] Whether to cache
+   *   models already retrieved from the database. When off, getting a model
+   *   with the same key the second time in the same transaction results in an
+   *   error. When on, `get`ting the same key simply returns the cached model.
+   *   Previous modifications done to the model are reflected in the returned
+   *   model.
    */
   constructor ({
     ModelCls,
@@ -324,6 +330,12 @@ class Query extends __DBIterator {
    *   and `Query` request results in its query cache, and the cache is not
    *   invalidated by DynamoDB updates. Set this to true to skip the DAX cache
    *   for more up-to-date results.
+   * @property {Number} [params.options.cacheModels=false] Whether to cache
+   *   models already retrieved from the database. When off, getting a model
+   *   with the same key the second time in the same transaction results in an
+   *   error. When on, `get`ting the same key simply returns the cached model.
+   *   Previous modifications done to the model are reflected in the returned
+   *   model.
    */
   constructor ({
     ModelCls,
