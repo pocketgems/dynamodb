@@ -1455,7 +1455,7 @@ class DefaultsTest extends BaseTest {
 
     await db.Transaction.run(async tx => {
       tx.create(NestedDefaultsExample, {
-        id: id,
+        id,
         arr: [{ int: 2 }, { int: 3 }]
       })
     })
@@ -1502,7 +1502,7 @@ class DefaultsTest extends BaseTest {
 
     await db.Transaction.run(async tx => {
       tx.create(NestedDefaultsExample, {
-        id: id,
+        id,
         arr: [{ int: 2 }, { int: 3 }]
       })
     })
@@ -2023,7 +2023,7 @@ class SnapshotTest extends BaseTest {
         n: 1
       })
       expect(m.getSnapshot({})).toStrictEqual({
-        id: id,
+        id,
         rangeKey: 1,
         n: 1
       })

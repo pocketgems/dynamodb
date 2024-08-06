@@ -7,7 +7,7 @@ const { ITEM_SOURCE, loadOptionDefaults } = require('./utils')
 
 function mergeCondition (base, additional) {
   const [condition, attrNames, attrValues] = base
-  condition.push(...additional[0] ?? [])
+  condition.push(...(additional[0] ?? []))
   Object.assign(attrNames, additional[1] ?? {})
   Object.assign(attrValues, additional[2] ?? {})
 }

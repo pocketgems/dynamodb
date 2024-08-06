@@ -637,10 +637,10 @@ class Transaction {
         if (argIsArray) {
           if (!params.inconsistentRead) {
             fetchedModels.push(
-              ...await this.__transactGetItems(keysOrDataToGet, params))
+              ...(await this.__transactGetItems(keysOrDataToGet, params)))
           } else {
             fetchedModels.push(
-              ...await this.__batchGetItems(keysOrDataToGet, params))
+              ...(await this.__batchGetItems(keysOrDataToGet, params)))
           }
         } else {
           // just fetch the one item that was requested

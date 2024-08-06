@@ -81,7 +81,7 @@ class Model {
             this.constructor.SORT_KEY ?? {}
           ),
           ...indexConfig.KEY,
-          ...indexConfig.SORT_KEY ?? [],
+          ...(indexConfig.SORT_KEY ?? []),
           ...indexConfig.INCLUDE_ONLY
         ]
       : undefined
