@@ -1370,7 +1370,7 @@ class Model {
     let millisBackOff = 40
     for (let tryCnt = 0; tryCnt <= retries; tryCnt++) {
       try {
-        await this.documentClient[method](params).catch(
+        await this.daxClient[method](params).catch(
           // istanbul ignore next
           e => { throw new AWSError('write model', e) }
         )

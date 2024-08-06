@@ -948,9 +948,9 @@ class QueryTest extends BaseTest {
         Items: undefined
       }
     })
-    const originalFunc = db.Transaction.prototype.documentClient.query
-    queryMock.bind(db.Transaction.prototype.documentClient)
-    db.Transaction.prototype.documentClient.query = queryMock
+    const originalFunc = db.Transaction.prototype.daxClient.query
+    queryMock.bind(db.Transaction.prototype.daxClient)
+    db.Transaction.prototype.daxClient.query = queryMock
 
     const results = await db.Transaction.run(async tx => {
       const query = tx.query(QueryExample, { index: 'index1' })
@@ -959,7 +959,7 @@ class QueryTest extends BaseTest {
       return (await query.fetch(10))[0]
     })
     expect(results.length).toBe(0)
-    db.Transaction.prototype.documentClient.query = originalFunc
+    db.Transaction.prototype.daxClient.query = originalFunc
   }
 
   async testQuerySortKey () {

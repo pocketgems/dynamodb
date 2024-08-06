@@ -214,7 +214,7 @@ class __WriteBatcher {
   }
 
   async transactWrite (txWriteParams) {
-    const request = this.documentClient.transactWrite(txWriteParams)
+    const request = this.daxClient.transactWrite(txWriteParams)
     await request.catch(e => {
       throw this.__extractError(txWriteParams, e)
     })
@@ -239,6 +239,15 @@ class __WriteBatcher {
     }
   }
 
+  /**
+   * Extract CancellationReasons from the input error, and associate each
+   * reason with a model passed to transactWrite API. The returned error is
+   * either a single error, or a group of errors wrapped in an error under
+   * `allErrors` property.
+   * @param {*} params Input to transactWrite API
+   * @param {Error} error An error throw by AWS SDK DynamoDB transactWrite API
+   * @returns an Error object
+   */
   __extractError (params, error) {
     const reasons = error.CancellationReasons
     error = new AWSError('extract error', error)
@@ -388,7 +397,7 @@ class Transaction {
    */
   async __getItem (key, params) {
     const getParams = key.Cls.__getParams(key.encodedKeys, params)
-    const data = await this.documentClient.get(getParams)
+    const data = await this.daxClient.get(getParams)
       .catch(
         // istanbul ignore next
         e => {
@@ -430,7 +439,7 @@ class Transaction {
         Get: param
       })
     }
-    const data = await this.documentClient.transactGet({
+    const data = await this.daxClient.transactGet({
       TransactItems: txItems
     }).catch(
       // istanbul ignore next
@@ -508,7 +517,7 @@ class Transaction {
       }
       reqCnt++
 
-      const data = await this.documentClient.batchGet({
+      const data = await this.daxClient.batchGet({
         RequestItems: reqItems
       }).catch(
         // istanbul ignore next

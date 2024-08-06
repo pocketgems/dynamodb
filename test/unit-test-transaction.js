@@ -319,9 +319,9 @@ class TransactionGetTest extends QuickTransactionTest {
       }
       return ret
     })
-    const originalFunc = db.Transaction.prototype.documentClient.batchGet
-    batchGetMock.bind(db.Transaction.prototype.documentClient)
-    db.Transaction.prototype.documentClient.batchGet = batchGetMock
+    const originalFunc = db.Transaction.prototype.daxClient.batchGet
+    batchGetMock.bind(db.Transaction.prototype.daxClient)
+    db.Transaction.prototype.daxClient.batchGet = batchGetMock
 
     const result = await db.Transaction.run(async tx => {
       const fut = tx.get([
@@ -334,7 +334,7 @@ class TransactionGetTest extends QuickTransactionTest {
     })
     expect(result).toBe(112233)
 
-    db.Transaction.prototype.documentClient.batchGet = originalFunc
+    db.Transaction.prototype.daxClient.batchGet = originalFunc
     global.setTimeout = originalSetTimeout
   }
 

@@ -49,7 +49,11 @@ high-level abstractions to structure data and prevent race conditions.
       - [DAX query cache](#dax-query-cache)
     - [Blind Writes](#blind-writes)
     - [incrementBy()](#incrementby)
+  - [Provisioning Resources](#provisioning-resources)
+    - [On The Fly](#on-the-fly)
+    - [Infrastructure as Code](#infrastructure-as-code)
 - [Niche Concepts](#niche-concepts)
+  - [Custom Setup](#custom-setup)
   - [Key Encoding](#key-encoding)
   - [Nested Transactions are NOT Nested](#nested-transactions-are-not-nested)
   - [Time To Live](#time-to-live)
@@ -79,6 +83,19 @@ is composed of one or more _Columns_ (also known as _Fields_).
 Each row is uniquely identified by a [_Key_](#keys) (more on this later).
 
 ## Minimal Example
+Configure AWS SDK environment variables like REGION and credentials, plus the
+following:
+- SERVICE: A prefix used to namespace tables
+- DYNAMO_ENDPT: the dynamodb endpoint.
+- INDEBUGGER: a truethy value will prevent the library from setting up DAX client
+- DAX_ENDPOINT: AWS DAX endpoint
+
+Then import the database handle for defining tables and executing DB
+transactions like this:
+```javascript
+const db = require('@pocketgems/dynamodb')
+```
+
 Define a new table like this, which uses the [Todea Schema library](https://github.com/pocketgems/schema) to enfore Table schema:
 ```javascript <!-- embed:./test/unit-test-doc.js:scope:Order -->
 class OrderWithNoPrice extends db.Model {
@@ -89,15 +106,22 @@ class OrderWithNoPrice extends db.Model {
 }
 ```
 
+A transaction is executed in an async block like this:
+```javascript
+await db.Transaction.run(async tx => {
+  // Transaction is defined in this block, and committed (with re-tries)
+  // automatically when this block returns.
+})
+```
+
 Then we can create a new row:
 ```javascript
 const id = uuidv4()
 tx.create(Order, { id, product: 'coffee', quantity: 1 })
 ```
 
-Later, we can retrieve it from the database and modify it:
-```javascript <!-- embed:./test/unit-test-doc.js:scope:DBReadmeTest:testMinimalExample:Example -->
-    // Example
+Later, retrieve it from the database and modify it:
+```javascript <!-- embed:./test/unit-test-doc.js:scope:DBReadmeTest:testMinimalExample:Example:await -->
     await db.Transaction.run(async tx => {
       const order = await tx.get(OrderWithNoPrice, id)
       expect(order.id).toBe(id)
@@ -1086,8 +1110,82 @@ async function bothAreJustAsFast(id) {
 Using `incrementBy()` on a field whose value is `undefined` is invalid and will
 throw an exception.
 
+## Provisioning Resources
+This library can provision resources in 2 ways.
+
+### On The Fly
+On the fly provisioning allows you to create tables as needed. It is useful
+when you don't know the table ahead of time, e.g. enhancing data security by
+creating dedicated tables for each customer.
+
+You call `createResources()` on the tables to be created like this:
+```javascript
+await MyModel.createResources()
+```
+
+### Infrastructure as Code
+You can use AWS CloudFormation to provision the table resources. The CF config
+for a table is available on the `resourceDefinition` property, like this:
+```javascript
+const config = MyModel.resourceDefinitions
+```
+
+The config variable will have contents like this:
+```yaml
+  DynamoDBTableMyServiceMyTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    Properties:
+      TableName: MyServiceMyTable
+      BillingMode:
+        Fn::If:
+          - IsProdServerCondition
+          - PROVISIONED
+          - PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: _id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: _id
+          KeyType: HASH
+      ProvisionedThroughput:
+        Fn::If:
+          - IsProdServerCondition
+          - ReadCapacityUnits: 1
+            WriteCapacityUnits: 1
+          - Ref: AWS::NoValue
+```
 
 # Niche Concepts
+## Custom Setup
+By default, this library sets up a `db` handle and cache it in node.js module.
+It uses DynamoDB and DAX clients with default configurations under the hood.
+If you need customization, you can create your own DynamoDB and DAX clients
+and create a custom `db` handle like this:
+```javascript
+const setupDB = require('@pocketgems/dynamodb/src/dynamodb')
+const customDB = setupDB({
+  daxClient, // Instance of AwsDaxClient
+  documentClient, // Instance of DynamoDBDocumentClient
+  dbClient, // Instance of DynamoDBClient
+  autoscalingClient, // Instance of AutoScalingClient
+})
+```
+
+NOTE:
+- If you want to do CRUD operations on rows, provide one of documentClient or
+  daxClient, depending on whether you want to use DAX.
+- If you want to do CRUD operations on rows with DAX, but do query or scan
+  while bypassing DAX, provide both clients
+- If you want to manage Tables dynamically (through createResources()),
+  provide dbClient.
+- If you want to manage autoscaling dynamically (through createResources()),
+  provide autoscalingClient in addition.
+
+For convenience, you can get setupDB through the default `db` handle like this:
+```javascript
+const setupDB = require('@pocketgems/dynamodb').setupDB
+```
 
 ## Key Encoding
 Under the hood, a database key can only be a single attribute. We always store

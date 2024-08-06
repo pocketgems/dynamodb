@@ -145,10 +145,7 @@ class __DBIterator {
       params.ExclusiveStartKey = nextToken
     }
     const method = this.constructor.METHOD
-    let client = this.documentClient
-    if (this.bypassCache) {
-      client = this.documentClientWithoutDAX
-    }
+    const client = this.bypassCache ? this.documentClient : this.daxClient
     const result = await client[method](params)
       .catch(
         // istanbul ignore next

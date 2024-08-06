@@ -43,7 +43,7 @@ const PROVISIONED_THROUGHPUT_UNCHANGED = 'The provisioned throughput for the tab
 function makeCreateResourceFunc (dynamoDB, autoscaling) {
   return async function () {
     assert(dynamoDB,
-      'Must provide dynamoDBClient when using createResources')
+      'Must provide dbClient when using createResources')
     if (Object.hasOwnProperty.call(this, '__createdResource')) {
       return // already created resource
     }
@@ -222,9 +222,20 @@ function makeCreateResourceFunc (dynamoDB, autoscaling) {
 /* istanbul ignore next */
 const DefaultConfig = {
   autoscalingClient: undefined,
-  dynamoDBClient: undefined,
-  dynamoDBDocumentClient: undefined,
-  documentClientWithoutDAX: undefined
+  daxClient: undefined,
+  dbClient: undefined,
+  documentClient: undefined
+}
+
+// For backward compatibility
+function renameSymbols (config) {
+  const {
+    dynamoDBClient: dbClient,
+    dynamoDBDocumentClient: daxClient,
+    documentClientWithoutDAX: documentClient,
+    ...rest
+  } = config
+  return { dbClient, daxClient, documentClient, ...rest }
 }
 
 /**
@@ -232,29 +243,32 @@ const DefaultConfig = {
  */
 
 /**
- * Setup the DynamoDB library before returning symbols clients can use.
+ * Return a configured DB handle for caller to use.
  *
  * @param {Object} [config] Configurations for the library
- * @param {Object} [config.dynamoDBClient=undefined] AWS DynamoDB Client used
+ * @param {String} [config.documentClient=undefined] AWS DynamoDB document
+ *   client, used for query and scan while bypassing DAX cache
+ * @param {String} [config.daxClient=undefined] AWS DynamoDB DAX client used to
+ *   interact with db items through DAX.
+ * @param {Object} [config.dbClient=undefined] AWS DynamoDB Client used
  *   to manage table resources. Required when createResources is used.
- * @param {String} [config.dynamoDBDocumentClient] AWS DynamoDB document client
- *   used to interact with db items.
- * @param {String} [config.documentClientWithoutDAX=undefined] Another instance of
- *   AWS DynamoDB document client without DAX integration.
  * @param {Object} [config.autoscalingClient=undefined] AWS Application
- *   AutoScaling client used to provision auto scaling rules on DB tables.
+ *   AutoScaling client used to provision auto scaling rules on DB tables, if
+ *   createResources is used.
+ *
  * @returns {Object} Symbols that clients of this library can use.
  * @private
  */
 function setup (config) {
+  config = renameSymbols(config)
   config = loadOptionDefaults(config, DefaultConfig)
 
   Model.createResources = makeCreateResourceFunc(
-    config.dynamoDBClient, config.autoscalingClient)
+    config.dbClient, config.autoscalingClient)
 
   // Make DynamoDB document clients available to these classes
-  const documentClient = config.dynamoDBDocumentClient
-  const documentClientWithoutDAX = config.documentClientWithoutDAX
+  const daxClient = config.daxClient ?? config.documentClient
+  const documentClient = config.documentClient
   const clsWithDBAccess = [
     __WriteBatcher,
     Model,
@@ -263,11 +277,11 @@ function setup (config) {
     Transaction
   ]
   clsWithDBAccess.forEach(Cls => {
-    Cls.dbClient = config.dynamoDBClient
+    Cls.dbClient = config.dbClient
+    Cls.daxClient = daxClient
+    Cls.prototype.daxClient = daxClient
     Cls.documentClient = documentClient
     Cls.prototype.documentClient = documentClient
-    Cls.documentClientWithoutDAX = documentClientWithoutDAX
-    Cls.prototype.documentClientWithoutDAX = documentClientWithoutDAX
   })
 
   const exportAsClass = {

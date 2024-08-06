@@ -1,10 +1,9 @@
 // Convenient helper to setup dynamodb connection using environment variables.
 // The constructed db instance will be cached by NodeJS.
 
-const { DynamoDB } = require('@aws-sdk/client-dynamodb')
+const { DynamoDB, DynamoDBClient } = require('@aws-sdk/client-dynamodb')
 const {
-  DynamoDBDocument,
-  DynamoDBDocumentClient
+  DynamoDBDocument
 } = require('@aws-sdk/lib-dynamodb')
 
 const setup = require('./dynamodb')
@@ -16,37 +15,38 @@ const awsConfig = {
 
 const inDebugger = !!Number(process.env.INDEBUGGER)
 
-const dynamoDBClient = new DynamoDB(awsConfig)
+const marshallOptions = {
+  removeUndefinedValues: true
+}
+const dbClient = new DynamoDB(awsConfig)
 // A DynamoDB Document Client instance without DAX integration
-const documentClientWithoutDAX = DynamoDBDocument.from(dynamoDBClient, {
-  marshallOptions: {
-    removeUndefinedValues: true
+const documentClient = DynamoDBDocument.from(dbClient,
+  { marshallOptions })
+
+// istanbul ignore next
+function tryMakeDaxClient () {
+  if (inDebugger) {
+    return // No DAX support in debugging / local
   }
-})
-// This instance is conditionally configured to use the DAX client if the
-// DAX endpoint is present and it is not in debug mode
-let dynamoDBDocumentClient
-/* istanbul ignore if */
-if (!inDebugger &&
-    process.env.DAX_ENDPOINT) {
-  awsConfig.endpoints = [process.env.DAX_ENDPOINT]
+  if (!process.env.DAX_ENDPOINT) {
+    return // No endpoint configured
+  }
+
   const AwsDaxClient = require('amazon-dax-client-sdkv3')
-  const daxDB = new AwsDaxClient({
-    client: DynamoDBDocumentClient.from(dynamoDBClient, {
-      marshallOptions: {
-        removeUndefinedValues: true
-      }
+  return new AwsDaxClient({
+    client: new DynamoDBClient({
+      endpoint: process.env.DAX_ENDPOINT,
+      marshallOptions
     })
   })
-  dynamoDBDocumentClient = daxDB
-} else {
-  dynamoDBDocumentClient = documentClientWithoutDAX
 }
 
+const daxClient = tryMakeDaxClient()
+
 const dbInstance = setup({
-  dynamoDBClient,
-  dynamoDBDocumentClient,
-  documentClientWithoutDAX
+  dbClient,
+  daxClient,
+  documentClient
 })
 dbInstance.setupDB = setup
 

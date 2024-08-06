@@ -224,8 +224,8 @@ class SimpleExampleTest extends BaseTest {
     // GuildMetadataEnd
     const setupDB = require('../src/dynamodb')
     const dbParams = {
-      dynamoDBClient: db.Model.dbClient,
-      dynamoDBDocumentClient: db.Model.documentClient,
+      dbClient: db.Model.dbClient,
+      daxClient: db.Model.daxClient,
       autoscalingClient: undefined
     }
     const onDemandDB = setupDB(dbParams)
@@ -236,9 +236,9 @@ class SimpleExampleTest extends BaseTest {
     expect(tableDescription.Table.GlobalSecondaryIndexes.length).toBe(2)
 
     let updateParams = {}
-    const originalUpdateTableFn = dbParams.dynamoDBClient.updateTable
+    const originalUpdateTableFn = dbParams.dbClient.updateTable
     const mock = jest.fn().mockImplementation((params) => { updateParams = params })
-    dbParams.dynamoDBClient.updateTable = mock
+    dbParams.dbClient.updateTable = mock
 
     async function resetAndCreateTable () {
       delete GuildMetadata.__setupDone
@@ -274,7 +274,7 @@ class SimpleExampleTest extends BaseTest {
       guildByRank2: { KEY: ['rank'] }
     }
     expect(resetAndCreateTable()).rejects.toThrow(AWSError)
-    dbParams.dynamoDBClient.updateTable = originalUpdateTableFn
+    dbParams.dbClient.updateTable = originalUpdateTableFn
   }
 
   async testIndexKeyResourceGeneration () {
@@ -329,8 +329,8 @@ class SimpleExampleTest extends BaseTest {
       }
     }
     const dbParams = {
-      dynamoDBClient: db.Model.dbClient,
-      dynamoDBDocumentClient: db.Model.documentClient,
+      dbClient: db.Model.dbClient,
+      daxClient: db.Model.daxClient,
       autoscalingClient: undefined
     }
     if (provisioned) {
@@ -739,17 +739,17 @@ class WriteTest extends BaseTest {
   async testRetry () {
     const model = await txGet(BasicExample, this.modelName)
     const msg = uuidv4()
-    const originalFunc = model.documentClient.update
+    const originalFunc = model.daxClient.update
     const mock = jest.fn().mockImplementation((ignore, params) => {
       const err = new Error(msg)
       err.retryable = true
       throw err
     })
-    model.documentClient.update = mock
+    model.daxClient.update = mock
     await expect(model.__write()).rejects.toThrow('Max retries reached')
     expect(mock).toHaveBeenCalledTimes(4)
 
-    model.documentClient.update = originalFunc
+    model.daxClient.update = originalFunc
   }
 }
 
@@ -1245,7 +1245,7 @@ class WriteBatcherTest extends BaseTest {
     model1.noRequiredNoDefault = model2.noRequiredNoDefault + 1
 
     const msg = uuidv4()
-    const mock = jest.spyOn(batcher.documentClient, 'transactWrite')
+    const mock = jest.spyOn(batcher.daxClient, 'transactWrite')
       .mockImplementation(data => {
         const update = data.TransactItems[0].Update
         // we never read the old value on model1, so our update should NOT be
