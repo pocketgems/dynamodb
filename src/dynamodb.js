@@ -275,6 +275,7 @@ function setup (config) {
     Model,
     UniqueKeyList,
     Transaction,
+    AWSError,
 
     // Errors
     InvalidFieldError,

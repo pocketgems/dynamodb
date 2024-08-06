@@ -43,8 +43,11 @@ if (!inDebugger &&
   dynamoDBDocumentClient = documentClientWithoutDAX
 }
 
-module.exports = setup({
+const dbInstance = setup({
   dynamoDBClient,
   dynamoDBDocumentClient,
   documentClientWithoutDAX
 })
+dbInstance.setupDB = setup
+
+module.exports = dbInstance
