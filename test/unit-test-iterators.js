@@ -943,13 +943,9 @@ class QueryTest extends BaseTest {
   }
 
   async testQueryReturningUndefined () {
-    const queryMock = jest.fn().mockImplementation(() => {
+    const queryMock = jest.fn().mockImplementation(async () => {
       return {
-        promise: async () => {
-          return {
-            Items: undefined
-          }
-        }
+        Items: undefined
       }
     })
     const originalFunc = db.Transaction.prototype.documentClient.query

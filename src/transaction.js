@@ -215,23 +215,18 @@ class __WriteBatcher {
 
   async transactWrite (txWriteParams) {
     const request = this.documentClient.transactWrite(txWriteParams)
-    request.on('extractError', (response) => {
-      this.__extractError(request, response)
-    })
-    await request.promise().catch(e => {
-      throw new AWSError('transactWrite', e)
+    await request.catch(e => {
+      throw this.__extractError(txWriteParams, e)
     })
   }
 
   /**
    * Find a model with the same TableName and Key from a list of models
    * @param {String} tableName
-   * @param {Object} key { _id: { S: '' }, _sk: { S: '' } }
+   * @param {Object} key { _id: '', _sk: '' }
    */
   __getModel (tableName, key) {
-    const id = Object.values(key._id)[0]
-    const sk = key._sk ? Object.values(key._sk)[0] : undefined
-    return this.getModel(tableName, id, sk)
+    return this.getModel(tableName, key._id, key._sk)
   }
 
   getModel (tableName, id, sk) {
@@ -244,26 +239,19 @@ class __WriteBatcher {
     }
   }
 
-  __extractError (request, response) {
-    // istanbul ignore if
-    if (response.httpResponse.body === undefined) {
-      const { statusCode, statusMessage } = response.httpResponse
-      console.log(`error code ${statusCode}, message ${statusMessage}`)
-      return
-    }
+  __extractError (params, error) {
+    const reasons = error.CancellationReasons
+    error = new AWSError('extract error', error)
+    assert(reasons, 'error missing reasons: ' + error)
 
-    const responseBody = response.httpResponse.body.toString()
-    const reasons = JSON.parse(responseBody).CancellationReasons
-    assert(reasons, 'error body missing reasons: ' + responseBody)
-    if (response.error) {
-      response.error.allErrors = []
-    }
+    const allErrors = []
+
     for (let idx = 0; idx < reasons.length; idx++) {
       const reason = reasons[idx]
       if (reason.Code === 'ConditionalCheckFailed') {
         // Items in reasons maps 1to1 to items in request, here we do a reverse
         // lookup to find the original model that triggered the error.
-        const transact = request.params.TransactItems[idx]
+        const transact = params.TransactItems[idx]
         const method = Object.keys(transact)[0]
         let model
         const tableName = transact[method].TableName
@@ -293,21 +281,16 @@ class __WriteBatcher {
         }
         if (CustomErrorCls) {
           const err = new CustomErrorCls(tableName, model._id, model._sk)
-          if (response.error) {
-            response.error.allErrors.push(err)
-          } else {
-            // response.error appears to always be set in the wild; but we have
-            // this case just in case we're wrong or something changes
-            response.error = err
-            response.error.allErrors = [err]
-          }
+          allErrors.push(err)
         }
       }
     }
-    // if there were no custom errors, then use the original error
-    /* istanbul ignore if */
-    if (response.error && !response.error.allErrors.length) {
-      response.error.allErrors.push(response.error)
+
+    if (allErrors.length > 1) {
+      error.allErrors = allErrors
+      return error
+    } else {
+      return allErrors[0]
     }
   }
 }
@@ -405,7 +388,7 @@ class Transaction {
    */
   async __getItem (key, params) {
     const getParams = key.Cls.__getParams(key.encodedKeys, params)
-    const data = await this.documentClient.get(getParams).promise()
+    const data = await this.documentClient.get(getParams)
       .catch(
         // istanbul ignore next
         e => {
@@ -449,7 +432,7 @@ class Transaction {
     }
     const data = await this.documentClient.transactGet({
       TransactItems: txItems
-    }).promise().catch(
+    }).catch(
       // istanbul ignore next
       e => { throw new AWSError('transactGet', e) }
     )
@@ -527,7 +510,7 @@ class Transaction {
 
       const data = await this.documentClient.batchGet({
         RequestItems: reqItems
-      }).promise().catch(
+      }).catch(
         // istanbul ignore next
         e => { throw new AWSError('batchGet', e) }
       )

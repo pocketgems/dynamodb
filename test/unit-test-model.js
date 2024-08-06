@@ -233,7 +233,6 @@ class SimpleExampleTest extends BaseTest {
     await GuildMetadata.createResources()
     const tableDescription = await onDemandDB.Model.dbClient
       .describeTable({ TableName: GuildMetadata.fullTableName })
-      .promise()
     expect(tableDescription.Table.GlobalSecondaryIndexes.length).toBe(2)
 
     let updateParams = {}
@@ -323,12 +322,10 @@ class SimpleExampleTest extends BaseTest {
 
   __setupDB (provisioned = false) {
     const setupDB = require('../src/dynamodb')
-    const fakeAPI = {
-      promise: async () => {
-        return {
-          ScalableTargets: [],
-          ScalingPolicies: []
-        }
+    const fakeAPI = async () => {
+      return {
+        ScalableTargets: [],
+        ScalingPolicies: []
       }
     }
     const dbParams = {
@@ -338,10 +335,10 @@ class SimpleExampleTest extends BaseTest {
     }
     if (provisioned) {
       dbParams.autoscalingClient = {
-        describeScalableTargets: () => fakeAPI,
-        registerScalableTarget: () => fakeAPI,
-        describeScalingPolicies: () => fakeAPI,
-        putScalingPolicy: () => fakeAPI
+        describeScalableTargets: fakeAPI,
+        registerScalableTarget: fakeAPI,
+        describeScalingPolicies: fakeAPI,
+        putScalingPolicy: fakeAPI
       }
     }
     const mockedDB = setupDB(dbParams)
@@ -354,7 +351,6 @@ class SimpleExampleTest extends BaseTest {
     await CapacityExample.createResources()
     let tableDescription = await onDemandDB.Model.dbClient
       .describeTable({ TableName: CapacityExample.fullTableName })
-      .promise()
     expect(tableDescription.Table.BillingModeSummary.BillingMode)
       .toBe('PAY_PER_REQUEST')
 
@@ -363,7 +359,6 @@ class SimpleExampleTest extends BaseTest {
     await CapacityExample.createResources()
     tableDescription = await provisionedDB.Model.dbClient
       .describeTable({ TableName: CapacityExample.fullTableName })
-      .promise()
     expect(tableDescription.Table.BillingModeSummary.BillingMode)
       .toBe('PROVISIONED')
   }
@@ -383,7 +378,6 @@ class SimpleExampleTest extends BaseTest {
     await CounterWithIndex.createResources()
     const tableDescription = await provisionedDB.Model.dbClient
       .describeTable({ TableName: CounterWithIndex.fullTableName })
-      .promise()
     const indexes = tableDescription.Table.GlobalSecondaryIndexes
     expect(indexes.length).toBe(1)
     expect(indexes[0].ProvisionedThroughput).toBeDefined()
@@ -1301,17 +1295,10 @@ class WriteBatcherTest extends BaseTest {
 
   async testExceptionParser () {
     const reasons = []
-    const response = {
-      httpResponse: {
-        body: {
-          toString: function () {
-            return JSON.stringify({
-              CancellationReasons: reasons
-            })
-          }
-        }
-      }
-    }
+    const error = new Error()
+    Object.assign(error, {
+      CancellationReasons: reasons
+    })
 
     let itemSourceCreate
     await db.Transaction.run(tx => {
@@ -1326,64 +1313,53 @@ class WriteBatcherTest extends BaseTest {
       _id: '123',
       __src: itemSourceCreate
     })
-    batcher.__extractError({}, response)
-    expect(response.error).toBe(undefined)
 
     try {
-      batcher.__extractError({}, {
-        httpResponse: {
-          body: JSON.stringify({ oops: 'unexpected response structure' })
-        }
-      })
+      batcher.__extractError({}, { oops: 'unexpected error structure' })
     } catch (e) {
-      expect(e.message).toContain('error body missing reasons')
+      expect(e.message).toContain('error missing reasons')
     }
 
-    const row = { _id: { S: '123' } }
+    const row = { _id: '123' }
     reasons.push({
       Code: 'ConditionalCheckFailed',
       Item: row
     })
-    const request = {
-      params: {
-        TransactItems: [{
-          Put: {
-            Item: row,
-            TableName: 'unittestTestData'
-          }
-        }]
-      }
+    const params = {
+      TransactItems: [{
+        Put: {
+          Item: row,
+          TableName: 'unittestTestData'
+        }
+      }]
     }
-    response.error = undefined
-    batcher.__extractError(request, response)
-    expect(response.error.message)
+    delete error.allErrors
+    expect(batcher.__extractError(params, error).message)
       .toBe('Tried to recreate an existing model: unittestTestData _id=123')
 
     batcher.__allModels[0]._sk = '456'
-    request.params.TransactItems = [
+    params.TransactItems = [
       {
         Update: {
-          Key: { _id: { S: '123' }, _sk: { S: '456' } },
+          Key: { _id: '123', _sk: '456' },
           TableName: 'unittestTestData'
         }
       }
     ]
-    response.error = undefined
-    batcher.__extractError(request, response)
-    expect(response.error.message)
+    delete error.allErrors
+
+    expect(batcher.__extractError(params, error).message)
       .toBe([
         'Tried to recreate an existing model: ',
         'unittestTestData _id=123 _sk=456'].join(''))
 
-    response.error = undefined
+    delete error.allErrors
     batcher.__allModels[0].__src = 'something else'
-    batcher.__extractError(request, response)
-    expect(response.error).toBe(undefined)
+    expect(batcher.__extractError(params, error)).toBe(undefined)
 
     reasons[0].Code = 'anything else'
-    response.error = undefined
-    batcher.__extractError({}, response)
-    expect(response.error).toBe(undefined)
+    delete error.allErrors
+    expect(batcher.__extractError({}, error)).toBe(undefined)
   }
 
   async TestDataAlreadyExistsError () {

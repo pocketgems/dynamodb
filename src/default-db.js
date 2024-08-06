@@ -1,7 +1,11 @@
 // Convenient helper to setup dynamodb connection using environment variables.
 // The constructed db instance will be cached by NodeJS.
 
-const AWS = require('aws-sdk')
+const { DynamoDB } = require('@aws-sdk/client-dynamodb')
+const {
+  DynamoDBDocument,
+  DynamoDBDocumentClient
+} = require('@aws-sdk/lib-dynamodb')
 
 const setup = require('./dynamodb')
 
@@ -12,10 +16,12 @@ const awsConfig = {
 
 const inDebugger = !!Number(process.env.INDEBUGGER)
 
-const dynamoDBClient = new AWS.DynamoDB(awsConfig)
+const dynamoDBClient = new DynamoDB(awsConfig)
 // A DynamoDB Document Client instance without DAX integration
-const documentClientWithoutDAX = new AWS.DynamoDB.DocumentClient({
-  service: dynamoDBClient
+const documentClientWithoutDAX = DynamoDBDocument.from(dynamoDBClient, {
+  marshallOptions: {
+    removeUndefinedValues: true
+  }
 })
 // This instance is conditionally configured to use the DAX client if the
 // DAX endpoint is present and it is not in debug mode
@@ -24,11 +30,15 @@ let dynamoDBDocumentClient
 if (!inDebugger &&
     process.env.DAX_ENDPOINT) {
   awsConfig.endpoints = [process.env.DAX_ENDPOINT]
-  const AwsDaxClient = require('amazon-dax-client')
-  const daxDB = new AwsDaxClient(awsConfig)
-  dynamoDBDocumentClient = new AWS.DynamoDB.DocumentClient({
-    service: daxDB
+  const AwsDaxClient = require('amazon-dax-client-sdkv3')
+  const daxDB = new AwsDaxClient({
+    client: DynamoDBDocumentClient.from(dynamoDBClient, {
+      marshallOptions: {
+        removeUndefinedValues: true
+      }
+    })
   })
+  dynamoDBDocumentClient = daxDB
 } else {
   dynamoDBDocumentClient = documentClientWithoutDAX
 }

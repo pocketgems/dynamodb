@@ -310,18 +310,14 @@ class TransactionGetTest extends QuickTransactionTest {
     const originalSetTimeout = setTimeout
     global.setTimeout = timeoutMock.bind(global)
 
-    const batchGetMock = jest.fn().mockImplementation(() => {
+    const batchGetMock = jest.fn().mockImplementation(async () => {
       const ret = {
         Responses: {},
         UnprocessedKeys: {
           [TransactionExample.fullTableName]: { Keys: [{ _id: '456' }] }
         }
       }
-      return {
-        promise: async () => {
-          return ret
-        }
-      }
+      return ret
     })
     const originalFunc = db.Transaction.prototype.documentClient.batchGet
     batchGetMock.bind(db.Transaction.prototype.documentClient)

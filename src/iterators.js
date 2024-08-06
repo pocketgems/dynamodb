@@ -149,7 +149,7 @@ class __DBIterator {
     if (this.bypassCache) {
       client = this.documentClientWithoutDAX
     }
-    const result = await client[method](params).promise()
+    const result = await client[method](params)
       .catch(
         // istanbul ignore next
         e => { throw new AWSError(method, e) })

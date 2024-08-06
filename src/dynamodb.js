@@ -71,16 +71,16 @@ function makeCreateResourceFunc (dynamoDB, autoscaling) {
     const ttlSpec = tableParams.TimeToLiveSpecification
     delete tableParams.TimeToLiveSpecification
 
-    await dynamoDB.createTable(tableParams).promise().catch(async err => {
+    await dynamoDB.createTable(tableParams).catch(async err => {
       /* istanbul ignore if */
-      if (err.code !== 'ResourceInUseException') {
+      if (err.name !== 'ResourceInUseException') {
         throw new AWSError('createTable', err)
       }
 
       // Update billing mode if needed for existing tables
       const tableDescription = await dynamoDB.describeTable({
         TableName: tableParams.TableName
-      }).promise().catch(
+      }).catch(
         // istanbul ignore next
         e => {
           throw new AWSError(e)
@@ -101,7 +101,7 @@ function makeCreateResourceFunc (dynamoDB, autoscaling) {
         delete updateParams.KeySchema
         delete updateParams.GlobalSecondaryIndexes
 
-        await dynamoDB.updateTable(updateParams).promise().catch(
+        await dynamoDB.updateTable(updateParams).catch(
           // istanbul ignore next
           e => {
             if (e.message?.indexOf(PROVISIONED_THROUGHPUT_UNCHANGED) !== 0) {
@@ -145,7 +145,7 @@ function makeCreateResourceFunc (dynamoDB, autoscaling) {
       await dynamoDB.updateTimeToLive({
         TableName: tableParams.TableName,
         TimeToLiveSpecification: ttlSpec
-      }).promise().catch(
+      }).catch(
         /* istanbul ignore next */
         err => {
           if (err.message !== 'TimeToLive is already enabled') {
@@ -165,7 +165,7 @@ function makeCreateResourceFunc (dynamoDB, autoscaling) {
             ResourceIds: [params.ResourceId],
             ScalableDimension: params.ScalableDimension,
             ServiceNamespace: params.ServiceNamespace
-          }).promise().catch(
+          }).catch(
             // istanbul ignore next
             e => {
               throw new AWSError('describeScalableTargets', e)
@@ -173,7 +173,7 @@ function makeCreateResourceFunc (dynamoDB, autoscaling) {
 
           // istanbul ignore else
           if (targetsResult.ScalableTargets.length === 0) {
-            await autoscaling.registerScalableTarget(params).promise()
+            await autoscaling.registerScalableTarget(params)
               .catch(
                 // istanbul ignore next
                 e => {
@@ -199,14 +199,14 @@ function makeCreateResourceFunc (dynamoDB, autoscaling) {
             ServiceNamespace: params.ServiceNamespace,
             ResourceId: params.ResourceId,
             ScalableDimension: params.ScalableDimension
-          }).promise().catch(
+          }).catch(
             // istanbul ignore next
             e => {
               throw new AWSError('describeScalingPolicies', e)
             })
           // istanbul ignore else
           if (policiesResult.ScalingPolicies.length === 0) {
-            await autoscaling.putScalingPolicy(params).promise()
+            await autoscaling.putScalingPolicy(params)
               .catch(
                 // istanbul ignore next
                 e => {

@@ -1370,7 +1370,7 @@ class Model {
     let millisBackOff = 40
     for (let tryCnt = 0; tryCnt <= retries; tryCnt++) {
       try {
-        await this.documentClient[method](params).promise().catch(
+        await this.documentClient[method](params).catch(
           // istanbul ignore next
           e => { throw new AWSError('write model', e) }
         )
@@ -1378,7 +1378,7 @@ class Model {
       } catch (error) {
         if (!error.retryable) {
           const isConditionalCheckFailure =
-            error.code === 'ConditionalCheckFailedException'
+            error.name === 'ConditionalCheckFailedException'
           if (isConditionalCheckFailure && this.__toBeDeleted) {
             throw new InvalidModelDeletionError(
               this.constructor.tableName, this._id, this._sk)
@@ -1528,7 +1528,7 @@ class Model {
     try {
       const data = await this.dbClient.describeTable({
         TableName: this.fullTableName
-      }).promise()
+      })
       const { ItemCount: itemCount, TableSizeBytes: sizeInBytes } = data.Table
       return { itemCount, sizeInBytes }
     } catch (e) {
