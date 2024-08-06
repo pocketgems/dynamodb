@@ -23,13 +23,7 @@
             ],
             "console": "integratedTerminal",
             "internalConsoleOptions": "neverOpen",
-            "env": {
-                "INDEBUGGER": "1",
-                "DYNAMO_ENDPT": "http://localhost:8000",
-                "AWS_ACCESS_KEY_ID": "ignored",
-                "AWS_SECRET_ACCESS_KEY": "ignored",
-                "SERVICE": "unittest"
-            }
+            "envFile": "${workspaceFolder}/environment.js"
         }
     ]
 }
