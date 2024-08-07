@@ -1,7 +1,7 @@
 // Convenient helper to setup dynamodb connection using environment variables.
 // The constructed db instance will be cached by NodeJS.
 
-const { DynamoDB, DynamoDBClient } = require('@aws-sdk/client-dynamodb')
+const { DynamoDB } = require('@aws-sdk/client-dynamodb')
 const {
   DynamoDBDocument
 } = require('@aws-sdk/lib-dynamodb')
@@ -32,13 +32,19 @@ function tryMakeDaxClient () {
     return // No endpoint configured
   }
 
-  const AwsDaxClient = require('amazon-dax-client-sdkv3')
-  return new AwsDaxClient({
-    client: new DynamoDBClient({
-      endpoint: process.env.DAX_ENDPOINT,
-      marshallOptions
-    })
+  const AwsDaxClient = require('amazon-dax-client')
+  const daxClient = new AwsDaxClient({
+    endpoints: [process.env.DAX_ENDPOINT]
   })
+  const daxV3 = new Proxy(daxClient, {
+    get: (target, prop) => {
+      if (typeof target[prop] === 'function') {
+        return (...args) => target[prop](...args).promise()
+      }
+      return dbClient[prop]
+    }
+  })
+  return DynamoDBDocument.from(daxV3, { marshallOptions })
 }
 
 const daxClient = tryMakeDaxClient()
