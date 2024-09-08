@@ -295,11 +295,11 @@ class __WriteBatcher {
       }
     }
 
-    if (allErrors.length > 1) {
+    if (allErrors.length === 1) {
+      return allErrors[0]
+    } else {
       error.allErrors = allErrors
       return error
-    } else {
-      return allErrors[0]
     }
   }
 }

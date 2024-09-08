@@ -83,7 +83,7 @@ function makeCreateResourceFunc (dynamoDB, autoscaling) {
       }).catch(
         // istanbul ignore next
         e => {
-          throw new AWSError(e)
+          throw new AWSError('describeTable', e)
         })
 
       let currentMode = tableDescription.Table.BillingModeSummary
