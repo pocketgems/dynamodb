@@ -20,6 +20,7 @@ const { __Field, SCHEMA_TYPE_TO_FIELD_CLASS_MAP, __CompoundField } = require('./
 const { Key } = require('./key')
 const {
   validateValue,
+  DYNAMO_BILLING_MODE,
   ITEM_SOURCES,
   makeItemString,
   SCHEMA_TYPE_TO_JS_TYPE_MAP,
@@ -497,18 +498,33 @@ class Model {
       }
     }
 
+    // assert billing mode config
+    if (this.BILLING_MODE) {
+      const allowed = Object.values(DYNAMO_BILLING_MODE)
+      if (!allowed.includes(this.BILLING_MODE)) {
+        const names = Object.keys(DYNAMO_BILLING_MODE).join(', ')
+        throw new Error(
+          `Invalid billing mode "${this.BILLING_MODE}". ` +
+          `Use BILLING_MODE.BILLING_MODE.{${names}}.`
+        )
+      }
+    }
+
     const properties = {
       TableName: this.fullTableName,
       AttributeDefinitions: attrs,
       KeySchema: keys,
-      BillingMode: {
+      BillingMode: this.BILLING_MODE ?? {
         'Fn::If': [
           'IsProdServerCondition',
-          'PROVISIONED',
-          'PAY_PER_REQUEST'
+          DYNAMO_BILLING_MODE.PROVISIONED,
+          DYNAMO_BILLING_MODE.ON_DEMAND
         ]
-      },
-      ...this.getProvisionedThroughputConfig()
+      }
+    }
+
+    if (this.BILLING_MODE !== DYNAMO_BILLING_MODE.ON_DEMAND) {
+      Object.assign(properties, this.getProvisionedThroughputConfig())
     }
 
     if (indexes.length > 0) {
@@ -522,15 +538,22 @@ class Model {
       }
     }
 
-    return {
+    const config = {
       [this.tableResourceName]: {
         Type: 'AWS::DynamoDB::Table',
         DeletionPolicy: 'Retain',
         Properties: properties
-      },
-      ...this.getTableAutoScalingConfig(),
-      ...this.getIndexesAutoScalingConfig(indexes)
+      }
     }
+
+    if (this.BILLING_MODE !== DYNAMO_BILLING_MODE.ON_DEMAND) {
+      Object.assign(
+        config,
+        this.getTableAutoScalingConfig(),
+        this.getIndexesAutoScalingConfig(indexes)
+      )
+    }
+    return config
   }
 
   static getProvisionedThroughputConfig () {
@@ -690,6 +713,15 @@ class Model {
    *   }
    */
   static INDEXES = {}
+
+  /**
+   * Optional. If not set, defaults to On-Demand mode in test environments
+   * and Provisioned mode in production.
+   *
+   * Note: This setting does not apply to tables created at runtime,
+   * such as lightweight models defined in game modules.
+   */
+  static BILLING_MODE = undefined
 
   /**
    * If this is enabled, we will create individual fields internally for

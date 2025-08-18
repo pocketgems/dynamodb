@@ -93,8 +93,14 @@ const ITEM_SOURCE = {
 
 const ITEM_SOURCES = new Set(Object.values(ITEM_SOURCE))
 
+const DYNAMO_BILLING_MODE = Object.freeze({
+  ON_DEMAND: 'PAY_PER_REQUEST',
+  PROVISIONED: 'PROVISIONED'
+})
+
 module.exports = {
   checkUnexpectedOptions,
+  DYNAMO_BILLING_MODE,
   ITEM_SOURCE,
   ITEM_SOURCES,
   loadOptionDefaults,

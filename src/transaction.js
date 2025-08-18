@@ -860,7 +860,8 @@ class Transaction {
   static __isRetryable (err) {
     const retryableErrors = {
       ConditionalCheckFailedException: true,
-      TransactionCanceledException: true
+      TransactionCanceledException: true,
+      ProvisionedThroughputExceededException: true
     }
 
     if (err.retryable) {

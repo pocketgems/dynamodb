@@ -1138,6 +1138,9 @@ class TransactionRetryTest extends QuickTransactionTest {
 
     err.code = 'TransactionCanceledException'
     await this.expectRetries(err, 1, 2)
+
+    err.code = 'ProvisionedThroughputExceededException'
+    await this.expectRetries(err, 1, 2)
   }
 
   testIsRetryableErrors () {

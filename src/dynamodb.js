@@ -34,6 +34,7 @@ const {
   Transaction
 } = require('./transaction')
 const {
+  DYNAMO_BILLING_MODE,
   ITEM_SOURCE,
   loadOptionDefaults
 } = require('./utils')
@@ -285,6 +286,7 @@ function setup (config) {
   })
 
   const exportAsClass = {
+    DYNAMO_BILLING_MODE,
     S,
     Model,
     UniqueKeyList,

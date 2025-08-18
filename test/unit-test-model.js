@@ -3,6 +3,7 @@ const { BaseTest, runTests } = require('@pocketgems/unit-test')
 const uuidv4 = require('uuid').v4
 
 const AWSError = require('../src/aws-error')
+const { DYNAMO_BILLING_MODE } = require('../src/utils')
 
 const db = require('./db-with-field-maker')
 
@@ -1355,11 +1356,11 @@ class WriteBatcherTest extends BaseTest {
 
     delete error.allErrors
     batcher.__allModels[0].__src = 'something else'
-    expect(batcher.__extractError(params, error)).toBe(undefined)
+    expect(batcher.__extractError(params, error).message).toBe('')
 
     reasons[0].Code = 'anything else'
     delete error.allErrors
-    expect(batcher.__extractError({}, error)).toBe(undefined)
+    expect(batcher.__extractError({}, error).message).toBe('')
   }
 
   async TestDataAlreadyExistsError () {
@@ -1733,6 +1734,36 @@ class TTLTest extends BaseTest {
   async testCFResource () {
     expect(Object.values(TTLExample.resourceDefinitions)[0].Properties)
       .toHaveProperty('TimeToLiveSpecification')
+  }
+
+  async testSpecifiedBillingMode () {
+    expect(Object.values(TTLExample.resourceDefinitions)[0].Properties)
+      .toHaveProperty('ProvisionedThroughput')
+
+    const Cls1 = class extends TTLExample {
+      static BILLING_MODE = 'invalid'
+    }
+    expect(() => {
+      Cls1.resourceDefinitions // eslint-disable-line
+    }).toThrow('Invalid billing mode "invalid"')
+
+    const Cls2 = class extends TTLExample {
+      static BILLING_MODE = DYNAMO_BILLING_MODE.ON_DEMAND
+    }
+    expect(Object.values(Cls2.resourceDefinitions)[0].Properties)
+      .not.toHaveProperty('ProvisionedThroughput')
+    const onDemandConfig = Object.values(Cls2.resourceDefinitions)
+      .filter(resource => resource.Type === 'AWS::ApplicationAutoScaling::ScalableTarget')
+    expect(onDemandConfig.length).toBe(0)
+
+    const Cls3 = class extends TTLExample {
+      static BILLING_MODE = DYNAMO_BILLING_MODE.PROVISIONED
+    }
+    expect(Object.values(Cls3.resourceDefinitions)[0].Properties)
+      .toHaveProperty('ProvisionedThroughput')
+    const provisionedConfig = Object.values(Cls3.resourceDefinitions)
+      .filter(resource => resource.Type === 'AWS::ApplicationAutoScaling::ScalableTarget')
+    expect(provisionedConfig.length).toBe(2)
   }
 
   async testConfigValidation () {
