@@ -15,24 +15,25 @@ jobs:
       - uses: actions/setup-node@v2
         with:
           node-version: '18.x'
-          registry-url: 'https://registry.npmjs.org'
-          scope: '@pocketgems'
-      - name: Publish
-        run: |
-          yarn install --frozen-lockfile
-          npm publish --access public
-        shell: bash
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - uses: actions/setup-node@v2
-        with:
-          node-version: '18.x'
           registry-url: 'https://npm.pkg.github.com'
           scope: '@pocketgems'
-      - name: Publish
-        run: |
-          yarn install --frozen-lockfile
-          npm publish
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
         shell: bash
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish to GitHub Packages
+        run: npm publish
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-node@v2
+        with:
+          node-version: '18.x'
+          registry-url: 'https://registry.npmjs.org'
+          scope: '@pocketgems'
+      - name: Publish to npm
+        run: npm publish --access public
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
