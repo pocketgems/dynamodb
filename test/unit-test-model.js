@@ -384,6 +384,34 @@ class SimpleExampleTest extends BaseTest {
     expect(indexes[0].ProvisionedThroughput).toBeDefined()
   }
 
+  async testGSIOnDemandResourceDefinitions () {
+    const CounterWithIndex = class extends db.Model {
+      static KEY = { name: S.str }
+      static BILLING_MODE = db.DYNAMO_BILLING_MODE.ON_DEMAND
+      static FIELDS = {
+        amount: S.int
+      }
+
+      static INDEXES = {
+        amountIndex: { KEY: ['amount'] }
+      }
+    }
+
+    const definitions = CounterWithIndex.resourceDefinitions
+    const tableParams = Object.values(definitions)
+      .filter(val => val.Type === 'AWS::DynamoDB::Table')[0]
+      .Properties
+
+    expect(tableParams.BillingMode).toBe(db.DYNAMO_BILLING_MODE.ON_DEMAND)
+    expect(tableParams.ProvisionedThroughput).toBeUndefined()
+    expect(tableParams.GlobalSecondaryIndexes).toHaveLength(1)
+    expect(tableParams.GlobalSecondaryIndexes[0].ProvisionedThroughput)
+      .toBeUndefined()
+    expect(Object.values(definitions)
+      .filter(val => val.Type.startsWith('AWS::ApplicationAutoScaling::')))
+      .toHaveLength(0)
+  }
+
   async testDebugFunctionExport () {
     // Only export in debugging
     jest.resetModules()

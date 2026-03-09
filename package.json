@@ -46,6 +46,10 @@
   "peerDependencies": {
     "@pocketgems/schema": "^0.1.2"
   },
+  "resolutions": {
+    "@aws-sdk/client-dynamodb": "3.624.0",
+    "@aws-sdk/lib-dynamodb": "3.624.0"
+  },
   "devDependencies": {
     "@babel/core": "^7.17.12",
     "@babel/eslint-parser": "^7.17.0",

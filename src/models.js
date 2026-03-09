@@ -463,8 +463,10 @@ class Model {
         const indexProps = {
           IndexName: index,
           KeySchema: [{ AttributeName: keyNames._id, KeyType: 'HASH' }],
-          Projection: { ProjectionType: 'ALL' },
-          ...this.getProvisionedThroughputConfig()
+          Projection: { ProjectionType: 'ALL' }
+        }
+        if (this.BILLING_MODE !== DYNAMO_BILLING_MODE.ON_DEMAND) {
+          Object.assign(indexProps, this.getProvisionedThroughputConfig())
         }
         if (props.INCLUDE_ONLY) {
           if (props.INCLUDE_ONLY.length === 0) {
