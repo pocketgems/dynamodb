@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '18.x'
+          node-version: '24'
           registry-url: 'https://npm.pkg.github.com'
           scope: '@pocketgems'
       - name: Install dependencies
@@ -30,7 +30,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/setup-node@v4
         with:
-          node-version: '18.x'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
           scope: '@pocketgems'
       - name: Publish to npm
