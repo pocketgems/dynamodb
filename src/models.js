@@ -449,6 +449,14 @@ class Model {
     const keys = [{ AttributeName: '_id', KeyType: 'HASH' }]
     const indexes = []
 
+    // When BILLING_MODE is unset, the table is provisioned on prod only and
+    // on-demand elsewhere, so the provisioned throughput and autoscaling
+    // resources must be gated on IsProdServerCondition. When BILLING_MODE is
+    // explicitly PROVISIONED, the table is provisioned on EVERY server, so that
+    // gating must be dropped (otherwise non-prod gets a provisioned table with
+    // no throughput and no autoscaling).
+    const provisionedOnProdOnly = this.BILLING_MODE == null
+
     // if we have a sort key attribute, it is always "_sk"
     if (this.__keyOrder.sort.length > 0) {
       const keyType = this.__useNumericKey(this.SORT_KEY) ? 'N' : 'S'
@@ -466,7 +474,8 @@ class Model {
           Projection: { ProjectionType: 'ALL' }
         }
         if (this.BILLING_MODE !== DYNAMO_BILLING_MODE.ON_DEMAND) {
-          Object.assign(indexProps, this.getProvisionedThroughputConfig())
+          Object.assign(indexProps,
+            this.getProvisionedThroughputConfig(provisionedOnProdOnly))
         }
         if (props.INCLUDE_ONLY) {
           if (props.INCLUDE_ONLY.length === 0) {
@@ -526,7 +535,8 @@ class Model {
     }
 
     if (this.BILLING_MODE !== DYNAMO_BILLING_MODE.ON_DEMAND) {
-      Object.assign(properties, this.getProvisionedThroughputConfig())
+      Object.assign(properties,
+        this.getProvisionedThroughputConfig(provisionedOnProdOnly))
     }
 
     if (indexes.length > 0) {
@@ -551,56 +561,64 @@ class Model {
     if (this.BILLING_MODE !== DYNAMO_BILLING_MODE.ON_DEMAND) {
       Object.assign(
         config,
-        this.getTableAutoScalingConfig(),
-        this.getIndexesAutoScalingConfig(indexes)
+        this.getTableAutoScalingConfig(provisionedOnProdOnly),
+        this.getIndexesAutoScalingConfig(indexes, provisionedOnProdOnly)
       )
     }
     return config
   }
 
-  static getProvisionedThroughputConfig () {
+  static getProvisionedThroughputConfig (provisionedOnProdOnly) {
+    const throughput = { ReadCapacityUnits: 1, WriteCapacityUnits: 1 }
     return {
-      ProvisionedThroughput: {
-        'Fn::If': [
-          'IsProdServerCondition',
-          {
-            ReadCapacityUnits: 1,
-            WriteCapacityUnits: 1
-          },
-          {
-            Ref: 'AWS::NoValue'
+      // Provisioned on every server -> always set throughput. Provisioned on
+      // prod only -> set it on prod, omit elsewhere (the table is on-demand).
+      ProvisionedThroughput: provisionedOnProdOnly
+        ? {
+            'Fn::If': [
+              'IsProdServerCondition',
+              throughput,
+              { Ref: 'AWS::NoValue' }
+            ]
           }
-        ]
-      }
+        : throughput
     }
   }
 
-  static getTableAutoScalingConfig () {
+  static getTableAutoScalingConfig (provisionedOnProdOnly) {
     const resourceId = `table/${this.fullTableName}`
-    return this.getAutoScalingConfig(this.tableResourceName, resourceId, 'table')
+    return this.getAutoScalingConfig(
+      this.tableResourceName, resourceId, 'table', provisionedOnProdOnly)
   }
 
-  static getIndexesAutoScalingConfig (indexes) {
+  static getIndexesAutoScalingConfig (indexes, provisionedOnProdOnly) {
     const indexesAutoScalingConfig = {}
     for (const index of indexes) {
       const indexName = index.IndexName
       const resourceId = `table/${this.fullTableName}/index/${indexName}`
       const indexResourceName = this.tableResourceName + `${indexName[0].toUpperCase()}${indexName.slice(1)}` + 'Index'
-      const config = this.getAutoScalingConfig(indexResourceName, resourceId, 'index')
+      const config = this.getAutoScalingConfig(
+        indexResourceName, resourceId, 'index', provisionedOnProdOnly)
       Object.assign(indexesAutoScalingConfig, config)
     }
     return indexesAutoScalingConfig
   }
 
-  static getAutoScalingConfig (resourceName, resourceId, dimension) {
+  static getAutoScalingConfig (resourceName, resourceId, dimension, provisionedOnProdOnly) {
     const readPolicyName = resourceName + 'ReadScalingPolicy'
     const readTargetName = resourceName + 'ReadScalableTarget'
     const writePolicyName = resourceName + 'WriteScalingPolicy'
     const writeTargetName = resourceName + 'WriteScalableTarget'
+    // Gate the autoscaling resources on IsProdServerCondition only when the
+    // table itself is provisioned on prod only; when provisioning is forced
+    // (BILLING_MODE === PROVISIONED) they must exist on every server too.
+    const condition = provisionedOnProdOnly
+      ? { Condition: 'IsProdServerCondition' }
+      : {}
     return {
       [readPolicyName]: {
         Type: 'AWS::ApplicationAutoScaling::ScalingPolicy',
-        Condition: 'IsProdServerCondition',
+        ...condition,
         Properties: {
           PolicyName: readPolicyName,
           PolicyType: 'TargetTrackingScaling',
@@ -619,7 +637,7 @@ class Model {
       },
       [readTargetName]: {
         Type: 'AWS::ApplicationAutoScaling::ScalableTarget',
-        Condition: 'IsProdServerCondition',
+        ...condition,
         DependsOn: this.tableResourceName,
         Properties: {
           MaxCapacity: 1000,
@@ -634,7 +652,7 @@ class Model {
       },
       [writePolicyName]: {
         Type: 'AWS::ApplicationAutoScaling::ScalingPolicy',
-        Condition: 'IsProdServerCondition',
+        ...condition,
         Properties: {
           PolicyName: writePolicyName,
           PolicyType: 'TargetTrackingScaling',
@@ -653,7 +671,7 @@ class Model {
       },
       [writeTargetName]: {
         Type: 'AWS::ApplicationAutoScaling::ScalableTarget',
-        Condition: 'IsProdServerCondition',
+        ...condition,
         DependsOn: this.tableResourceName,
         Properties: {
           MaxCapacity: 1000,

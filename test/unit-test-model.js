@@ -1792,6 +1792,27 @@ class TTLTest extends BaseTest {
     const provisionedConfig = Object.values(Cls3.resourceDefinitions)
       .filter(resource => resource.Type === 'AWS::ApplicationAutoScaling::ScalableTarget')
     expect(provisionedConfig.length).toBe(2)
+    // Provisioned on every server: throughput is unconditional and the
+    // autoscaling resources must NOT be gated on IsProdServerCondition (else
+    // non-prod gets a provisioned table with no throughput and no autoscaling).
+    expect(Object.values(Cls3.resourceDefinitions)[0].Properties
+      .ProvisionedThroughput)
+      .toEqual({ ReadCapacityUnits: 1, WriteCapacityUnits: 1 })
+    provisionedConfig.forEach(target => {
+      expect(target).not.toHaveProperty('Condition')
+    })
+
+    // Default billing (provisioned on prod only): throughput and the
+    // autoscaling resources stay gated on IsProdServerCondition.
+    const defaultDefs = Object.values(TTLExample.resourceDefinitions)
+    expect(defaultDefs[0].Properties.ProvisionedThroughput)
+      .toHaveProperty('Fn::If')
+    const defaultTargets = defaultDefs.filter(
+      resource => resource.Type === 'AWS::ApplicationAutoScaling::ScalableTarget')
+    expect(defaultTargets.length).toBe(2)
+    defaultTargets.forEach(target => {
+      expect(target.Condition).toBe('IsProdServerCondition')
+    })
   }
 
   async testConfigValidation () {
